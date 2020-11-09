@@ -47,24 +47,33 @@ use tracing_subscriber::EnvFilter;
 /// 6. Starts miner thread.
 /// 7. Starts network server listener.
 async fn start_server(config: Config) -> Result<(), NodeError> {
+    // Load the node's IP and port.
     let address = format! {"{}:{}", config.node.ip, config.node.port};
+    // Parse the socket's address.
     let socket_address = address.parse::<SocketAddr>()?;
 
+    // Load the path for the database from the config.
     let mut path = config.node.dir;
     path.push(&config.node.db);
+    // Create storage database using the path.
     let storage = Arc::new(MerkleTreeLedger::open_at_path(path.clone())?);
 
+    // Create the memory pool using the storage.
     let memory_pool = MemoryPool::from_storage(&storage.clone())?;
+    // Create a new mutex on the memory pool.
     let memory_pool_lock = Arc::new(Mutex::new(memory_pool.clone()));
 
+    // Fetch the first bootnode address from config.
     let bootnode = match config.p2p.bootnodes.len() {
         0 => socket_address,
         _ => config.p2p.bootnodes[0].parse::<SocketAddr>()?,
     };
 
+    // A SyncHandler manages syncing chain state with a sync node.
     let sync_handler = SyncHandler::new(bootnode);
     let sync_handler_lock = Arc::new(Mutex::new(sync_handler));
 
+    //
     info!("Loading Aleo parameters...");
     let parameters = PublicParameters::<Components>::load(!config.miner.is_miner)?;
     info!("Loading complete.");

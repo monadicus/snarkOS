@@ -29,6 +29,41 @@ use std::{
     path::{Path, PathBuf},
 };
 
+///
+// A default configuration is created if not found.  The default values are stored in the
+// ~/.snarkOS/config.toml file.
+//
+// The basic structure of this file is:
+//
+// [aleo]
+// network_id = 1
+//
+// [node]
+// dir = "~/.snarkOS/"
+// db = "snarkos_testnet1"
+// is_bootnode = false
+// ip = "0.0.0.0"
+// port = 4131
+// verbose = 1
+//
+// [miner]
+// is_miner = false
+// miner_address = ""
+//
+// [rpc]
+// json_rpc = true
+// port = 3030
+// username = "Username"
+// password = "Password"
+//
+// [p2p]
+// mempool_interval = 5
+// min_peers = 7
+// max_peers = 25
+//
+///
+
+
 /// Bootnodes maintained by Aleo.
 /// A node should try and connect to these first after coming online.
 pub const MAINNET_BOOTNODES: &[&str] = &[]; // "192.168.0.1:4130"
@@ -55,11 +90,18 @@ pub struct Config {
     pub p2p: P2P,
 }
 
+// Aleo is a structure that contains the network id.
+//  network_id:  Defaults to 1 in the Default impl of Config below.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Aleo {
     pub network_id: u8,
 }
 
+// The JsonRPC structure contains:
+//  json_rpc:   Boolean flag that defaults to true so this node provides an RPC endpoint.
+//  port:  Port for the JsonRPC endpoint.  Defaults to 3030.
+//  username:  Username of the RPC endpoint.  Defaults to "Username".
+//  password:  Passworld of the RPC endpoint. Defaults to "Password".
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct JsonRPC {
     pub json_rpc: bool,
@@ -68,6 +110,15 @@ pub struct JsonRPC {
     pub password: Option<String>,
 }
 
+// The Node structure contains a set of node specfic attributes.  This structure's Defaults
+// are set in the Default impl for Config below.
+//  dir:           Defaults to ~/.snarkOS/ or $CWD/.snarkOS/ if no home dir set.
+//  db:            The name of the database?  Currently defaults to 'snarkos_testnet1'.
+//  is_bootnode:   A boolean flag indicating if this node is a bootnode.  Defaults to 'false'.
+//                 If enabled, node will not connect to bootnodes on startup.
+//  ip:            The IP address of this node.  Defaults to '0.0.0.0'.'
+//  port:          The port of this node.  Default is 4131.
+//  verbose:       Logging verbosity of this node.  Defaults to 1.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Node {
     pub dir: PathBuf,
@@ -78,12 +129,22 @@ pub struct Node {
     pub verbose: u8,
 }
 
+// The Miner structure contains:
+//   is_miner:  A boolean flag indicating whether or not this node is a miner node.
+//              Defaults to false in the Default impl for Config below.
+//   miner_address:  ??  Defaults to "".
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Miner {
     pub is_miner: bool,
     pub miner_address: String,
 }
 
+// The P2P structure contains:
+//   bootnodes:  A vector of Strings representing all of the bootnodes for the network.
+//               Currently this defaults to the list of TESTNET_BOOTNODES.
+//   mempool_interval:  The interval for refreshing the memory pool?
+//   min_peers:  The minimum number of peers required for this node to be valid?
+//   max_peers:  The maximum number of peers this node will connect to.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct P2P {
     #[serde(skip_serializing, skip_deserializing)]
@@ -93,6 +154,7 @@ pub struct P2P {
     pub max_peers: u16,
 }
 
+// The Default implementation for Config.
 impl Default for Config {
     fn default() -> Self {
         Self {
