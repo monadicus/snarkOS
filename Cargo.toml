@@ -45,8 +45,9 @@ version = "=0.1.24"
 default-features = false
 
 [workspace.dependencies.snarkvm]
-git = "https://github.com/AleoHQ/snarkVM.git"
-rev = "46f2625"
+# git = "https://github.com/AleoHQ/snarkVM.git"
+# rev = "6e182c6"
+path = "../snarkvm"
 #version = "=0.16.18"
 features = [ "circuit", "console", "rocks" ]
 
@@ -57,6 +58,9 @@ path = "snarkos/main.rs"
 [features]
 jemalloc = [ "tikv-jemallocator" ]
 metrics = [ "snarkos-node-metrics", "snarkos-node/metrics" ]
+
+[dependencies]
+serde_json = "1.0.103"
 
 [dependencies.anyhow]
 version = "1.0.79"
@@ -154,3 +158,7 @@ lto = "thin"
 incremental = true
 debug = true
 debug-assertions = true
+
+[[example]]
+name = "genesis"
+path = "examples/genesis.rs"
