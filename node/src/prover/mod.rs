@@ -19,11 +19,7 @@ use snarkos_account::Account;
 use snarkos_node_bft::ledger_service::ProverLedgerService;
 use snarkos_node_router::{
     messages::{Message, NodeType, UnconfirmedSolution},
-    Heartbeat,
-    Inbound,
-    Outbound,
-    Router,
-    Routing,
+    Heartbeat, Inbound, Outbound, Router, Routing,
 };
 use snarkos_node_sync::{BlockSync, BlockSyncMode};
 use snarkos_node_tcp::{
@@ -109,7 +105,7 @@ impl<N: Network, C: ConsensusStorage<N>> Prover<N, C> {
             account,
             trusted_peers,
             Self::MAXIMUM_NUMBER_OF_PEERS as u16,
-            matches!(storage_mode, StorageMode::Development(_)),
+            !matches!(storage_mode, StorageMode::Production), // TODO: revert?
         )
         .await?;
         // Load the coinbase puzzle.

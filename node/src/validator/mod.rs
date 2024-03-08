@@ -21,11 +21,7 @@ use snarkos_node_consensus::Consensus;
 use snarkos_node_rest::Rest;
 use snarkos_node_router::{
     messages::{NodeType, PuzzleResponse, UnconfirmedSolution, UnconfirmedTransaction},
-    Heartbeat,
-    Inbound,
-    Outbound,
-    Router,
-    Routing,
+    Heartbeat, Inbound, Outbound, Router, Routing,
 };
 use snarkos_node_sync::{BlockSync, BlockSyncMode};
 use snarkos_node_tcp::{
@@ -36,8 +32,7 @@ use snarkvm::prelude::{
     block::{Block, Header},
     coinbase::ProverSolution,
     store::ConsensusStorage,
-    Ledger,
-    Network,
+    Ledger, Network,
 };
 
 use aleo_std::StorageMode;
@@ -124,7 +119,7 @@ impl<N: Network, C: ConsensusStorage<N>> Validator<N, C> {
             account,
             trusted_peers,
             Self::MAXIMUM_NUMBER_OF_PEERS as u16,
-            matches!(storage_mode, StorageMode::Development(_)),
+            !matches!(storage_mode, StorageMode::Production), // TODO: revert?
         )
         .await?;
 
@@ -454,8 +449,7 @@ mod tests {
     use super::*;
     use snarkvm::prelude::{
         store::{helpers::memory::ConsensusMemory, ConsensusStore},
-        MainnetV0,
-        VM,
+        MainnetV0, VM,
     };
 
     use anyhow::bail;
