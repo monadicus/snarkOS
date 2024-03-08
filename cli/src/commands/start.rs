@@ -140,6 +140,8 @@ pub struct Start {
     /// Specify the path to a directory containing the ledger
     #[clap(long = "storage_path")]
     pub storage_path: Option<PathBuf>,
+    #[clap(long = "genesis")]
+    pub genesis: Option<PathBuf>,
 
     #[clap(long)]
     /// If development mode is enabled, specify the custom bonded balances as a json object. (default: None)
@@ -469,7 +471,10 @@ impl Start {
         let cdn = self.parse_cdn();
 
         // Parse the genesis block.
-        let genesis = self.parse_genesis::<N>()?;
+        let genesis = match self.genesis {
+            Some(ref path) => Block::<N>::read_le(std::fs::File::open(path)?)?,
+            None => self.parse_genesis()?,
+        };
         // Parse the private key of the node.
         let account = self.parse_private_key::<N>()?;
         // Parse the node type.
