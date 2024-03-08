@@ -38,6 +38,8 @@ pub use start::*;
 mod update;
 pub use update::*;
 
+mod ledger;
+
 use anstyle::{AnsiColor, Color, Style};
 use anyhow::{bail, ensure, Result};
 use clap::{builder::Styles, Parser};
@@ -86,10 +88,14 @@ pub enum Command {
     Genesis {
         #[clap(name = "genesis-key", short, long)]
         genesis_key: PrivateKey<MainnetV0>,
-        bonded_balances: Balances,
+        // bonded_balances: Balances,
         #[clap(name = "filename", short, long, default_value = "genesis.block")]
         filename: PathBuf,
+        #[clap(name = "committee-size", long, default_value_t = 4)]
+        committee_size: u16,
     },
+    #[clap(name = "ledger")]
+    Ledger(ledger::Command),
 }
 
 impl Command {
@@ -101,17 +107,24 @@ impl Command {
             Self::Developer(command) => command.parse(),
             Self::Start(command) => command.parse(),
             Self::Update(command) => command.parse(),
-            Self::Genesis { genesis_key, bonded_balances, filename } => {
-                let mut rng = ChaChaRng::from_entropy();
+            Self::Genesis { genesis_key, filename, committee_size, .. /* bonded_balances */ } => {
+                let mut rng = ChaChaRng::seed_from_u64(DEVELOPMENT_MODE_RNG_SEED);
+
+                // Initialize the development private keys.
+                let development_private_keys = (0..committee_size)
+                    .map(|_| PrivateKey::<MainnetV0>::new(&mut rng))
+                    .collect::<Result<Vec<_>>>()?;
+                // Initialize the development addresses.
+                let development_addresses =
+                    development_private_keys.iter().map(Address::<MainnetV0>::try_from).collect::<Result<Vec<_>>>()?;
 
                 // Construct the committee based on the state of the bonded balances.
-                let bonded_balances = bonded_balances
-                    .0
+                let bonded_balances = development_addresses
                     .into_iter()
-                    .map(|(addr, amount)| {
+                    .map(|addr| {
                         let staker_addr = addr;
                         let validator_addr = addr;
-                        (staker_addr, (validator_addr, amount))
+                        (staker_addr, (validator_addr, 100000000000000))
                     })
                     .collect::<IndexMap<_, _>>();
 
@@ -180,6 +193,7 @@ impl Command {
                 // print the genesis block
                 Ok(format!("Genesis block: {:?}", block))
             }
+            Self::Ledger(ledger::Command { command }) => command.parse(),
         }
     }
 }

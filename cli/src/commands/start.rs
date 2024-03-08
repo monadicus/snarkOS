@@ -49,7 +49,7 @@ use tokio::runtime::{self, Runtime};
 const RECOMMENDED_MIN_NOFILES_LIMIT: u64 = 2048;
 
 /// The development mode RNG seed.
-const DEVELOPMENT_MODE_RNG_SEED: u64 = 1234567890u64;
+pub const DEVELOPMENT_MODE_RNG_SEED: u64 = 1234567890u64;
 /// The development mode number of genesis committee members.
 const DEVELOPMENT_MODE_NUM_GENESIS_COMMITTEE_MEMBERS: u16 = 4;
 

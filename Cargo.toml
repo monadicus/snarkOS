@@ -49,7 +49,7 @@ default-features = false
 # rev = "6e182c6"
 path = "../snarkvm"
 #version = "=0.16.18"
-features = [ "circuit", "console", "rocks" ]
+features = [ "algorithms", "circuit", "console", "rocks" ]
 
 [[bin]]
 name = "snarkos"
