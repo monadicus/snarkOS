@@ -55,9 +55,9 @@ pub enum Commands {
         /// A destination path for the ledger directory.
         #[arg(required = true, short, long)]
         ledger: PathBuf,
-        // /// The block to add to the specified ledger.
-        // #[arg(required = true)]
-        // block: PathBuf,
+        /// The seed to use when generating a new block. Defaults to the dev mode seed.
+        #[arg(name = "seed", long)]
+        seed: Option<u64>,
     },
 }
 
@@ -74,8 +74,8 @@ impl Commands {
                 Ledger::<_, ConsensusDB<MainnetV0>>::load(genesis_block, StorageMode::Custom(output))?;
                 Ok(String::from("Ledger written"))
             }
-            Commands::Add { genesis, ledger } => {
-                let mut rng = ChaChaRng::seed_from_u64(DEVELOPMENT_MODE_RNG_SEED);
+            Commands::Add { genesis, ledger, seed } => {
+                let mut rng = ChaChaRng::seed_from_u64(seed.unwrap_or(DEVELOPMENT_MODE_RNG_SEED));
 
                 // Read the genesis block
                 let genesis_block = Block::<MainnetV0>::read_le(fs::File::open(genesis)?)?;

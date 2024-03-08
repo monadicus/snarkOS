@@ -93,6 +93,8 @@ pub enum Command {
         filename: PathBuf,
         #[clap(name = "committee-size", long, default_value_t = 4)]
         committee_size: u16,
+        #[clap(name = "seed", long)]
+        seed: Option<u64>,
     },
     #[clap(name = "ledger")]
     Ledger(ledger::Command),
@@ -107,13 +109,12 @@ impl Command {
             Self::Developer(command) => command.parse(),
             Self::Start(command) => command.parse(),
             Self::Update(command) => command.parse(),
-            Self::Genesis { genesis_key, filename, committee_size, .. /* bonded_balances */ } => {
-                let mut rng = ChaChaRng::seed_from_u64(DEVELOPMENT_MODE_RNG_SEED);
+            Self::Genesis { genesis_key, filename, committee_size, seed } => {
+                let mut rng = ChaChaRng::seed_from_u64(seed.unwrap_or(DEVELOPMENT_MODE_RNG_SEED));
 
                 // Initialize the development private keys.
-                let development_private_keys = (0..committee_size)
-                    .map(|_| PrivateKey::<MainnetV0>::new(&mut rng))
-                    .collect::<Result<Vec<_>>>()?;
+                let development_private_keys =
+                    (0..committee_size).map(|_| PrivateKey::<MainnetV0>::new(&mut rng)).collect::<Result<Vec<_>>>()?;
                 // Initialize the development addresses.
                 let development_addresses =
                     development_private_keys.iter().map(Address::<MainnetV0>::try_from).collect::<Result<Vec<_>>>()?;
