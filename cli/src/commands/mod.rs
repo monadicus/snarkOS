@@ -133,9 +133,8 @@ impl Command {
                 // Generate a genesis key if one was not passed.
                 let genesis_key = match genesis_key_input {
                     Some(genesis_key) => genesis_key,
-                    None => dbg!(PrivateKey::<MainnetV0>::new(&mut rng)?),
+                    None => PrivateKey::<MainnetV0>::new(&mut rng)?,
                 };
-                dbg!(genesis_key.to_string());
 
                 // Stores the generated private keys if `bonded_balances` was not passed.
                 let mut private_keys = None;
