@@ -14,7 +14,11 @@
 
 use snarkos_account::Account;
 use snarkos_display::Display;
-use snarkos_node::{bft::MEMORY_POOL_PORT, router::messages::NodeType, Node};
+use snarkos_node::{
+    bft::MEMORY_POOL_PORT,
+    router::{messages::NodeType, Router},
+    Node,
+};
 use snarkvm::{
     console::{
         account::{Address, PrivateKey},
@@ -95,8 +99,11 @@ pub struct Start {
     #[clap(long = "bft")]
     pub bft: Option<SocketAddr>,
     /// Specify the IP address and port of the peer(s) to connect to
-    #[clap(default_value = "", long = "peers")]
-    pub peers: String,
+    #[clap(default_value = "", long = "trusted-peers")]
+    pub trusted_peers: String,
+    /// Specify a file of IP address and port of the peer(s) to connect to
+    #[clap(default_value = "", long = "bootstrap-peers")]
+    pub bootstrap_peers: Option<PathBuf>,
     /// Specify the IP address and port of the validator(s) to connect to
     #[clap(default_value = "", long = "validators")]
     pub validators: String,
@@ -182,10 +189,10 @@ impl Start {
 impl Start {
     /// Returns the initial peer(s) to connect to, from the given configurations.
     fn parse_trusted_peers(&self) -> Result<Vec<SocketAddr>> {
-        match self.peers.is_empty() {
+        match self.trusted_peers.is_empty() {
             true => Ok(vec![]),
             false => Ok(self
-                .peers
+                .trusted_peers
                 .split(',')
                 .flat_map(|ip| match ip.parse::<SocketAddr>() {
                     Ok(ip) => Some(ip),
@@ -196,6 +203,17 @@ impl Start {
                 })
                 .collect()),
         }
+    }
+
+    /// Returns the initial peer(s) to connect to, from the given configurations.
+    fn parse_bootstrapped_peers(&self) -> Result<Option<Vec<SocketAddr>>> {
+        Ok(if let Some(path) = self.bootstrap_peers.as_ref() {
+            let rdr = std::fs::File::open(path)?;
+            let res = serde_json::from_reader(rdr)?;
+            Some(res)
+        } else {
+            None
+        })
     }
 
     /// Returns the initial validator(s) to connect to, from the given configurations.
@@ -466,6 +484,10 @@ impl Start {
         let mut trusted_validators = self.parse_trusted_validators()?;
         // Parse the development configurations.
         self.parse_development(&mut trusted_peers, &mut trusted_validators)?;
+        // Parse the bootstrapped peers.
+        if let Some(peers) = self.parse_bootstrapped_peers()? {
+            let _ = Router::<N>::BOOTSTRAP_PEERS.set(peers);
+        }
 
         // Parse the CDN.
         let cdn = self.parse_cdn();
@@ -897,7 +919,7 @@ mod tests {
             assert_eq!(start.cdn, "CDN");
             assert_eq!(start.rest, "127.0.0.1:3030".parse().unwrap());
             assert_eq!(start.network, 0);
-            assert_eq!(start.peers, "IP1,IP2,IP3");
+            assert_eq!(start.trusted_peers, "IP1,IP2,IP3");
             assert_eq!(start.validators, "IP1,IP2,IP3");
         } else {
             panic!("Unexpected result of clap parsing!");

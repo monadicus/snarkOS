@@ -46,11 +46,11 @@ use snarkvm::prelude::{Address, Network, PrivateKey, ViewKey};
 use anyhow::{bail, Result};
 use parking_lot::{Mutex, RwLock};
 use std::{
+    cell::OnceCell,
     collections::{HashMap, HashSet},
     future::Future,
-    net::SocketAddr,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     ops::Deref,
-    str::FromStr,
     sync::Arc,
     time::Instant,
 };
@@ -376,16 +376,19 @@ impl<N: Network> Router<N> {
     }
 
     /// Returns the list of bootstrap peers.
+    pub const BOOTSTRAP_PEERS: OnceCell<Vec<SocketAddr>> = OnceCell::new();
+    const DEFAULT_BOOTSTRAP_PEERS: &'static [SocketAddr; 4] = &[
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(64, 23, 169, 88)), 4130),
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(146, 190, 35, 174)), 4130),
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(45, 55, 201, 67)), 4130),
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(45, 55, 201, 80)), 4130),
+    ];
+
     pub fn bootstrap_peers(&self) -> Vec<SocketAddr> {
         if cfg!(feature = "test") || self.is_dev {
             vec![]
         } else {
-            vec![
-                SocketAddr::from_str("64.23.169.88:4130").unwrap(),
-                SocketAddr::from_str("146.190.35.174:4130").unwrap(),
-                SocketAddr::from_str("45.55.201.67:4130").unwrap(),
-                SocketAddr::from_str("45.55.201.80:4130").unwrap(),
-            ]
+            Self::BOOTSTRAP_PEERS.get().map(Vec::as_slice).unwrap_or(Self::DEFAULT_BOOTSTRAP_PEERS).to_vec()
         }
     }
 

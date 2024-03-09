@@ -86,15 +86,24 @@ pub enum Command {
     Update(Update),
     #[clap(name = "genesis")]
     Genesis {
+        /// The private key to use when generating the genesis block. Generates one randomly if not passed.
         #[clap(name = "genesis-key", short, long)]
-        genesis_key: PrivateKey<MainnetV0>,
-        // bonded_balances: Balances,
-        #[clap(name = "filename", short, long, default_value = "genesis.block")]
-        filename: PathBuf,
+        genesis_key: Option<PrivateKey<MainnetV0>>,
+        /// Where to write the genesis block to.
+        #[clap(name = "output", short, long, default_value = "genesis.block")]
+        output: PathBuf,
+        /// The committee size. Not used if --bonded-balances is set.
         #[clap(name = "committee-size", long, default_value_t = 4)]
         committee_size: u16,
+        /// The seed to use when generating committee private keys and the genesis block. If unpassed, uses DEVELOPMENT_MODE_RNG_SEED.
         #[clap(name = "seed", long)]
         seed: Option<u64>,
+        /// A JSON map of addresses to balances. If unset, private keys will be generated at block creation.
+        #[clap(name = "bonded-balances", long)]
+        bonded_balances: Option<Balances>,
+        /// A place to optionally write out the generated committee private keys JSON.
+        #[clap(name = "output-committee", long)]
+        output_committee: Option<PathBuf>,
     },
     #[clap(name = "ledger")]
     Ledger(ledger::Command),
@@ -109,25 +118,66 @@ impl Command {
             Self::Developer(command) => command.parse(),
             Self::Start(command) => command.parse(),
             Self::Update(command) => command.parse(),
-            Self::Genesis { genesis_key, filename, committee_size, seed } => {
+            Self::Genesis {
+                genesis_key: genesis_key_input,
+                output,
+                committee_size,
+                seed,
+                bonded_balances,
+                output_committee,
+            } => {
+                use colored::Colorize;
+
                 let mut rng = ChaChaRng::seed_from_u64(seed.unwrap_or(DEVELOPMENT_MODE_RNG_SEED));
 
-                // Initialize the development private keys.
-                let development_private_keys =
-                    (0..committee_size).map(|_| PrivateKey::<MainnetV0>::new(&mut rng)).collect::<Result<Vec<_>>>()?;
-                // Initialize the development addresses.
-                let development_addresses =
-                    development_private_keys.iter().map(Address::<MainnetV0>::try_from).collect::<Result<Vec<_>>>()?;
+                // Generate a genesis key if one was not passed.
+                let genesis_key = match genesis_key_input {
+                    Some(genesis_key) => genesis_key,
+                    None => dbg!(PrivateKey::<MainnetV0>::new(&mut rng)?),
+                };
+                dbg!(genesis_key.to_string());
 
-                // Construct the committee based on the state of the bonded balances.
-                let bonded_balances = development_addresses
-                    .into_iter()
-                    .map(|addr| {
-                        let staker_addr = addr;
-                        let validator_addr = addr;
-                        (staker_addr, (validator_addr, 100000000000000))
-                    })
-                    .collect::<IndexMap<_, _>>();
+                // Stores the generated private keys if `bonded_balances` was not passed.
+                let mut private_keys = None;
+
+                // Determine the bonded balances either by using passed in ones or by generating them.
+                let bonded_balances = match bonded_balances {
+                    Some(balances) => balances
+                        .0
+                        .into_iter()
+                        .map(|(addr, balance)| {
+                            let staker_addr = addr;
+                            let validator_addr = addr;
+                            (staker_addr, (validator_addr, balance))
+                        })
+                        .collect::<IndexMap<_, _>>(),
+
+                    None => {
+                        // Initialize the private keys.
+                        let mut keys = (1..committee_size)
+                            .map(|_| {
+                                let key = PrivateKey::<MainnetV0>::new(&mut rng)?;
+                                let addr = Address::try_from(&key)?;
+                                Ok((key, addr))
+                            })
+                            .collect::<Result<Vec<_>>>()?;
+
+                        // Add the genesis key to the bonded balances.
+                        let genesis_addr = Address::try_from(&genesis_key)?;
+                        keys.push((genesis_key, genesis_addr));
+
+                        private_keys = Some(keys.to_owned());
+
+                        // Construct the committee based on the state of the bonded balances.
+                        keys.iter()
+                            .map(|&(_, addr)| {
+                                let staker_addr = addr;
+                                let validator_addr = addr;
+                                (staker_addr, (validator_addr, 100_000_000_000_000))
+                            })
+                            .collect::<IndexMap<_, _>>()
+                    }
+                };
 
                 // Construct the committee members.
                 let mut members = IndexMap::new();
@@ -188,11 +238,42 @@ impl Command {
                 let block =
                     load_or_compute_genesis(genesis_key, committee, public_balances, bonded_balances, &mut rng)?;
 
-                // Write the genesis block
-                block.write_le(fs::File::options().append(false).create(true).write(true).open(filename)?)?;
+                // Write the genesis block.
+                block.write_le(fs::File::options().append(false).create(true).write(true).open(&output)?)?;
 
-                // print the genesis block
-                Ok(format!("Genesis block: {:?}", block))
+                println!();
+
+                // Print the genesis block private key if we generated one.
+                if genesis_key_input.is_none() {
+                    println!("The genesis block private key is: {}", genesis_key.to_string().cyan());
+                }
+
+                // Print some info about the new genesis block.
+                println!("Genesis block written to {}.", output.display().to_string().yellow());
+
+                // If we generated committee private keys, print them out.
+                if let Some(keys) = private_keys {
+                    print!("Committee private keys");
+                    if let Some(filename) = output_committee {
+                        print!(" (also written to {})", filename.display().to_string().yellow());
+
+                        // Write the committee key JSON file out.
+                        let file = fs::File::options().append(false).create(true).write(true).open(filename)?;
+                        let key_map = keys.iter().map(|(key, addr)| (addr, key)).collect::<IndexMap<_, _>>();
+
+                        serde_json::to_writer_pretty(file, &key_map)?;
+                    }
+                    println!(":");
+
+                    // Display each key-address pair to the screen.
+                    for (key, addr) in keys {
+                        println!("\t{}: {}", addr.to_string().yellow(), key.to_string().cyan());
+                    }
+
+                    println!();
+                }
+
+                Ok(format!("Genesis block hash: {}", block.hash().to_string().yellow()))
             }
             Self::Ledger(ledger::Command { command }) => command.parse(),
         }
