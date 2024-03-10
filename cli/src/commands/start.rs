@@ -102,7 +102,7 @@ pub struct Start {
     #[clap(default_value = "", long = "trusted-peers")]
     pub trusted_peers: String,
     /// Specify a file of IP address and port of the peer(s) to connect to
-    #[clap(default_value = "", long = "bootstrap-peers")]
+    #[clap(long = "bootstrap-peers")]
     pub bootstrap_peers: Option<PathBuf>,
     /// Specify the IP address and port of the validator(s) to connect to
     #[clap(default_value = "", long = "validators")]
@@ -695,10 +695,10 @@ mod tests {
 
         let config = Start::try_parse_from(["snarkos", "--peers", "1.2.3.4:5,6.7.8.9:0"].iter()).unwrap();
         assert!(config.parse_trusted_peers().is_ok());
-        assert_eq!(
-            config.parse_trusted_peers().unwrap(),
-            vec![SocketAddr::from_str("1.2.3.4:5").unwrap(), SocketAddr::from_str("6.7.8.9:0").unwrap()]
-        );
+        assert_eq!(config.parse_trusted_peers().unwrap(), vec![
+            SocketAddr::from_str("1.2.3.4:5").unwrap(),
+            SocketAddr::from_str("6.7.8.9:0").unwrap()
+        ]);
     }
 
     #[test]
@@ -713,10 +713,10 @@ mod tests {
 
         let config = Start::try_parse_from(["snarkos", "--validators", "1.2.3.4:5,6.7.8.9:0"].iter()).unwrap();
         assert!(config.parse_trusted_validators().is_ok());
-        assert_eq!(
-            config.parse_trusted_validators().unwrap(),
-            vec![SocketAddr::from_str("1.2.3.4:5").unwrap(), SocketAddr::from_str("6.7.8.9:0").unwrap()]
-        );
+        assert_eq!(config.parse_trusted_validators().unwrap(), vec![
+            SocketAddr::from_str("1.2.3.4:5").unwrap(),
+            SocketAddr::from_str("6.7.8.9:0").unwrap()
+        ]);
     }
 
     #[test]
