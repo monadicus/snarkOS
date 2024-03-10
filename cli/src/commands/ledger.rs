@@ -17,7 +17,8 @@ use std::{fs, path::PathBuf, str::FromStr};
 use aleo_std::StorageMode;
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use rand::SeedableRng;
+use indexmap::IndexMap;
+use rand::{Rng, SeedableRng};
 use rand_chacha::ChaChaRng;
 use snarkvm::{
     circuit::{Aleo, AleoV0},
@@ -30,7 +31,9 @@ use snarkvm::{
     ledger::{
         query::Query,
         store::{helpers::rocksdb::ConsensusDB, ConsensusStorage},
-        Block, Ledger, Transaction,
+        Block,
+        Ledger,
+        Transaction,
     },
     synthesizer::{process::execution_cost, VM},
     utilities::FromBytes,
@@ -67,6 +70,8 @@ pub enum Commands {
         /// The number of blocks to add  to use when generating a new block. Defaults to the dev mode seed.
         #[arg(short, long, default_value_t = 1)]
         num: u8,
+        #[arg(short, long, default_value = "./accounts.json")]
+        accounts_file: PathBuf,
     },
     View {
         /// A path to the genesis block to initialize the ledger from.
@@ -88,25 +93,60 @@ pub enum Commands {
     },
 }
 
-fn add_block<N: Network>(rng: &mut ChaChaRng, ledger: &Ledger<N, ConsensusDB<N>>) -> Result<()> {
-    // Read the target block into memory
-    let private_key = PrivateKey::<N>::new(rng)?;
-    let address = Address::try_from(private_key)?;
+struct Accounts<N: Network>(pub IndexMap<Address<N>, (PrivateKey<N>, u64)>);
+struct Account<N: Network> {
+    addr: Address<N>,
+    pk: PrivateKey<N>,
+		// TODO see if this is tracked anywhere
+    balance: u64,
+}
+
+impl<N: Network> Accounts<N> {
+    fn from_file(path: PathBuf) -> Result<Self> {
+        let accounts: IndexMap<Address<N>, (PrivateKey<N>, u64)> = serde_json::from_reader(fs::File::open(path)?)?;
+        Ok(Self(accounts))
+    }
+
+    // fn update_balance(&mut self, addr: Address<N>, new_balance: u64) {
+    //     self.0.get_mut(&addr).unwrap().1 = new_balance;
+    // }
+
+    fn two_random_accounts<'a>(&self, rng: &mut ChaChaRng) -> (Account<N>, Account<N>) {
+        let len = self.0.len();
+        let first_index = rng.gen_range(0..len);
+        let second_index = rng.gen_range(0..len);
+
+        let (addr1, (pk1, balance1)) = self.0.get_index(first_index).unwrap();
+        // TODO could also be a random new account
+				let (addr2, (pk2, balance2)) = self.0.get_index(second_index).unwrap();
+
+        (Account { addr: *addr1, pk: *pk1, balance: *balance1 }, Account { addr: *addr2, pk: *pk2, balance: *balance2 })
+    }
+}
+
+fn add_block<N: Network, A: Aleo<Network = N>>(
+    rng: &mut ChaChaRng,
+    ledger: &Ledger<N, ConsensusDB<N>>,
+    accounts: &mut Accounts<N>,
+) -> Result<()> {
+    let (acc1, acc2) = accounts.two_random_accounts(rng);
 
     // let partial_solution = PartialSolution::new(address, rng.gen(), KZGCommitment(rng.gen()));
     // let solution = ProverSolution::new(partial_solution, KZGProof { w: rng.gen(), random_v: None });
 
     // let targeT_block =
 
+    let tx = make_transaction_proof::<_, _, A>(ledger.vm(), acc1.addr.to_string(), 1_000, acc2.pk, None)?;
+
     // TODO:
     let target_block = ledger.prepare_advance_to_next_beacon_block(
-        &private_key,
+        &acc1.pk,
         vec![],
         vec![
             /* todo: add solutions */
         ],
         vec![
-            /* todo: add transactions */
+            tx,
         ],
         rng,
     )?;
@@ -139,7 +179,7 @@ impl Commands {
                 Ledger::<_, ConsensusDB<MainnetV0>>::load(genesis_block, StorageMode::Custom(output))?;
                 Ok(String::from("Ledger written"))
             }
-            Commands::Add { genesis, ledger, seed, num } => {
+            Commands::Add { genesis, ledger, seed, num, accounts_file } => {
                 let mut rng = ChaChaRng::seed_from_u64(seed.unwrap_or(DEVELOPMENT_MODE_RNG_SEED));
 
                 // Read the genesis block
@@ -148,7 +188,9 @@ impl Commands {
                 // Load the ledger
                 let ledger = Ledger::<_, ConsensusDB<MainnetV0>>::load(genesis_block, StorageMode::Custom(ledger))?;
 
-                (0..num).try_for_each(|_| add_block(&mut rng, &ledger))?;
+                // Load the accounts
+                let mut accounts = Accounts::from_file(accounts_file)?;
+                (0..num).try_for_each(|_| add_block::<_, AleoV0>(&mut rng, &ledger, &mut accounts))?;
                 Ok(format!("Inserted {num} block(s) into ledger"))
             }
             Commands::View { genesis, ledger, block_height } => {
