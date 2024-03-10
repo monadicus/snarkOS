@@ -138,6 +138,15 @@ impl<N: Network> Router<N> {
 }
 
 impl<N: Network> Router<N> {
+    /// Returns the list of bootstrap peers.
+    pub const BOOTSTRAP_PEERS: OnceCell<Vec<SocketAddr>> = OnceCell::new();
+    const DEFAULT_BOOTSTRAP_PEERS: &'static [SocketAddr; 4] = &[
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(64, 23, 169, 88)), 4130),
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(146, 190, 35, 174)), 4130),
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(45, 55, 201, 67)), 4130),
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(45, 55, 201, 80)), 4130),
+    ];
+
     /// Attempts to connect to the given peer IP.
     pub fn connect(&self, peer_ip: SocketAddr) -> Option<JoinHandle<bool>> {
         // Return early if the attempt is against the protocol rules.
@@ -374,15 +383,6 @@ impl<N: Network> Router<N> {
     pub fn trusted_peers(&self) -> &HashSet<SocketAddr> {
         &self.trusted_peers
     }
-
-    /// Returns the list of bootstrap peers.
-    pub const BOOTSTRAP_PEERS: OnceCell<Vec<SocketAddr>> = OnceCell::new();
-    const DEFAULT_BOOTSTRAP_PEERS: &'static [SocketAddr; 4] = &[
-        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(64, 23, 169, 88)), 4130),
-        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(146, 190, 35, 174)), 4130),
-        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(45, 55, 201, 67)), 4130),
-        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(45, 55, 201, 80)), 4130),
-    ];
 
     pub fn bootstrap_peers(&self) -> Vec<SocketAddr> {
         if cfg!(feature = "test") || self.is_dev {

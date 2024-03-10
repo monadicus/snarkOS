@@ -1,6 +1,9 @@
 use anyhow::Result;
 use snarkos_node::snarkvm::{
-    console::network::MainnetV0, ledger::Block, parameters::mainnet::GenesisBytes, utilities::FromBytes,
+    console::network::MainnetV0,
+    ledger::Block,
+    parameters::mainnet::GenesisBytes,
+    utilities::FromBytes,
 };
 use std::fs;
 
