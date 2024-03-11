@@ -93,6 +93,11 @@ impl Genesis {
 
         let (mut committee_members, bonded_balances, members, mut public_balances) = match self.bonded_balances {
             Some(balances) => {
+                ensure!(
+                    balances.0.contains_key(&genesis_addr),
+                    "The genesis address should be present in the passed-in bonded balances."
+                );
+
                 let (bonded_balances, members): (
                     IndexMap<Address<_>, (Address<_>, u64)>,
                     IndexMap<Address<_>, (u64, bool)>,
@@ -165,11 +170,11 @@ impl Genesis {
             .saturating_sub(public_balances.values().sum());
 
         if remaining_balance > 0 {
-            let (_, balance) = public_balances.get_index_mut(0).unwrap();
+            let balance = public_balances.get_mut(&genesis_addr).unwrap();
             *balance += remaining_balance;
 
             if let Some(ref mut committee_members) = committee_members {
-                let (_, (_, balance)) = committee_members.get_index_mut(0).unwrap();
+                let (_, balance) = committee_members.get_mut(&genesis_addr).unwrap();
                 *balance += remaining_balance;
             }
         }
