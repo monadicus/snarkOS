@@ -25,15 +25,13 @@ use snarkvm::{
     console::{
         account::PrivateKey,
         network::MainnetV0,
-        program::{Environment, Identifier, Literal, Network, ProgramID, Value},
+        program::{Identifier, Literal, Network, ProgramID, Value},
         types::{Address, U64},
     },
     ledger::{
         query::Query,
         store::{helpers::rocksdb::ConsensusDB, ConsensusStorage},
-        Block,
-        Ledger,
-        Transaction,
+        Block, Ledger, Transaction,
     },
     synthesizer::{process::execution_cost, VM},
     utilities::FromBytes,
@@ -97,7 +95,7 @@ struct Accounts<N: Network>(pub IndexMap<Address<N>, (PrivateKey<N>, u64)>);
 struct Account<N: Network> {
     addr: Address<N>,
     pk: PrivateKey<N>,
-		// TODO see if this is tracked anywhere
+    // TODO see if this is tracked anywhere
     balance: u64,
 }
 
@@ -107,10 +105,6 @@ impl<N: Network> Accounts<N> {
         Ok(Self(accounts))
     }
 
-    // fn update_balance(&mut self, addr: Address<N>, new_balance: u64) {
-    //     self.0.get_mut(&addr).unwrap().1 = new_balance;
-    // }
-
     fn two_random_accounts<'a>(&self, rng: &mut ChaChaRng) -> (Account<N>, Account<N>) {
         let len = self.0.len();
         let first_index = rng.gen_range(0..len);
@@ -118,52 +112,10 @@ impl<N: Network> Accounts<N> {
 
         let (addr1, (pk1, balance1)) = self.0.get_index(first_index).unwrap();
         // TODO could also be a random new account
-				let (addr2, (pk2, balance2)) = self.0.get_index(second_index).unwrap();
+        let (addr2, (pk2, balance2)) = self.0.get_index(second_index).unwrap();
 
         (Account { addr: *addr1, pk: *pk1, balance: *balance1 }, Account { addr: *addr2, pk: *pk2, balance: *balance2 })
     }
-}
-
-fn add_block<N: Network, A: Aleo<Network = N>>(
-    rng: &mut ChaChaRng,
-    ledger: &Ledger<N, ConsensusDB<N>>,
-    accounts: &mut Accounts<N>,
-) -> Result<()> {
-    let (acc1, acc2) = accounts.two_random_accounts(rng);
-
-    // let partial_solution = PartialSolution::new(address, rng.gen(), KZGCommitment(rng.gen()));
-    // let solution = ProverSolution::new(partial_solution, KZGProof { w: rng.gen(), random_v: None });
-
-    // let targeT_block =
-
-    let tx = make_transaction_proof::<_, _, A>(ledger.vm(), acc1.addr.to_string(), 1_000, acc2.pk, None)?;
-
-    // TODO:
-    let target_block = ledger.prepare_advance_to_next_beacon_block(
-        &acc1.pk,
-        vec![],
-        vec![
-            /* todo: add solutions */
-        ],
-        vec![
-            tx,
-        ],
-        rng,
-    )?;
-
-    // let target_block = Block::<MainnetV0>::read_le(fs::File::open(block)?)?;
-    // println!("Taret hash: {}", target_block.hash());
-    println!("Generated block hash: {}", target_block.hash());
-    println!("New block height: {}", target_block.height());
-    println!("New block solutions: {:?}", target_block.solutions());
-
-    // ledger.check_next_block(&target_block, rng)?;
-
-    // Insert the block into the ledger's block store
-    // ledger.vm().add_next_block(&target_block)?;
-    ledger.advance_to_next_block(&target_block)?;
-
-    Ok(())
 }
 
 impl Commands {
@@ -203,26 +155,7 @@ impl Commands {
                 // Print information about the ledger
                 Ok(format!("{:#?}", ledger.get_block(block_height)?))
             }
-            Commands::Cannon { genesis, ledger } => {
-                Ok(String::from("TODO"))
-                // Read the genesis block
-                // let genesis_block = Block::<MainnetV0>::read_le(fs::File::open(genesis)?)?;
-                // // let foo = genesis_block.ratifications().iter().next().unwrap();
-                // // match genesis_block.ratifications().iter().next().unwrap() {
-                // //     Ratify::Genesis(_, balances, _) => {
-
-                // //     }
-                // // }
-
-                // // Load the ledger
-                // let ledger = Ledger::<_, ConsensusDB<MainnetV0>>::load(genesis_block, StorageMode::Custom(ledger))?;
-
-                // let txn = make_transaction_proof(ledger.vm(), String::from(""), 0, String::from(""), None)?;
-
-                // // (0..VM::MAXIMUM_CONFIRMED_TRANSACTIONS).map(|_| Transaction::from_execution(execution, fee))
-
-                // Ok(String::from(""))
-            }
+            Commands::Cannon { .. } => Ok(String::from("TODO")),
         }
     }
 }
@@ -280,4 +213,24 @@ pub fn make_transaction_proof<N: Network, C: ConsensusStorage<N>, A: Aleo<Networ
 
     // assemble the transaction
     Transaction::<N>::from_execution(execution, Some(fee))
+}
+
+fn add_block<N: Network, A: Aleo<Network = N>>(
+    rng: &mut ChaChaRng,
+    ledger: &Ledger<N, ConsensusDB<N>>,
+    accounts: &mut Accounts<N>,
+) -> Result<()> {
+    let (acc1, acc2) = accounts.two_random_accounts(rng);
+
+    let tx = make_transaction_proof::<_, _, A>(ledger.vm(), acc1.addr.to_string(), 1_000, acc2.pk, None)?;
+    let target_block = ledger.prepare_advance_to_next_beacon_block(&acc1.pk, vec![], vec![], vec![tx], rng)?;
+
+    println!("Generated block hash: {}", target_block.hash());
+    println!("New block height: {}", target_block.height());
+    println!("New block solutions: {:?}", target_block.solutions());
+
+    // Insert the block into the ledger's block store
+    ledger.advance_to_next_block(&target_block)?;
+
+    Ok(())
 }

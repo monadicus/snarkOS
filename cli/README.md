@@ -21,19 +21,23 @@ The following flags are supported:
   genesis block to
 - `--committee-size <size>` (defaults to 4): how large the committee should be.
   Ignored if `--bonded-balances` is set.
+- `--additional-accounts <number>` (defaults to 0): the number of additional
+  accounts to give some extra balance to (defined below)
+- `--additional-accounts-balance <balance>` (defaults to 100,000,000): the
+  balance to give to the number of `--additional-accounts` defined above
+- `--additional-accounts-file <path>` (optional): a JSON file that will be
+  written out if additional accounts are being generated.
 - `--seed <seed>` (defaults to `1234567890`): the seed to use when generating
   the committee private keys and genesis private key.
-- `--bonded-balances <balances>` (optional): a JSON object from address to
-  balance to use for bonded balances. If not passed, these keys are generated
-  and printed to the console at the end of the command.
-- `--output-committee <filename>` (optional): a destination path for the JSON
-  file that represents the committee addresses/private keys if they were
-  generated.
+- `--bonded-balance <balance>` (defaults to 1T): the balance to give to the
+  validator addresses being bonded.
+- `--committee-file <filename>` (optional): a destination path for the JSON file
+  that represents the committee addresses/private keys if they were generated.
 
 ## Example
 
-Use `snarkos genesis --output genesis.block --output-committee committee.json`
-to generate a genesis block.
+Use `snarkos genesis --output genesis.block --committee-file committee.json` to
+generate a genesis block.
 
 The genesis block will be written to `genesis.block` and the committee (with
 addresses and private keys) will be written to `committee.json`, as well as in
