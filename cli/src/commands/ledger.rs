@@ -15,7 +15,7 @@
 use std::{fs, path::PathBuf, str::FromStr};
 
 use aleo_std::StorageMode;
-use anyhow::Result;
+use anyhow::{bail, Ok, Result};
 use clap::{Args, Subcommand};
 use indexmap::IndexMap;
 use rand::{Rng, SeedableRng};
@@ -35,6 +35,7 @@ use snarkvm::{
         Ledger,
         Transaction,
     },
+    prelude::Plaintext,
     synthesizer::{process::execution_cost, VM},
     utilities::FromBytes,
 };
@@ -83,6 +84,16 @@ pub enum Commands {
         /// The block height to view.
         block_height: u32,
     },
+    ViewAccountBalance {
+        /// A path to the genesis block to initialize the ledger from.
+        #[arg(required = true, short, long, default_value = "./genesis.block")]
+        genesis: PathBuf,
+        /// The ledger from which to view a block.
+        #[arg(required = true, short, long)]
+        ledger: PathBuf,
+        /// The address's balance to view.
+        address: String,
+    },
     Cannon {
         /// A path to the genesis block to initialize the ledger from.
         #[arg(required = true, short, long, default_value = "./genesis.block")]
@@ -97,13 +108,11 @@ struct Accounts<N: Network>(pub IndexMap<Address<N>, (PrivateKey<N>, u64)>);
 struct Account<N: Network> {
     addr: Address<N>,
     pk: PrivateKey<N>,
-    // TODO see if this is tracked anywhere
-    balance: u64,
 }
 
 impl<N: Network> Accounts<N> {
     fn from_file(path: PathBuf) -> Result<Self> {
-        let accounts: IndexMap<Address<N>, (PrivateKey<N>, u64)> = serde_json::from_reader(fs::File::open(path)?)?;
+        let accounts = serde_json::from_reader(fs::File::open(path)?)?;
         Ok(Self(accounts))
     }
 
@@ -112,11 +121,11 @@ impl<N: Network> Accounts<N> {
         let first_index = rng.gen_range(0..len);
         let second_index = rng.gen_range(0..len);
 
-        let (addr1, (pk1, balance1)) = self.0.get_index(first_index).unwrap();
+        let (addr1, (pk1, _)) = self.0.get_index(first_index).unwrap();
         // TODO could also be a random new account
-        let (addr2, (pk2, balance2)) = self.0.get_index(second_index).unwrap();
+        let (addr2, (pk2, _)) = self.0.get_index(second_index).unwrap();
 
-        (Account { addr: *addr1, pk: *pk1, balance: *balance1 }, Account { addr: *addr2, pk: *pk2, balance: *balance2 })
+        (Account { addr: *addr1, pk: *pk1 }, Account { addr: *addr2, pk: *pk2 })
     }
 }
 
@@ -157,6 +166,17 @@ impl Commands {
                 // Print information about the ledger
                 Ok(format!("{:#?}", ledger.get_block(block_height)?))
             }
+            Commands::ViewAccountBalance { genesis, ledger, address } => {
+                // Read the genesis block
+                let genesis_block = Block::<MainnetV0>::read_le(fs::File::open(genesis)?)?;
+
+                // Load the ledger
+                let ledger = Ledger::<_, ConsensusDB<MainnetV0>>::load(genesis_block, StorageMode::Custom(ledger))?;
+
+                let addr = Address::from_str(&address)?;
+                // Print information about the ledger
+                Ok(format!("{address} balance {}", get_balance(addr, &ledger)?))
+            }
             Commands::Cannon { .. } => Ok(String::from("TODO")),
         }
     }
@@ -165,7 +185,7 @@ impl Commands {
 pub fn make_transaction_proof<N: Network, C: ConsensusStorage<N>, A: Aleo<Network = N>>(
     vm: &VM<N, C>,
     address: String,
-    amount: u32,
+    amount: u64,
     private_key: PrivateKey<N>,
     private_key_fee: Option<PrivateKey<N>>,
 ) -> Result<Transaction<N>> {
@@ -173,8 +193,8 @@ pub fn make_transaction_proof<N: Network, C: ConsensusStorage<N>, A: Aleo<Networ
 
     let query = Query::from(vm.block_store());
 
-    // convert amount to microcredits
-    let amount_microcredits = (amount as u64) * 1_000_000;
+    // // convert amount to microcredits
+    // let amount_microcredits: u64 = (amount as u64) * 1_000_000;
 
     // fee key falls back to the private key
     let private_key_fee = private_key_fee.unwrap_or(private_key);
@@ -186,7 +206,7 @@ pub fn make_transaction_proof<N: Network, C: ConsensusStorage<N>, A: Aleo<Networ
             &private_key,
             ProgramID::from_str("credits.aleo")?,
             Identifier::from_str("transfer_public")?,
-            vec![Value::from_str(&address)?, Value::from(Literal::U64(U64::new(amount_microcredits)))].into_iter(),
+            vec![Value::from_str(&address)?, Value::from(Literal::U64(U64::new(amount)))].into_iter(),
             rng,
         )?;
 
@@ -223,8 +243,10 @@ fn add_block<N: Network, A: Aleo<Network = N>>(
     accounts: &mut Accounts<N>,
 ) -> Result<()> {
     let (acc1, acc2) = accounts.two_random_accounts(rng);
+    let amt_to_send = rng.gen_range(10_000..get_balance(acc1.addr, ledger)?);
+		println!("Sending {amt_to_send} from {} to {}", acc1.addr, acc2.addr);
 
-    let tx = make_transaction_proof::<_, _, A>(ledger.vm(), acc1.addr.to_string(), 1_000, acc2.pk, None)?;
+    let tx = make_transaction_proof::<_, _, A>(ledger.vm(), acc1.addr.to_string(), amt_to_send, acc2.pk, None)?;
     let target_block = ledger.prepare_advance_to_next_beacon_block(&acc1.pk, vec![], vec![], vec![tx], rng)?;
 
     println!("Generated block hash: {}", target_block.hash());
@@ -235,4 +257,18 @@ fn add_block<N: Network, A: Aleo<Network = N>>(
     ledger.advance_to_next_block(&target_block)?;
 
     Ok(())
+}
+
+fn get_balance<N: Network>(addr: Address<N>, ledger: &Ledger<N, ConsensusDB<N>>) -> Result<u64> {
+    let balance = ledger.vm().finalize_store().get_value_confirmed(
+        ProgramID::try_from("credits.aleo")?,
+        Identifier::try_from("account")?,
+        &Plaintext::from(Literal::Address(addr)),
+    )?;
+
+    match balance {
+        Some(Value::Plaintext(Plaintext::Literal(Literal::U64(balance), _))) => Ok(*balance),
+        None => bail!("No balance found for address: {addr}"),
+        _ => unreachable!(),
+    }
 }
