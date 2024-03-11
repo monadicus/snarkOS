@@ -33,6 +33,9 @@ The following flags are supported:
   validator addresses being bonded.
 - `--committee-file <filename>` (optional): a destination path for the JSON file
   that represents the committee addresses/private keys if they were generated.
+- `--bonded-balances <balances>` (optional): an optional JSON object from
+  address to bonded balance. When used, overrides `--bonded-balance` and
+  `--committee-size`.
 
 ## Example
 

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{fs, path::PathBuf};
+use std::{fs, path::PathBuf, str::FromStr};
 
 use anyhow::{ensure, Result};
 use clap::Parser;
@@ -20,6 +20,7 @@ use colored::Colorize;
 use indexmap::IndexMap;
 use rand::SeedableRng;
 use rand_chacha::ChaChaRng;
+use serde::{Deserialize, Serialize};
 use snarkvm::{
     console::{account::PrivateKey, network::MainnetV0, program::Network, types::Address},
     ledger::committee::{Committee, MIN_VALIDATOR_STAKE},
@@ -27,6 +28,16 @@ use snarkvm::{
 };
 
 use crate::commands::{load_or_compute_genesis, DEVELOPMENT_MODE_RNG_SEED};
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub struct Balances(IndexMap<Address<MainnetV0>, u64>);
+impl FromStr for Balances {
+    type Err = serde_json::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        serde_json::from_str(s)
+    }
+}
 
 #[derive(Debug, Parser)]
 pub struct Genesis {
@@ -51,9 +62,12 @@ pub struct Genesis {
     /// The seed to use when generating committee private keys and the genesis block. If unpassed, uses DEVELOPMENT_MODE_RNG_SEED.
     #[clap(name = "seed", long)]
     seed: Option<u64>,
-    /// The bonded balance each bonded address receives.
+    /// The bonded balance each bonded address receives. Not used if `--bonded-balances` is passed.
     #[clap(name = "bonded-balance", long, default_value_t = 1_000_000_000_000)]
     bonded_balance: u64,
+    /// An optional map from address to bonded balance. Overrides `--bonded-balance` and `--committee-size`.
+    #[clap(name = "bonded-balances", long)]
+    bonded_balances: Option<Balances>,
     /// A place to optionally write out the generated committee private keys JSON.
     #[clap(name = "committee-file", long)]
     committee_file: Option<PathBuf>,
@@ -77,33 +91,53 @@ impl Genesis {
 
         let genesis_addr = Address::try_from(&genesis_key)?;
 
-        // The addresses and private keys of members of the committee.
-        let mut committee_members = IndexMap::new();
+        let (mut committee_members, bonded_balances, members, mut public_balances) = match self.bonded_balances {
+            Some(balances) => {
+                let (bonded_balances, members): (
+                    IndexMap<Address<_>, (Address<_>, u64)>,
+                    IndexMap<Address<_>, (u64, bool)>,
+                ) = balances
+                    .0
+                    .iter()
+                    .map(|(&addr, &balance)| {
+                        (
+                            // bonded_balances
+                            (addr, (addr, balance)),
+                            // members
+                            (addr, (balance, true)),
+                        )
+                    })
+                    .unzip();
 
-        // Bonded balances of the committee.
-        let mut bonded_balances = IndexMap::new();
+                (None, bonded_balances, members, balances.0)
+            }
 
-        // Members of the committee.
-        let mut members = IndexMap::new();
+            None => {
+                let mut committee_members = IndexMap::with_capacity(self.committee_size as usize);
+                let mut bonded_balances = IndexMap::with_capacity(self.committee_size as usize);
+                let mut members = IndexMap::with_capacity(self.committee_size as usize);
+                let mut public_balances = IndexMap::with_capacity(self.committee_size as usize);
 
-        // Public balances, including those in the committee.
-        let mut public_balances = IndexMap::new();
+                for i in 0..self.committee_size {
+                    let (key, addr) = match i {
+                        0 => (genesis_key, genesis_addr),
+                        _ => {
+                            let key = PrivateKey::<MainnetV0>::new(&mut rng)?;
+                            let addr = Address::try_from(&key)?;
 
-        for i in 0..self.committee_size {
-            let (key, addr) = match i {
-                0 => (genesis_key, genesis_addr),
-                _ => {
-                    let key = PrivateKey::<MainnetV0>::new(&mut rng)?;
-                    let addr = Address::try_from(&key)?;
-                    (key, addr)
+                            (key, addr)
+                        }
+                    };
+
+                    committee_members.insert(addr, (key, self.bonded_balance));
+                    bonded_balances.insert(addr, (addr, self.bonded_balance));
+                    members.insert(addr, (self.bonded_balance, true));
+                    public_balances.insert(addr, self.bonded_balance);
                 }
-            };
 
-            committee_members.insert(addr, (key, self.bonded_balance));
-            bonded_balances.insert(addr, (addr, self.bonded_balance));
-            members.insert(addr, (self.bonded_balance, true));
-            public_balances.insert(addr, self.bonded_balance);
-        }
+                (Some(committee_members), bonded_balances, members, public_balances)
+            }
+        };
 
         // Construct the committee.
         let committee = Committee::<MainnetV0>::new(0u64, members)?;
@@ -124,10 +158,13 @@ impl Genesis {
             .saturating_sub(public_balances.values().sum());
 
         if remaining_balance > 0 {
-            let (_, (_, balance)) = committee_members.get_index_mut(0).unwrap();
-            *balance += remaining_balance;
             let (_, balance) = public_balances.get_index_mut(0).unwrap();
             *balance += remaining_balance;
+
+            if let Some(ref mut committee_members) = committee_members {
+                let (_, (_, balance)) = committee_members.get_index_mut(0).unwrap();
+                *balance += remaining_balance;
+            }
         }
 
         // Check if the sum of committee stakes and public balances equals the total starting supply.
@@ -157,30 +194,46 @@ impl Genesis {
         // Print some info about the new genesis block.
         println!("Genesis block written to {}.", self.output.display().to_string().yellow());
 
-        // Write the accounts JSON file.
-        if let Some(accounts_file) = self.additional_accounts_file {
-            let file = fs::File::options().append(false).create(true).write(true).open(&accounts_file)?;
-            serde_json::to_writer_pretty(file, &accounts)?;
+        match (self.additional_accounts, self.additional_accounts_file) {
+            // Don't display anything if we didn't make any additional accounts.
+            (0, _) => (),
 
-            println!("Additional accounts written to {}.", accounts_file.display().to_string().yellow());
-        } else if self.additional_accounts > 0 {
-            println!("Additional accounts (each given {} balance):", self.additional_accounts_balance);
-            for (addr, (key, _)) in accounts {
-                println!("\t{}: {}", addr.to_string().yellow(), key.to_string().cyan());
+            // Write the accounts JSON file.
+            (_, Some(accounts_file)) => {
+                let file = fs::File::options().append(false).create(true).write(true).open(&accounts_file)?;
+                serde_json::to_writer_pretty(file, &accounts)?;
+
+                println!("Additional accounts written to {}.", accounts_file.display().to_string().yellow());
+            }
+
+            // Write the accounts to stdout if no file was passed.
+            (_, None) => {
+                println!("Additional accounts (each given {} balance):", self.additional_accounts_balance);
+                for (addr, (key, _)) in accounts {
+                    println!("\t{}: {}", addr.to_string().yellow(), key.to_string().cyan());
+                }
             }
         }
 
-        // Write the committee JSON file.
-        if let Some(committee_file) = self.committee_file {
-            let file = fs::File::options().append(false).create(true).write(true).open(&committee_file)?;
-            serde_json::to_writer_pretty(file, &committee_members)?;
+        // Display committee information if we generated it.
+        match (committee_members, self.committee_file) {
+            // file was passed
+            (Some(committee_members), Some(committee_file)) => {
+                let file = fs::File::options().append(false).create(true).write(true).open(&committee_file)?;
+                serde_json::to_writer_pretty(file, &committee_members)?;
 
-            println!("Generated committee written to {}.", committee_file.display().to_string().yellow());
-        } else {
-            println!("Generated committee:");
-            for (addr, (key, _)) in committee_members {
-                println!("\t{}: {}", addr.to_string().yellow(), key.to_string().cyan());
+                println!("Generated committee written to {}.", committee_file.display().to_string().yellow());
             }
+
+            // file was not passed
+            (Some(committee_members), None) => {
+                println!("Generated committee:");
+                for (addr, (key, _)) in committee_members {
+                    println!("\t{}: {}", addr.to_string().yellow(), key.to_string().cyan());
+                }
+            }
+
+            _ => (),
         }
 
         println!();

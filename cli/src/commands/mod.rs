@@ -37,10 +37,6 @@ pub use genesis::*;
 use anstyle::{AnsiColor, Color, Style};
 use anyhow::Result;
 use clap::{builder::Styles, Parser};
-use indexmap::IndexMap;
-use serde::{Deserialize, Serialize};
-use snarkvm::console::{network::MainnetV0, types::Address};
-use std::str::FromStr;
 
 const HEADER_COLOR: Option<Color> = Some(Color::Ansi(AnsiColor::Yellow));
 const LITERAL_COLOR: Option<Color> = Some(Color::Ansi(AnsiColor::Green));
@@ -58,16 +54,6 @@ pub struct CLI {
     /// Specify a subcommand.
     #[clap(subcommand)]
     pub command: Command,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
-pub struct Balances(IndexMap<Address<MainnetV0>, u64>);
-impl FromStr for Balances {
-    type Err = serde_json::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        serde_json::from_str(s)
-    }
 }
 
 #[derive(Debug, Parser)]
