@@ -71,7 +71,7 @@ pub enum Command {
     #[clap(name = "genesis")]
     Genesis(Genesis),
     #[clap(subcommand)]
-    Ledger(ledger::LedgerCommands),
+    Ledger(ledger::Commands),
 }
 
 impl Command {
@@ -84,7 +84,7 @@ impl Command {
             Self::Start(command) => command.parse(),
             Self::Update(command) => command.parse(),
             Self::Genesis(command) => command.parse(),
-            Self::Ledger(_ledger::Command { command }) => command.parse(),
+            Self::Ledger(command) => command.parse(),
         }
     }
 }
