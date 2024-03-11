@@ -145,8 +145,15 @@ impl Genesis {
         // Add additional accounts to the public balances
         let accounts = (0..self.additional_accounts)
             .map(|_| {
-                let key = PrivateKey::<MainnetV0>::new(&mut rng)?;
-                let addr = Address::try_from(&key)?;
+                // Repeatedly regenerate key/addresses, ensuring they are not in `bonded_balances`.
+                let (key, addr) = loop {
+                    let key = PrivateKey::<MainnetV0>::new(&mut rng)?;
+                    let addr = Address::try_from(&key)?;
+                    if !bonded_balances.contains_key(&addr) {
+                        break (key, addr);
+                    }
+                };
+
                 public_balances.insert(addr, self.additional_accounts_balance);
                 Ok((addr, (key, self.additional_accounts_balance)))
             })
