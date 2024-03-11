@@ -75,12 +75,6 @@ pub struct Genesis {
 
 impl Genesis {
     pub fn parse(self) -> Result<String> {
-        ensure!(
-            self.bonded_balance >= MIN_VALIDATOR_STAKE,
-            "Validator stake is too low: {} < {MIN_VALIDATOR_STAKE}",
-            self.bonded_balance
-        );
-
         let mut rng = ChaChaRng::seed_from_u64(self.seed.unwrap_or(DEVELOPMENT_MODE_RNG_SEED));
 
         // Generate a genesis key if one was not passed.
@@ -98,26 +92,29 @@ impl Genesis {
                     "The genesis address should be present in the passed-in bonded balances."
                 );
 
-                let (bonded_balances, members): (
-                    IndexMap<Address<_>, (Address<_>, u64)>,
-                    IndexMap<Address<_>, (u64, bool)>,
-                ) = balances
-                    .0
-                    .iter()
-                    .map(|(&addr, &balance)| {
-                        (
-                            // bonded_balances
-                            (addr, (addr, balance)),
-                            // members
-                            (addr, (balance, true)),
-                        )
-                    })
-                    .unzip();
+                let mut bonded_balances = IndexMap::with_capacity(self.committee_size as usize);
+                let mut members = IndexMap::with_capacity(self.committee_size as usize);
+
+                for (addr, balance) in &balances.0 {
+                    ensure!(
+                        balance >= &MIN_VALIDATOR_STAKE,
+                        "Validator stake is too low: {balance} < {MIN_VALIDATOR_STAKE}",
+                    );
+
+                    bonded_balances.insert(*addr, (*addr, *balance));
+                    members.insert(*addr, (*balance, true));
+                }
 
                 (None, bonded_balances, members, balances.0)
             }
 
             None => {
+                ensure!(
+                    self.bonded_balance >= MIN_VALIDATOR_STAKE,
+                    "Validator stake is too low: {} < {MIN_VALIDATOR_STAKE}",
+                    self.bonded_balance
+                );
+
                 let mut committee_members = IndexMap::with_capacity(self.committee_size as usize);
                 let mut bonded_balances = IndexMap::with_capacity(self.committee_size as usize);
                 let mut members = IndexMap::with_capacity(self.committee_size as usize);

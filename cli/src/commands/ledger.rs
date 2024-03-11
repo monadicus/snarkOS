@@ -31,7 +31,9 @@ use snarkvm::{
     ledger::{
         query::Query,
         store::{helpers::rocksdb::ConsensusDB, ConsensusStorage},
-        Block, Ledger, Transaction,
+        Block,
+        Ledger,
+        Transaction,
     },
     synthesizer::{process::execution_cost, VM},
     utilities::FromBytes,
