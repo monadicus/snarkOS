@@ -57,16 +57,13 @@ pub fn open_ledger<N: Network, C: ConsensusStorage<N>>(
 pub fn make_transaction_proof<N: Network, C: ConsensusStorage<N>, A: Aleo<Network = N>>(
     vm: &VM<N, C>,
     address: Address<N>,
-    amount: u32,
+    amount_microcredits: u64,
     private_key: PrivateKey<N>,
     private_key_fee: Option<PrivateKey<N>>,
 ) -> Result<Transaction<N>> {
     let rng = &mut rand::thread_rng();
 
     let query = Query::from(vm.block_store());
-
-    // // convert amount to microcredits
-    let amount_microcredits: u64 = (amount as u64) * 1_000_000;
 
     // fee key falls back to the private key
     let private_key_fee = private_key_fee.unwrap_or(private_key);
@@ -113,32 +110,7 @@ pub fn make_transaction_proof<N: Network, C: ConsensusStorage<N>, A: Aleo<Networ
     Transaction::<N>::from_execution(execution, Some(fee))
 }
 
-pub fn _add_block<N: Network, A: Aleo<Network = N>, R: Rng + CryptoRng>(
-    ledger: &Ledger<N, ConsensusDB<N>>,
-    (acc1, acc2): (PrivateKey<N>, PrivateKey<N>),
-    rng: &mut R,
-) -> Result<()> {
-    // let (acc1, acc2) = accounts.two_random_accounts(rng);
-
-    let addr1 = Address::try_from(acc1)?;
-    let addr2 = Address::try_from(acc2)?;
-    let amt_to_send = rng.gen_range(10_000..get_balance(addr1, ledger)?);
-    println!("Sending {amt_to_send} from {} to {}", addr1, addr2);
-
-    let tx = make_transaction_proof::<_, _, A>(ledger.vm(), addr1, amt_to_send, acc2, None)?;
-    let target_block = ledger.prepare_advance_to_next_beacon_block(&acc1, vec![], vec![], vec![tx], rng)?;
-
-    println!("Generated block hash: {}", target_block.hash());
-    println!("New block height: {}", target_block.height());
-    println!("New block solutions: {:?}", target_block.solutions());
-
-    // Insert the block into the ledger's block store
-    ledger.advance_to_next_block(&target_block)?;
-
-    Ok(())
-}
-
-pub fn get_balance<N: Network>(addr: Address<N>, ledger: &Ledger<N, ConsensusDB<N>>) -> Result<u32> {
+pub fn get_balance<N: Network>(addr: Address<N>, ledger: &Ledger<N, ConsensusDB<N>>) -> Result<u64> {
     let balance = ledger.vm().finalize_store().get_value_confirmed(
         ProgramID::try_from("credits.aleo")?,
         Identifier::try_from("account")?,
@@ -146,7 +118,7 @@ pub fn get_balance<N: Network>(addr: Address<N>, ledger: &Ledger<N, ConsensusDB<
     )?;
 
     match balance {
-        Some(Value::Plaintext(Plaintext::Literal(Literal::U64(balance), _))) => Ok((*balance / 1_000_000).try_into()?),
+        Some(Value::Plaintext(Plaintext::Literal(Literal::U64(balance), _))) => Ok(*balance),
         None => bail!("No balance found for address: {addr}"),
         _ => unreachable!(),
     }

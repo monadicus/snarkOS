@@ -12,12 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{fs, path::PathBuf, str::FromStr};
+use std::{fs, ops::Deref, path::PathBuf, str::FromStr};
 
 use anyhow::{ensure, Result};
 use clap::{Args, Subcommand};
-use rand::SeedableRng;
+use rand::{seq::SliceRandom, thread_rng, CryptoRng, Rng, SeedableRng};
 use rand_chacha::ChaChaRng;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::Deserialize;
 use snarkvm::{
     circuit::AleoV0,
@@ -41,7 +42,7 @@ pub struct Command {
 pub struct TxOperation {
     from: PrivateKey<Network>,
     to: Address<Network>,
-    amount: u32,
+    amount: u64,
 }
 
 impl FromStr for TxOperation {
@@ -49,6 +50,34 @@ impl FromStr for TxOperation {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         serde_json::from_str(s)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PrivateKeys(Vec<PrivateKey<Network>>);
+impl FromStr for PrivateKeys {
+    type Err = <PrivateKey<Network> as FromStr>::Err;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self(s.split(',').map(PrivateKey::<Network>::from_str).collect::<Result<Vec<_>>>()?))
+    }
+}
+
+impl Deref for PrivateKeys {
+    type Target = Vec<PrivateKey<Network>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl PrivateKeys {
+    /// Returns a random 2 or 3 private keys.
+    fn random_accounts<R: Rng + CryptoRng>(&self, rng: &mut R) -> Vec<PrivateKey<Network>> {
+        let num = rng.gen_range(2..=3);
+        let chosen = self.0.choose_multiple(rng, num);
+
+        chosen.copied().collect()
     }
 }
 
@@ -72,6 +101,27 @@ pub enum Commands {
         #[arg(required = true, short, long)]
         output: PathBuf,
     },
+    AddRandom {
+        #[arg(required = true, short, long, default_value = "./genesis.block")]
+        genesis: PathBuf,
+        #[arg(required = true, short, long)]
+        ledger: PathBuf,
+        #[arg(long)]
+        block_private_key: Option<PrivateKey<Network>>,
+        #[arg(required = true, long)]
+        private_keys: PrivateKeys,
+        #[arg(short, long, default_value_t = 5)]
+        num_blocks: u8,
+        /// Minimum number of transactions per block.
+        #[arg(long, default_value_t = 128)]
+        min_per_block: usize,
+        /// Maximumnumber of transactions per block.
+        #[arg(long, default_value_t = 1024)]
+        max_per_block: usize,
+        /// Maximum transaction credit transfer. If unspecified, maximum is entire account balance.
+        #[arg(long)]
+        max_tx_credits: Option<u64>,
+    },
     Add {
         /// A path to the genesis block to initialize the ledger from.
         #[arg(required = true, short, long, default_value = "./genesis.block")]
@@ -81,13 +131,13 @@ pub enum Commands {
         ledger: PathBuf,
         /// The private key to use when generating the block.
         #[arg(name = "private-key", long)]
-        private_key: PrivateKey<Network>,
+        private_key: Option<PrivateKey<Network>>,
         /// The number of transactions to add per block.
         #[arg(name = "txns-per-block", long)]
-        txns_per_block: Option<usize>,
+        txs_per_block: Option<usize>,
         /// The transactions file to read from. Should have been generated with `snarkos ledger tx`.
         #[arg(name = "txns-file")]
-        txns_file: PathBuf,
+        txs_file: PathBuf,
     },
     View {
         /// A path to the genesis block to initialize the ledger from.
@@ -136,21 +186,105 @@ impl Commands {
                 Ok(format!("Wrote {} transactions to {}.", txns.len(), output.display()))
             }
 
-            Commands::Add { genesis, ledger, private_key, txns_per_block, txns_file } => {
+            Commands::AddRandom {
+                genesis,
+                ledger,
+                block_private_key,
+                private_keys,
+                num_blocks,
+                min_per_block,
+                max_per_block,
+                max_tx_credits,
+            } => {
+                let mut rng = ChaChaRng::from_entropy();
+
+                let ledger = util::open_ledger::<Network, Db>(genesis, ledger)?;
+
+                // TODO: do this for each block?
+                let block_private_key = match block_private_key {
+                    Some(key) => key,
+                    None => PrivateKey::<Network>::new(&mut rng)?,
+                };
+
+                let max_transactions = VM::<Network, Db>::MAXIMUM_CONFIRMED_TRANSACTIONS;
+
+                ensure!(
+                    min_per_block <= max_transactions,
+                    "minimum is above max block txns (max is {max_transactions})"
+                );
+
+                ensure!(
+                    max_per_block <= max_transactions,
+                    "maximum is above max block txns (max is {max_transactions})"
+                );
+
+                let mut total_txs = 0;
+                let mut gen_txs = 0;
+
+                for _ in 0..num_blocks {
+                    let num_tx_per_block = rng.gen_range(min_per_block..=max_per_block);
+                    total_txs += num_tx_per_block;
+
+                    let txs = (0..num_tx_per_block)
+                        .into_par_iter()
+                        .map(|_| {
+                            let mut rng = ChaChaRng::from_rng(thread_rng())?;
+
+                            let keys = private_keys.random_accounts(&mut rng);
+
+                            let from = Address::try_from(keys[1])?;
+                            let amount = match max_tx_credits {
+                                Some(amount) => rng.gen_range(1..amount),
+                                None => rng.gen_range(1..util::get_balance(from, &ledger)?),
+                            };
+
+                            let to = Address::try_from(keys[0])?;
+
+                            util::make_transaction_proof::<_, _, AleoV0>(
+                                ledger.vm(),
+                                to,
+                                amount,
+                                keys[1],
+                                keys.get(2).copied(),
+                            )
+                        })
+                        .filter_map(Result::ok)
+                        .collect::<Vec<_>>();
+
+                    gen_txs += txs.len();
+                    let target_block = ledger.prepare_advance_to_next_beacon_block(
+                        &block_private_key,
+                        vec![],
+                        vec![],
+                        txs,
+                        &mut rng,
+                    )?;
+
+                    ledger.advance_to_next_block(&target_block)?;
+                }
+
+                Ok(format!("Generated {gen_txs} transactions ({} failed)", total_txs - gen_txs))
+            }
+
+            Commands::Add { genesis, ledger, private_key, txs_per_block, txs_file } => {
                 let mut rng = ChaChaRng::from_entropy();
 
                 let ledger = util::open_ledger::<Network, Db>(genesis, ledger)?;
 
                 // Ensure we aren't trying to stick too many transactions into a block
                 let per_block_max = VM::<Network, Db>::MAXIMUM_CONFIRMED_TRANSACTIONS;
-                let per_block = txns_per_block.unwrap_or(per_block_max);
+                let per_block = txs_per_block.unwrap_or(per_block_max);
                 ensure!(per_block <= per_block_max, "too many transactions per block (max is {})", per_block_max);
 
                 // Load the transactions
-                let txns: Vec<Transaction<MainnetV0>> = serde_json::from_reader(fs::File::open(txns_file)?)?;
+                let txns: Vec<Transaction<MainnetV0>> = serde_json::from_reader(fs::File::open(txs_file)?)?;
 
+                let pk = match private_key {
+                    Some(pk) => pk,
+                    None => PrivateKey::new(&mut rng)?,
+                };
                 // Add the appropriate number of blocks
-                let block_count = util::add_transaction_blocks(&ledger, private_key, &txns, per_block, &mut rng)?;
+                let block_count = util::add_transaction_blocks(&ledger, pk, &txns, per_block, &mut rng)?;
 
                 Ok(format!("Inserted {block_count} blocks into the ledger."))
             }
