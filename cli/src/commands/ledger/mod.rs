@@ -26,6 +26,8 @@ use snarkvm::{
     ledger::{store::helpers::rocksdb::ConsensusDB, Transaction},
     synthesizer::VM,
 };
+use tracing::{span, Level};
+use tracing_subscriber::layer::SubscriberExt;
 
 mod util;
 
@@ -34,8 +36,16 @@ type Db = ConsensusDB<Network>;
 
 #[derive(Debug, Args)]
 pub struct Command {
+    #[arg(long)]
+    pub enable_profiling: bool,
     #[command(subcommand)]
     pub command: Commands,
+}
+
+impl Command {
+    pub fn parse(self) -> Result<String> {
+        self.command.parse(self.enable_profiling)
+    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -162,7 +172,20 @@ pub enum Commands {
 }
 
 impl Commands {
-    pub fn parse(self) -> Result<String> {
+    pub fn parse(self, enable_profiling: bool) -> Result<String> {
+        // Initialize logging.
+        let fmt_layer = tracing_subscriber::fmt::Layer::default();
+
+        let (flame_layer, _guard) = if enable_profiling {
+            let (flame_layer, guard) = tracing_flame::FlameLayer::with_file("./tracing.folded").unwrap();
+            (Some(flame_layer), Some(guard))
+        } else {
+            (None, None)
+        };
+
+        let subscriber = tracing_subscriber::registry::Registry::default().with(fmt_layer).with(flame_layer);
+        tracing::subscriber::set_global_default(subscriber).unwrap();
+
         match self {
             Commands::Init { genesis, output } => {
                 let ledger = util::open_ledger::<Network, Db>(genesis, output)?;
@@ -174,9 +197,11 @@ impl Commands {
             Commands::Tx { genesis, ledger, operations, output } => {
                 let ledger = util::open_ledger::<Network, Db>(genesis, ledger)?;
 
+                let tx_span = span!(Level::INFO, "transaction proof");
                 let txns = operations
                     .into_iter()
                     .map(|op| {
+                        let _enter = tx_span.enter();
                         util::make_transaction_proof::<_, _, AleoV0>(ledger.vm(), op.to, op.amount, op.from, None)
                     })
                     .collect::<Result<Vec<_>>>()?;
@@ -225,9 +250,12 @@ impl Commands {
                     let num_tx_per_block = rng.gen_range(min_per_block..=max_per_block);
                     total_txs += num_tx_per_block;
 
+                    let tx_span = span!(Level::INFO, "tx generation");
                     let txs = (0..num_tx_per_block)
                         .into_par_iter()
                         .map(|_| {
+                            let _enter = tx_span.enter();
+
                             let mut rng = ChaChaRng::from_rng(thread_rng())?;
 
                             let keys = private_keys.random_accounts(&mut rng);
@@ -239,6 +267,9 @@ impl Commands {
                             };
 
                             let to = Address::try_from(keys[0])?;
+
+                            let proof_span = span!(Level::INFO, "tx generation proof");
+                            let _enter = proof_span.enter();
 
                             util::make_transaction_proof::<_, _, AleoV0>(
                                 ledger.vm(),
@@ -283,8 +314,11 @@ impl Commands {
                     Some(pk) => pk,
                     None => PrivateKey::new(&mut rng)?,
                 };
+
                 // Add the appropriate number of blocks
+                let tx_blocks_span = span!(Level::INFO, "tx into blocks").entered();
                 let block_count = util::add_transaction_blocks(&ledger, pk, &txns, per_block, &mut rng)?;
+                tx_blocks_span.exit();
 
                 Ok(format!("Inserted {block_count} blocks into the ledger."))
             }

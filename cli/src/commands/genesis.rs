@@ -188,7 +188,9 @@ impl Genesis {
         }
 
         // Construct the genesis block.
+        let compute_span = tracing::span!(tracing::Level::ERROR, "compute span").entered();
         let block = load_or_compute_genesis(genesis_key, committee, public_balances, bonded_balances, &mut rng)?;
+        compute_span.exit();
 
         println!();
 

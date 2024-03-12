@@ -45,6 +45,7 @@ pub fn write_json_to<T: Serialize>(to: &Path, t: &T) -> Result<()> {
     Ok(())
 }
 
+#[tracing::instrument]
 pub fn open_ledger<N: Network, C: ConsensusStorage<N>>(
     genesis_path: PathBuf,
     ledger_path: PathBuf,

@@ -70,8 +70,8 @@ pub enum Command {
     Update(Update),
     #[clap(name = "genesis")]
     Genesis(Genesis),
-    #[clap(subcommand)]
-    Ledger(ledger::Commands),
+    #[clap(name = "ledger")]
+    Ledger(ledger::Command),
 }
 
 impl Command {
