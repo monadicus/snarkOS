@@ -14,6 +14,7 @@
 
 use std::{fs, path::PathBuf, str::FromStr};
 
+use aleo_std::StorageMode;
 use anyhow::{ensure, Result};
 use clap::Parser;
 use colored::Colorize;
@@ -23,7 +24,11 @@ use rand_chacha::ChaChaRng;
 use serde::{Deserialize, Serialize};
 use snarkvm::{
     console::{account::PrivateKey, network::MainnetV0, program::Network, types::Address},
-    ledger::committee::{Committee, MIN_VALIDATOR_STAKE},
+    ledger::{
+        committee::{Committee, MIN_VALIDATOR_STAKE},
+        store::helpers::rocksdb::ConsensusDB,
+        Ledger,
+    },
     utilities::ToBytes,
 };
 
@@ -71,6 +76,9 @@ pub struct Genesis {
     /// A place to optionally write out the generated committee private keys JSON.
     #[clap(name = "committee-file", long)]
     committee_file: Option<PathBuf>,
+    /// Optionally initialize a ledger as well.
+    #[clap(name = "ledger", long)]
+    ledger: Option<PathBuf>,
 }
 
 impl Genesis {
@@ -245,6 +253,12 @@ impl Genesis {
             }
 
             _ => (),
+        }
+
+        // Initialize the ledger if a path was given.
+        if let Some(ledger) = self.ledger {
+            Ledger::<_, ConsensusDB<_>>::load(block.to_owned(), StorageMode::Custom(ledger.to_owned()))?;
+            println!("Initialized a ledger at {}.", ledger.display().to_string().yellow());
         }
 
         println!();
