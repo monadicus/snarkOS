@@ -16,7 +16,7 @@ use std::{ops::Deref, path::PathBuf, str::FromStr};
 
 use anyhow::{ensure, Result};
 use clap::{Args, Subcommand};
-use indicatif::{ParallelProgressIterator, ProgressIterator};
+use indicatif::{ParallelProgressIterator, ProgressBar, ProgressIterator};
 use rand::{seq::SliceRandom, thread_rng, CryptoRng, Rng, SeedableRng};
 use rand_chacha::ChaChaRng;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -24,7 +24,10 @@ use serde::Deserialize;
 use snarkvm::{
     circuit::AleoV0,
     console::{account::PrivateKey, network::MainnetV0, types::Address},
-    ledger::{store::helpers::rocksdb::ConsensusDB, Transaction},
+    ledger::{
+        store::helpers::{memory::ConsensusMemory, rocksdb::ConsensusDB},
+        Transaction,
+    },
     synthesizer::VM,
 };
 use tracing::{span, Level};
@@ -225,15 +228,17 @@ impl Commands {
             }
 
             Commands::Tx { genesis, ledger, operations } => {
-                let ledger = util::open_ledger::<Network, Db>(genesis, ledger)?;
+                // load the ledger into memory
+                // the secret sauce is `ConsensusMemory`, which tells snarkvm to keep the ledger in memory only
+                let ledger = util::open_ledger::<Network, ConsensusMemory<Network>>(genesis, ledger)?;
 
-                let num_txs = operations.0.len();
+                let progress_bar = ProgressBar::new(operations.0.len() as u64);
+                progress_bar.tick();
+
                 let gen_txs = operations
                     .0
                     // rayon for free parallelism
                     .into_par_iter()
-                    // progress bar
-                    .progress_count(num_txs as u64)
                     // generate proofs
                     .map(|op| {
                         util::make_transaction_proof::<_, _, AleoV0>(ledger.vm(), op.to, op.amount, op.from, None)
@@ -242,6 +247,8 @@ impl Commands {
                     .filter_map(Result::ok)
                     // print each transaction to stdout
                     .inspect(|proof| println!("{}", serde_json::to_string(&proof).expect("serialize proof")))
+                    // progress bar
+                    .progress_with(progress_bar)
                     // take the count of succeeeded proofs
                     .count();
 

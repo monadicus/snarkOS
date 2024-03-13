@@ -21,6 +21,28 @@ OPERATIONS=$(jq -r -n \
   --arg addr_2 $(addr 2) \
 '[
   { "from": $genesis_pk, "to": $addr_1, "amount": 500 },
+  { "from": $genesis_pk, "to": $addr_2, "amount": 500 },
+  { "from": $genesis_pk, "to": $addr_1, "amount": 500 },
+  { "from": $genesis_pk, "to": $addr_2, "amount": 500 },
+  { "from": $genesis_pk, "to": $addr_1, "amount": 500 },
+  { "from": $genesis_pk, "to": $addr_2, "amount": 500 },
+  { "from": $genesis_pk, "to": $addr_1, "amount": 500 },
+  { "from": $genesis_pk, "to": $addr_2, "amount": 500 },
+  { "from": $genesis_pk, "to": $addr_1, "amount": 500 },
+  { "from": $genesis_pk, "to": $addr_2, "amount": 500 },
+  { "from": $genesis_pk, "to": $addr_1, "amount": 500 },
+  { "from": $genesis_pk, "to": $addr_2, "amount": 500 },
+  { "from": $genesis_pk, "to": $addr_1, "amount": 500 },
+  { "from": $genesis_pk, "to": $addr_2, "amount": 500 },
+  { "from": $genesis_pk, "to": $addr_1, "amount": 500 },
+  { "from": $genesis_pk, "to": $addr_2, "amount": 500 },
+  { "from": $genesis_pk, "to": $addr_1, "amount": 500 },
+  { "from": $genesis_pk, "to": $addr_2, "amount": 500 },
+  { "from": $genesis_pk, "to": $addr_1, "amount": 500 },
+  { "from": $genesis_pk, "to": $addr_2, "amount": 500 },
+  { "from": $genesis_pk, "to": $addr_1, "amount": 500 },
+  { "from": $genesis_pk, "to": $addr_2, "amount": 500 },
+  { "from": $genesis_pk, "to": $addr_1, "amount": 500 },
   { "from": $genesis_pk, "to": $addr_2, "amount": 500 }
 ]')
 
