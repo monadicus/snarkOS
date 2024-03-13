@@ -1458,6 +1458,7 @@ dependencies = [
  "instant",
  "number_prefix",
  "portable-atomic",
+ "rayon",
  "unicode-width",
 ]
 
@@ -2984,6 +2985,7 @@ dependencies = [
  "colored",
  "crossterm",
  "indexmap 2.2.3",
+ "indicatif",
  "nix",
  "num_cpus",
  "parking_lot",

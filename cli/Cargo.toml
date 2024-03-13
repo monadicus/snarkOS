@@ -45,6 +45,10 @@ version = "0.27"
 version = "2.1"
 features = [ "serde", "rayon" ]
 
+[dependencies.indicatif]
+version = "0.17"
+features = [ "rayon" ]
+
 [dependencies.metrics]
 package = "snarkos-node-metrics"
 path = "../node/metrics"

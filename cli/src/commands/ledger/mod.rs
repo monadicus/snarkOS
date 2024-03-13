@@ -12,10 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{fs, ops::Deref, path::PathBuf, str::FromStr};
+use std::{ops::Deref, path::PathBuf, str::FromStr};
 
 use anyhow::{ensure, Result};
 use clap::{Args, Subcommand};
+use indicatif::ParallelProgressIterator;
 use rand::{seq::SliceRandom, thread_rng, CryptoRng, Rng, SeedableRng};
 use rand_chacha::ChaChaRng;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -112,8 +113,6 @@ pub enum Commands {
         ledger: PathBuf,
         #[arg(required = true, long)]
         operations: TxOperations,
-        #[arg(required = true, short, long)]
-        output: PathBuf,
     },
     AddRandom {
         #[arg(required = true, short, long, default_value = "./genesis.block")]
@@ -147,11 +146,8 @@ pub enum Commands {
         #[arg(name = "private-key", long)]
         private_key: Option<PrivateKey<Network>>,
         /// The number of transactions to add per block.
-        #[arg(name = "txns-per-block", long)]
+        #[arg(name = "txs-per-block", long)]
         txs_per_block: Option<usize>,
-        /// The transactions file to read from. Should have been generated with `snarkos ledger tx`.
-        #[arg(name = "txns-file")]
-        txs_file: PathBuf,
     },
     View {
         /// A path to the genesis block to initialize the ledger from.
@@ -178,7 +174,7 @@ pub enum Commands {
 impl Commands {
     pub fn parse(self, enable_profiling: bool) -> Result<String> {
         // Initialize logging.
-        let fmt_layer = tracing_subscriber::fmt::Layer::default();
+        let fmt_layer = tracing_subscriber::fmt::Layer::default().with_writer(std::io::stderr);
 
         let (flame_layer, _guard) = if enable_profiling {
             let (flame_layer, guard) = tracing_flame::FlameLayer::with_file("./tracing.folded").unwrap();
@@ -198,22 +194,29 @@ impl Commands {
                 Ok(format!("Ledger written, genesis block hash: {}", genesis_block.hash()))
             }
 
-            Commands::Tx { genesis, ledger, operations, output } => {
+            Commands::Tx { genesis, ledger, operations } => {
                 let ledger = util::open_ledger::<Network, Db>(genesis, ledger)?;
 
-                let tx_span = span!(Level::INFO, "transaction proof");
-                let txns = operations
+                let num_txs = operations.0.len();
+                let gen_txs = operations
                     .0
-                    .into_iter()
+                    // rayon for free parallelism
+                    .into_par_iter()
+                    // progress bar
+                    .progress_count(num_txs as u64)
+                    // generate proofs
                     .map(|op| {
-                        let _enter = tx_span.enter();
                         util::make_transaction_proof::<_, _, AleoV0>(ledger.vm(), op.to, op.amount, op.from, None)
                     })
-                    .collect::<Result<Vec<_>>>()?;
+                    // discard failed transactions
+                    .filter_map(Result::ok)
+                    // print each transaction to stdout
+                    .inspect(|proof| println!("{}", serde_json::to_string(&proof).expect("serialize proof")))
+                    // take the count of succeeeded proofs
+                    .count();
 
-                util::write_json_to(&output, &txns)?;
-
-                Ok(format!("Wrote {} transactions to {}.", txns.len(), output.display()))
+                eprintln!("Wrote {} transactions.", gen_txs);
+                Ok(String::from(""))
             }
 
             Commands::AddRandom {
@@ -240,12 +243,12 @@ impl Commands {
 
                 ensure!(
                     min_per_block <= max_transactions,
-                    "minimum is above max block txns (max is {max_transactions})"
+                    "minimum is above max block txs (max is {max_transactions})"
                 );
 
                 ensure!(
                     max_per_block <= max_transactions,
-                    "maximum is above max block txns (max is {max_transactions})"
+                    "maximum is above max block txs (max is {max_transactions})"
                 );
 
                 let mut total_txs = 0;
@@ -258,6 +261,7 @@ impl Commands {
                     let tx_span = span!(Level::INFO, "tx generation");
                     let txs = (0..num_tx_per_block)
                         .into_par_iter()
+                        .progress_count(num_tx_per_block as u64)
                         .map(|_| {
                             let _enter = tx_span.enter();
 
@@ -302,7 +306,7 @@ impl Commands {
                 Ok(format!("Generated {gen_txs} transactions ({} failed)", total_txs - gen_txs))
             }
 
-            Commands::Add { genesis, ledger, private_key, txs_per_block, txs_file } => {
+            Commands::Add { genesis, ledger, private_key, txs_per_block } => {
                 let mut rng = ChaChaRng::from_entropy();
 
                 let ledger = util::open_ledger::<Network, Db>(genesis, ledger)?;
@@ -312,20 +316,79 @@ impl Commands {
                 let per_block = txs_per_block.unwrap_or(per_block_max);
                 ensure!(per_block <= per_block_max, "too many transactions per block (max is {})", per_block_max);
 
-                // Load the transactions
-                let txns: Vec<Transaction<MainnetV0>> = serde_json::from_reader(fs::File::open(txs_file)?)?;
-
-                let pk = match private_key {
+                // Get the block private key
+                let private_key = match private_key {
                     Some(pk) => pk,
                     None => PrivateKey::new(&mut rng)?,
                 };
 
-                // Add the appropriate number of blocks
-                let tx_blocks_span = span!(Level::INFO, "tx into blocks").entered();
-                let block_count = util::add_transaction_blocks(&ledger, pk, &txns, per_block, &mut rng)?;
-                tx_blocks_span.exit();
+                // Stdin line buffer
+                let mut buf = String::new();
 
-                Ok(format!("Inserted {block_count} blocks into the ledger."))
+                // Transaction buffer
+                let mut tx_buf: Vec<Transaction<Network>> = Vec::with_capacity(per_block);
+
+                // Macro to commit a block into the buffer
+                // This can't trivially be a closure because of... you guessed it... the borrow checker
+                let mut num_blocks = 0;
+                macro_rules! commit_block {
+                    () => {
+                        let buf_size = tx_buf.len();
+                        let block = util::add_block_with_transactions(
+                            &ledger,
+                            private_key,
+                            std::mem::replace(&mut tx_buf, Vec::with_capacity(per_block)),
+                            &mut rng,
+                        )?;
+
+                        println!(
+                            "Inserted a block with {buf_size} transactions to the ledger (hash: {})",
+                            block.hash()
+                        );
+                        num_blocks += 1;
+                    };
+                }
+
+                loop {
+                    // Clear the buffer
+                    buf.clear();
+
+                    // Read a line, and match on how many characters we read
+                    match std::io::stdin().read_line(&mut buf)? {
+                        // We've reached EOF
+                        0 => {
+                            if !tx_buf.is_empty() {
+                                commit_block!();
+                            }
+                            break;
+                        }
+
+                        // Not at EOF
+                        _ => {
+                            // Remove newline from buffer
+                            buf.pop();
+
+                            // Skip if buffer is now empty
+                            if buf.is_empty() {
+                                continue;
+                            }
+
+                            // Deserialize the transaction
+                            let Ok(tx) = serde_json::from_str(&buf) else {
+                                eprintln!("Failed to deserialize transaction: {buf}");
+                                continue;
+                            };
+
+                            // Commit if the buffer is now big enough
+                            tx_buf.push(tx);
+                            if tx_buf.len() >= per_block {
+                                commit_block!();
+                            }
+                        }
+                    }
+                }
+
+                Ok(format!("Inserted {num_blocks} blocks into the ledger"))
             }
 
             Commands::View { genesis, ledger, block_height } => {

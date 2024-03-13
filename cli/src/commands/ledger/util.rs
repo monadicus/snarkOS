@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![allow(dead_code)]
+
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -123,6 +125,17 @@ pub fn get_balance<N: Network>(addr: Address<N>, ledger: &Ledger<N, ConsensusDB<
         None => bail!("No balance found for address: {addr}"),
         _ => unreachable!(),
     }
+}
+
+pub fn add_block_with_transactions<N: Network, S: ConsensusStorage<N>, R: Rng + CryptoRng>(
+    ledger: &Ledger<N, S>,
+    private_key: PrivateKey<N>,
+    transactions: Vec<Transaction<N>>,
+    rng: &mut R,
+) -> Result<Block<N>> {
+    let block = ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], transactions, rng)?;
+    ledger.advance_to_next_block(&block)?;
+    Ok(block)
 }
 
 pub fn add_transaction_blocks<N: Network, S: ConsensusStorage<N>, R: Rng + CryptoRng>(
