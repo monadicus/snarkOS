@@ -16,7 +16,7 @@ use std::{ops::Deref, path::PathBuf, str::FromStr};
 
 use anyhow::{ensure, Result};
 use clap::{Args, Subcommand};
-use indicatif::ParallelProgressIterator;
+use indicatif::{ParallelProgressIterator, ProgressIterator};
 use rand::{seq::SliceRandom, thread_rng, CryptoRng, Rng, SeedableRng};
 use rand_chacha::ChaChaRng;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -29,6 +29,8 @@ use snarkvm::{
 };
 use tracing::{span, Level};
 use tracing_subscriber::layer::SubscriberExt;
+
+use self::util::{add_transaction_blocks, make_transaction_proof};
 
 mod util;
 
@@ -68,22 +70,39 @@ impl FromStr for TxOperations {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct PrivateKeys(Vec<PrivateKey<Network>>);
-impl FromStr for PrivateKeys {
-    type Err = <PrivateKey<Network> as FromStr>::Err;
+// Helper macro for making clap args that are comma-separated
+macro_rules! comma_separated {
+    { $name:ident ( $item:ty ) ; } => {
+        #[derive(Debug, Clone)]
+        pub struct $name(Vec<$item>);
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Self(s.split(',').map(PrivateKey::<Network>::from_str).collect::<Result<Vec<_>>>()?))
-    }
+        impl FromStr for $name {
+            type Err = <$item as FromStr>::Err;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                Ok(Self(s.split(',').map(<$item>::from_str).collect::<Result<Vec<_>>>()?))
+            }
+        }
+
+        impl Deref for $name {
+            type Target = Vec<$item>;
+
+            fn deref(&self) -> &Self::Target {
+                &self.0
+            }
+        }
+    };
+
+    // Tail recursion for extra types
+    { $name:ident ( $item:ty ) ; $( $name2:ident ( $item2:ty ) ; )+ } => {
+        comma_separated! { $name ( $item ) ; }
+        comma_separated! { $($name2 ( $item2 ) ;)+ }
+    };
 }
 
-impl Deref for PrivateKeys {
-    type Target = Vec<PrivateKey<Network>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
+comma_separated! {
+    PrivateKeys(PrivateKey<Network>);
+    Accounts(Address<Network>);
 }
 
 impl PrivateKeys {
@@ -168,6 +187,17 @@ pub enum Commands {
         ledger: PathBuf,
         /// The address's balance to view.
         address: String,
+    },
+    Distribute {
+        /// A path to the genesis block to initialize the ledger from.
+        #[arg(required = true, short, long, default_value = "./genesis.block")]
+        genesis: PathBuf,
+        /// The ledger from which to view a block.
+        #[arg(required = true, short, long)]
+        ledger: PathBuf,
+        from: PrivateKey<Network>,
+        to: Accounts,
+        amount: u64,
     },
 }
 
@@ -403,6 +433,28 @@ impl Commands {
                 let addr = Address::<Network>::from_str(&address)?;
 
                 Ok(format!("{address} balance {}", util::get_balance(addr, &ledger)?))
+            }
+
+            Commands::Distribute { genesis, ledger, from, to, amount } => {
+                let ledger = util::open_ledger::<Network, Db>(genesis, ledger)?;
+                let mut rng = ChaChaRng::from_entropy();
+
+                let max_transactions = VM::<Network, Db>::MAXIMUM_CONFIRMED_TRANSACTIONS;
+                let per_account = amount / to.len() as u64;
+                let transactions = to
+                    .iter()
+                    .progress_count(to.len() as u64)
+                    .map(|addr| make_transaction_proof::<_, _, AleoV0>(&ledger.vm(), *addr, per_account, from, None))
+                    .filter_map(Result::ok)
+                    .collect::<Vec<_>>();
+
+                let num_blocks = add_transaction_blocks(&ledger, from, &transactions, max_transactions, &mut rng)?;
+
+                Ok(format!(
+                    "Created {num_blocks} from {} transactions ({} failed).",
+                    transactions.len(),
+                    to.len() - transactions.len()
+                ))
             }
         }
     }
