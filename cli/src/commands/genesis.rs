@@ -63,7 +63,7 @@ pub struct Genesis {
     #[clap(name = "seed", long)]
     seed: Option<u64>,
     /// The bonded balance each bonded address receives. Not used if `--bonded-balances` is passed.
-    #[clap(name = "bonded-balance", long, default_value_t = 1_000_000_000_000)]
+    #[clap(name = "bonded-balance", long, default_value_t = 10_000_000_000_000)]
     bonded_balance: u64,
     /// An optional map from address to bonded balance. Overrides `--bonded-balance` and `--committee-size`.
     #[clap(name = "bonded-balances", long)]

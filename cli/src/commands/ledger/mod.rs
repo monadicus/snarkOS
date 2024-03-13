@@ -55,7 +55,11 @@ pub struct TxOperation {
     amount: u64,
 }
 
-impl FromStr for TxOperation {
+#[derive(Debug, Clone, Deserialize)]
+/// This wrapper allows for '--operations=[{}, {}]' instead of '--operations {} --operations {}'
+pub struct TxOperations(pub Vec<TxOperation>);
+
+impl FromStr for TxOperations {
     type Err = serde_json::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -107,7 +111,7 @@ pub enum Commands {
         #[arg(required = true, short, long)]
         ledger: PathBuf,
         #[arg(required = true, long)]
-        operations: Vec<TxOperation>,
+        operations: TxOperations,
         #[arg(required = true, short, long)]
         output: PathBuf,
     },
@@ -199,6 +203,7 @@ impl Commands {
 
                 let tx_span = span!(Level::INFO, "transaction proof");
                 let txns = operations
+                    .0
                     .into_iter()
                     .map(|op| {
                         let _enter = tx_span.enter();
