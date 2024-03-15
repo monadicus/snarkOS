@@ -4051,6 +4051,7 @@ dependencies = [
  "aleo-std",
  "anyhow",
  "indexmap 2.2.3",
+ "itertools 0.11.0",
  "lru",
  "parking_lot",
  "rand",
