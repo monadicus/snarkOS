@@ -44,10 +44,9 @@ use snarkvm::{
 use aleo_std::StorageMode;
 use anyhow::Result;
 use core::future::Future;
-use parking_lot::Mutex;
 use std::{
     net::SocketAddr,
-    sync::{atomic::AtomicBool, Arc},
+    sync::{atomic::AtomicBool, Arc, Mutex},
 };
 use tokio::task::JoinHandle;
 
@@ -145,7 +144,7 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
         // Initialize the sync module.
         node.initialize_sync();
         // Initialize the notification message loop.
-        node.handles.lock().push(crate::start_notification_message_loop());
+        node.handles.lock().unwrap().push(crate::start_notification_message_loop());
         // Pass the node to the signal handler.
         let _ = signal_node.set(node.clone());
         // Return the node.
@@ -168,7 +167,7 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
     fn initialize_sync(&self) {
         // Start the sync loop.
         let node = self.clone();
-        self.handles.lock().push(tokio::spawn(async move {
+        self.handles.lock().unwrap().push(tokio::spawn(async move {
             loop {
                 // If the Ctrl-C handler registered the signal, stop the node.
                 if node.shutdown.load(std::sync::atomic::Ordering::Relaxed) {
@@ -186,7 +185,7 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
 
     /// Spawns a task with the given future; it should only be used for long-running tasks.
     pub fn spawn<T: Future<Output = ()> + Send + 'static>(&self, future: T) {
-        self.handles.lock().push(tokio::spawn(future));
+        self.handles.lock().unwrap().push(tokio::spawn(future));
     }
 }
 
@@ -202,7 +201,7 @@ impl<N: Network, C: ConsensusStorage<N>> NodeInterface<N> for Client<N, C> {
 
         // Abort the tasks.
         trace!("Shutting down the validator...");
-        self.handles.lock().iter().for_each(|handle| handle.abort());
+        self.handles.lock().unwrap().iter().for_each(|handle| handle.abort());
 
         // Shut down the router.
         self.router.shut_down().await;

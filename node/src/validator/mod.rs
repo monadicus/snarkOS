@@ -43,10 +43,9 @@ use snarkvm::prelude::{
 use aleo_std::StorageMode;
 use anyhow::Result;
 use core::future::Future;
-use parking_lot::Mutex;
 use std::{
     net::SocketAddr,
-    sync::{atomic::AtomicBool, Arc},
+    sync::{atomic::AtomicBool, Arc, Mutex},
     time::Duration,
 };
 use tokio::task::JoinHandle;
@@ -152,7 +151,7 @@ impl<N: Network, C: ConsensusStorage<N>> Validator<N, C> {
         // Initialize the routing.
         node.initialize_routing().await;
         // Initialize the notification message loop.
-        node.handles.lock().push(crate::start_notification_message_loop());
+        node.handles.lock().unwrap().push(crate::start_notification_message_loop());
         // Pass the node to the signal handler.
         let _ = signal_node.set(node.clone());
         // Return the node.
@@ -423,7 +422,7 @@ impl<N: Network, C: ConsensusStorage<N>> Validator<N, C> {
 
     /// Spawns a task with the given future; it should only be used for long-running tasks.
     pub fn spawn<T: Future<Output = ()> + Send + 'static>(&self, future: T) {
-        self.handles.lock().push(tokio::spawn(future));
+        self.handles.lock().unwrap().push(tokio::spawn(future));
     }
 }
 
@@ -439,7 +438,7 @@ impl<N: Network, C: ConsensusStorage<N>> NodeInterface<N> for Validator<N, C> {
 
         // Abort the tasks.
         trace!("Shutting down the validator...");
-        self.handles.lock().iter().for_each(|handle| handle.abort());
+        self.handles.lock().unwrap().iter().for_each(|handle| handle.abort());
 
         // Shut down the router.
         self.router.shut_down().await;

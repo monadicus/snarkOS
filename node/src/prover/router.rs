@@ -206,9 +206,9 @@ impl<N: Network, C: ConsensusStorage<N>> Inbound<N> for Prover<N, C> {
         );
 
         // Save the latest epoch challenge in the node.
-        self.latest_epoch_challenge.write().replace(Arc::new(epoch_challenge));
+        self.latest_epoch_challenge.write().unwrap().replace(Arc::new(epoch_challenge));
         // Save the latest block header in the node.
-        self.latest_block_header.write().replace(header);
+        self.latest_block_header.write().unwrap().replace(header);
 
         trace!("Received 'PuzzleResponse' from '{peer_ip}' (Epoch {epoch_number}, Block {block_height})");
         true
@@ -222,9 +222,9 @@ impl<N: Network, C: ConsensusStorage<N>> Inbound<N> for Prover<N, C> {
         solution: ProverSolution<N>,
     ) -> bool {
         // Retrieve the latest epoch challenge.
-        let epoch_challenge = self.latest_epoch_challenge.read().clone();
+        let epoch_challenge = self.latest_epoch_challenge.read().unwrap().clone();
         // Retrieve the latest proof target.
-        let proof_target = self.latest_block_header.read().as_ref().map(|header| header.proof_target());
+        let proof_target = self.latest_block_header.read().unwrap().as_ref().map(|header| header.proof_target());
 
         if let (Some(epoch_challenge), Some(proof_target)) = (epoch_challenge, proof_target) {
             // Ensure that the prover solution is valid for the given epoch.

@@ -27,13 +27,14 @@ use snarkvm::{
 
 use indexmap::IndexMap;
 use lru::LruCache;
-use parking_lot::{Mutex, RwLock};
 use std::{
     fmt,
     ops::Range,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
+        Mutex,
+        RwLock,
     },
 };
 
@@ -85,12 +86,12 @@ impl<N: Network, C: ConsensusStorage<N>> LedgerService<N> for CoreLedgerService<
 
     /// Returns the latest cached leader and its associated round.
     fn latest_leader(&self) -> Option<(u64, Address<N>)> {
-        *self.latest_leader.read()
+        *self.latest_leader.read().unwrap()
     }
 
     /// Updates the latest cached leader and its associated round.
     fn update_latest_leader(&self, round: u64, leader: Address<N>) {
-        *self.latest_leader.write() = Some((round, leader));
+        *self.latest_leader.write().unwrap() = Some((round, leader));
     }
 
     /// Returns `true` if the given block height exists in the ledger.
@@ -152,7 +153,7 @@ impl<N: Network, C: ConsensusStorage<N>> LedgerService<N> for CoreLedgerService<
     /// If the given round is in the future, then the current committee is returned.
     fn get_committee_for_round(&self, round: u64) -> Result<Committee<N>> {
         // Check if the committee is already in the cache.
-        if let Some(committee) = self.committee_cache.lock().get(&round) {
+        if let Some(committee) = self.committee_cache.lock().unwrap().get(&round) {
             return Ok(committee.clone());
         }
 
@@ -160,7 +161,7 @@ impl<N: Network, C: ConsensusStorage<N>> LedgerService<N> for CoreLedgerService<
             // Return the committee if it exists.
             Some(committee) => {
                 // Insert the committee into the cache.
-                self.committee_cache.lock().push(round, committee.clone());
+                self.committee_cache.lock().unwrap().push(round, committee.clone());
                 // Return the committee.
                 Ok(committee)
             }

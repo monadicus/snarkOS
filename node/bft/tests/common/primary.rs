@@ -44,11 +44,10 @@ use snarkvm::{
 use aleo_std::StorageMode;
 use indexmap::IndexMap;
 use itertools::Itertools;
-use parking_lot::Mutex;
 use std::{
     collections::HashMap,
     ops::RangeBounds,
-    sync::{Arc, OnceLock},
+    sync::{Arc, Mutex, OnceLock},
     time::Duration,
 };
 use tokio::{task::JoinHandle, time::sleep};
@@ -104,15 +103,15 @@ impl TestValidator {
         let transaction_handle =
             fire_unconfirmed_transactions(self.primary_sender.as_mut().unwrap(), self.id, interval_ms);
 
-        self.handles.lock().push(solution_handle);
-        self.handles.lock().push(transaction_handle);
+        self.handles.lock().unwrap().push(solution_handle);
+        self.handles.lock().unwrap().push(transaction_handle);
     }
 
     pub fn log_connections(&mut self) {
         let self_clone = self.clone();
-        self.handles.lock().push(tokio::task::spawn(async move {
+        self.handles.lock().unwrap().push(tokio::task::spawn(async move {
             loop {
-                let connections = self_clone.primary.gateway().connected_peers().read().clone();
+                let connections = self_clone.primary.gateway().connected_peers().read().unwrap().clone();
                 info!("{} connections", connections.len());
                 for connection in connections {
                     debug!("  {}", connection);
@@ -255,7 +254,7 @@ impl TestNetwork {
     // Disconnects N nodes from all other nodes.
     pub async fn disconnect(&self, num_nodes: u16) {
         for validator in self.validators.values().take(num_nodes as usize) {
-            for peer_ip in validator.primary.gateway().connected_peers().read().iter() {
+            for peer_ip in validator.primary.gateway().connected_peers().read().unwrap().iter() {
                 validator.primary.gateway().disconnect(*peer_ip);
             }
         }
@@ -267,7 +266,7 @@ impl TestNetwork {
     // Disconnects a specific node from all other nodes.
     pub async fn disconnect_one(&self, id: u16) {
         let target_validator = self.validators.get(&id).unwrap();
-        for peer_ip in target_validator.primary.gateway().connected_peers().read().iter() {
+        for peer_ip in target_validator.primary.gateway().connected_peers().read().unwrap().iter() {
             target_validator.primary.gateway().disconnect(*peer_ip);
         }
 
@@ -377,6 +376,7 @@ pub fn genesis_ledger(
     // will wait for it on the mutex.
     let block = genesis_cache()
         .lock()
+        .unwrap()
         .entry(cache_key.clone())
         .or_insert_with(|| {
             let hasher = BHP256::<CurrentNetwork>::setup("aleo.dev.block").unwrap();

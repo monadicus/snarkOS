@@ -24,7 +24,6 @@ use snarkvm::prelude::{block::Block, Network};
 use anyhow::{bail, ensure, Result};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
-use parking_lot::{Mutex, RwLock};
 use rand::{prelude::IteratorRandom, CryptoRng, Rng};
 use std::{
     collections::BTreeMap,
@@ -32,6 +31,8 @@ use std::{
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
+        Mutex,
+        RwLock,
     },
     time::Instant,
 };
@@ -147,7 +148,7 @@ impl<N: Network> BlockSync<N> {
 impl<N: Network> BlockSync<N> {
     /// Returns the latest block height of the given peer IP.
     fn get_peer_height(&self, peer_ip: &SocketAddr) -> Option<u32> {
-        self.locators.read().get(peer_ip).map(|locators| locators.latest_locator_height())
+        self.locators.read().unwrap().get(peer_ip).map(|locators| locators.latest_locator_height())
     }
 
     // /// Returns a map of peer height to peer IPs.
@@ -174,17 +175,17 @@ impl<N: Network> BlockSync<N> {
 
     /// Returns the common ancestor for the given peer pair, if it exists.
     fn get_common_ancestor(&self, peer_a: SocketAddr, peer_b: SocketAddr) -> Option<u32> {
-        self.common_ancestors.read().get(&PeerPair(peer_a, peer_b)).copied()
+        self.common_ancestors.read().unwrap().get(&PeerPair(peer_a, peer_b)).copied()
     }
 
     /// Returns the block request for the given height, if it exists.
     fn get_block_request(&self, height: u32) -> Option<SyncRequest<N>> {
-        self.requests.read().get(&height).cloned()
+        self.requests.read().unwrap().get(&height).cloned()
     }
 
     /// Returns the timestamp of the last time the block was requested, if it exists.
     fn get_block_request_timestamp(&self, height: u32) -> Option<Instant> {
-        self.request_timestamps.read().get(&height).copied()
+        self.request_timestamps.read().unwrap().get(&height).copied()
     }
 }
 
@@ -225,7 +226,7 @@ impl<N: Network> BlockSync<N> {
         // then try to advance the ledger using these pending block responses.
         // Note: This condition is guarded by `mode.is_router()` because validators sync blocks
         // using another code path that updates both `storage` and `ledger` when advancing blocks.
-        if block_requests.is_empty() && !self.responses.read().is_empty() && self.mode.is_router() {
+        if block_requests.is_empty() && !self.responses.read().unwrap().is_empty() && self.mode.is_router() {
             // Retrieve the latest block height.
             let current_height = self.canon.latest_block_height();
             // Try to advance the ledger with the sync pool.
@@ -292,7 +293,7 @@ impl<N: Network> BlockSync<N> {
 
         // Acquire the lock to ensure this function is called only once at a time.
         // If the lock is already acquired, return early.
-        let Some(_lock) = self.advance_with_sync_blocks_lock.try_lock() else {
+        let Some(_lock) = self.advance_with_sync_blocks_lock.try_lock().ok() else {
             trace!("Skipping a call to advance_with_sync_blocks() as it is already in progress");
             return Ok(());
         };
@@ -349,14 +350,14 @@ impl<N: Network> BlockSync<N> {
     /// that the block locators are consistent the peer's previous block locators or other peers' block locators.
     pub fn update_peer_locators(&self, peer_ip: SocketAddr, locators: BlockLocators<N>) -> Result<()> {
         // If the locators match the existing locators for the peer, return early.
-        if self.locators.read().get(&peer_ip) == Some(&locators) {
+        if self.locators.read().unwrap().get(&peer_ip) == Some(&locators) {
             return Ok(());
         }
 
         // Ensure the given block locators are well-formed.
         locators.ensure_is_valid()?;
         // Update the locators entry for the given peer IP.
-        self.locators.write().insert(peer_ip, locators.clone());
+        self.locators.write().unwrap().insert(peer_ip, locators.clone());
 
         // Compute the common ancestor with this node.
         let mut ancestor = 0;
@@ -369,11 +370,11 @@ impl<N: Network> BlockSync<N> {
             }
         }
         // Update the common ancestor entry for this node.
-        self.common_ancestors.write().insert(PeerPair(DUMMY_SELF_IP, peer_ip), ancestor);
+        self.common_ancestors.write().unwrap().insert(PeerPair(DUMMY_SELF_IP, peer_ip), ancestor);
 
         // Compute the common ancestor with every other peer.
-        let mut common_ancestors = self.common_ancestors.write();
-        for (other_ip, other_locators) in self.locators.read().iter() {
+        let mut common_ancestors = self.common_ancestors.write().unwrap();
+        for (other_ip, other_locators) in self.locators.read().unwrap().iter() {
             // Skip if the other peer is the given peer.
             if other_ip == &peer_ip {
                 continue;
@@ -399,11 +400,11 @@ impl<N: Network> BlockSync<N> {
     /// Removes the peer from the sync pool, if they exist.
     pub fn remove_peer(&self, peer_ip: &SocketAddr) {
         // Remove the locators entry for the given peer IP.
-        self.locators.write().swap_remove(peer_ip);
+        self.locators.write().unwrap().swap_remove(peer_ip);
         // Remove all block requests to the peer.
         self.remove_block_requests_to_peer(peer_ip);
         // Remove the timeouts for the peer.
-        self.request_timeouts.write().swap_remove(peer_ip);
+        self.request_timeouts.write().unwrap().swap_remove(peer_ip);
     }
 }
 
@@ -450,9 +451,9 @@ impl<N: Network> BlockSync<N> {
         // Ensure the sync IPs are not empty.
         ensure!(!sync_ips.is_empty(), "Cannot insert a block request with no sync IPs");
         // Insert the block request.
-        self.requests.write().insert(height, (hash, previous_hash, sync_ips));
+        self.requests.write().unwrap().insert(height, (hash, previous_hash, sync_ips));
         // Insert the request timestamp.
-        self.request_timestamps.write().insert(height, Instant::now());
+        self.request_timestamps.write().unwrap().insert(height, Instant::now());
         Ok(())
     }
 
@@ -471,12 +472,12 @@ impl<N: Network> BlockSync<N> {
         }
 
         // Remove the peer IP from the request entry.
-        if let Some((_, _, sync_ips)) = self.requests.write().get_mut(&height) {
+        if let Some((_, _, sync_ips)) = self.requests.write().unwrap().get_mut(&height) {
             sync_ips.swap_remove(&peer_ip);
         }
 
         // Acquire the write lock on the responses map.
-        let mut responses = self.responses.write();
+        let mut responses = self.responses.write().unwrap();
         // Insert the candidate block into the responses map.
         if let Some(existing_block) = responses.insert(height, block.clone()) {
             // If the candidate block was already present, ensure it is the same block.
@@ -501,15 +502,15 @@ impl<N: Network> BlockSync<N> {
             bail!("Failed to add block request, as block {height} exists in the canonical ledger");
         }
         // Ensure the block height is not already requested.
-        if self.requests.read().contains_key(&height) {
+        if self.requests.read().unwrap().contains_key(&height) {
             bail!("Failed to add block request, as block {height} exists in the requests map");
         }
         // Ensure the block height is not already responded.
-        if self.responses.read().contains_key(&height) {
+        if self.responses.read().unwrap().contains_key(&height) {
             bail!("Failed to add block request, as block {height} exists in the responses map");
         }
         // Ensure the block height is not already requested.
-        if self.request_timestamps.read().contains_key(&height) {
+        if self.request_timestamps.read().unwrap().contains_key(&height) {
             bail!("Failed to add block request, as block {height} exists in the timestamps map");
         }
         Ok(())
@@ -521,7 +522,7 @@ impl<N: Network> BlockSync<N> {
         let height = block.height();
 
         // Retrieve the request entry for the candidate block.
-        if let Some((expected_hash, expected_previous_hash, sync_ips)) = self.requests.read().get(&height) {
+        if let Some((expected_hash, expected_previous_hash, sync_ips)) = self.requests.read().unwrap().get(&height) {
             // Ensure the candidate block hash matches the expected hash.
             if let Some(expected_hash) = expected_hash {
                 if block.hash() != *expected_hash {
@@ -547,11 +548,11 @@ impl<N: Network> BlockSync<N> {
     /// Removes the entire block request for the given height, if it exists.
     fn remove_block_request(&self, height: u32) {
         // Remove the request entry for the given height.
-        self.requests.write().remove(&height);
+        self.requests.write().unwrap().remove(&height);
         // Remove the response entry for the given height.
-        self.responses.write().remove(&height);
+        self.responses.write().unwrap().remove(&height);
         // Remove the request timestamp entry for the given height.
-        self.request_timestamps.write().remove(&height);
+        self.request_timestamps.write().unwrap().remove(&height);
     }
 
     /// Removes and returns the block response for the given height, if the request is complete.
@@ -559,7 +560,7 @@ impl<N: Network> BlockSync<N> {
         // Acquire the requests write lock.
         // Note: This lock must be held across the entire scope, due to asynchronous block responses
         // from multiple peers that may be received concurrently.
-        let mut requests = self.requests.write();
+        let mut requests = self.requests.write().unwrap();
 
         // Determine if the request is complete.
         let is_request_complete = requests.get(&height).map(|(_, _, peer_ips)| peer_ips.is_empty()).unwrap_or(false);
@@ -571,26 +572,26 @@ impl<N: Network> BlockSync<N> {
         // Remove the request entry for the given height.
         requests.remove(&height);
         // Remove the request timestamp entry for the given height.
-        self.request_timestamps.write().remove(&height);
+        self.request_timestamps.write().unwrap().remove(&height);
         // Remove the response entry for the given height.
-        self.responses.write().remove(&height)
+        self.responses.write().unwrap().remove(&height)
     }
 
     /// Removes the block request for the given peer IP, if it exists.
     #[allow(dead_code)]
     fn remove_block_request_to_peer(&self, peer_ip: &SocketAddr, height: u32) {
-        let mut can_revoke = self.responses.read().get(&height).is_none();
+        let mut can_revoke = self.responses.read().unwrap().get(&height).is_none();
 
         // Remove the peer IP from the request entry. If the request entry is now empty,
         // and the response entry for this height is also empty, then remove the request entry altogether.
-        if let Some((_, _, sync_ips)) = self.requests.write().get_mut(&height) {
+        if let Some((_, _, sync_ips)) = self.requests.write().unwrap().get_mut(&height) {
             sync_ips.swap_remove(peer_ip);
             can_revoke &= sync_ips.is_empty();
         }
 
         if can_revoke {
-            self.requests.write().remove(&height);
-            self.request_timestamps.write().remove(&height);
+            self.requests.write().unwrap().remove(&height);
+            self.request_timestamps.write().unwrap().remove(&height);
         }
     }
 
@@ -598,9 +599,9 @@ impl<N: Network> BlockSync<N> {
     fn remove_block_requests_to_peer(&self, peer_ip: &SocketAddr) {
         trace!("Block sync is removing all block requests to peer {peer_ip}...");
         // Acquire the write lock on the requests map.
-        let mut requests = self.requests.write();
+        let mut requests = self.requests.write().unwrap();
         // Acquire the read lock on the responses map.
-        let responses = self.responses.read();
+        let responses = self.responses.read().unwrap();
 
         // Remove the peer IP from the requests map. If any request entry is now empty,
         // and its corresponding response entry is also empty, then remove that request entry altogether.
@@ -609,7 +610,7 @@ impl<N: Network> BlockSync<N> {
 
             let retain = !peer_ips.is_empty() || responses.get(height).is_some();
             if !retain {
-                self.request_timestamps.write().remove(height);
+                self.request_timestamps.write().unwrap().remove(height);
             }
             retain
         });
@@ -619,11 +620,11 @@ impl<N: Network> BlockSync<N> {
     /// and adds the timed out sync IPs to a map for tracking. Returns the number of timed out block requests.
     fn remove_timed_out_block_requests(&self) -> usize {
         // Acquire the write lock on the requests map.
-        let mut requests = self.requests.write();
+        let mut requests = self.requests.write().unwrap();
         // Acquire the write lock on the responses map.
-        let mut responses = self.responses.write();
+        let mut responses = self.responses.write().unwrap();
         // Acquire the write lock on the request timestamps map.
-        let mut request_timestamps = self.request_timestamps.write();
+        let mut request_timestamps = self.request_timestamps.write().unwrap();
 
         // Retrieve the current time.
         let now = Instant::now();
@@ -662,7 +663,7 @@ impl<N: Network> BlockSync<N> {
         // If there are timeout IPs, then add them to the request timeouts map.
         if !timeout_ips.is_empty() {
             // Acquire the write lock on the request timeouts map.
-            let mut request_timeouts = self.request_timeouts.write();
+            let mut request_timeouts = self.request_timeouts.write().unwrap();
             // Add each timeout IP to the request timeouts map.
             for timeout_ip in timeout_ips {
                 request_timeouts.entry(timeout_ip).or_default().push(now);
@@ -681,6 +682,7 @@ impl<N: Network> BlockSync<N> {
         let timeouts = self
             .request_timeouts
             .read()
+            .unwrap()
             .iter()
             .map(|(peer_ip, timestamps)| (*peer_ip, timestamps.len()))
             .collect::<IndexMap<_, _>>();
@@ -689,6 +691,7 @@ impl<N: Network> BlockSync<N> {
         let candidate_locators: IndexMap<_, _> = self
             .locators
             .read()
+            .unwrap()
             .iter()
             .filter(|(_, locators)| locators.latest_locator_height() > latest_canon_height)
             .filter(|(ip, _)| timeouts.get(*ip).map(|count| *count < MAX_BLOCK_REQUEST_TIMEOUTS).unwrap_or(true))
@@ -726,7 +729,8 @@ impl<N: Network> BlockSync<N> {
 
             for (other_ip, other_locators) in candidate_locators.iter().skip(i + 1) {
                 // Check if these two peers have a common ancestor above the latest canon height.
-                if let Some(common_ancestor) = self.common_ancestors.read().get(&PeerPair(*peer_ip, *other_ip)) {
+                if let Some(common_ancestor) = self.common_ancestors.read().unwrap().get(&PeerPair(*peer_ip, *other_ip))
+                {
                     if *common_ancestor > latest_canon_height {
                         // If so, then check that their block locators are consistent.
                         if peer_locators.is_consistent_with(other_locators) {

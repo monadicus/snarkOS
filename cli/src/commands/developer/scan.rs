@@ -19,11 +19,10 @@ use snarkvm::prelude::{block::Block, Ciphertext, Field, FromBytes, Network, Plai
 
 use anyhow::{bail, ensure, Result};
 use clap::Parser;
-use parking_lot::RwLock;
 use std::{
     io::{stdout, Write},
     str::FromStr,
-    sync::Arc,
+    sync::{Arc, RwLock},
 };
 use zeroize::Zeroize;
 
@@ -226,7 +225,7 @@ impl Scan {
         println!("\rScanning {total_blocks} blocks for records (100% complete)...   \n");
         stdout().flush()?;
 
-        let result = records.read().clone();
+        let result = records.read().unwrap().clone();
         Ok(result)
     }
 
@@ -309,7 +308,7 @@ impl Scan {
                 if let Some(record) =
                     Self::decrypt_record(private_key, view_key, endpoint, *commitment, ciphertext_record)?
                 {
-                    records.write().push(record);
+                    records.write().unwrap().push(record);
                 }
             }
         }

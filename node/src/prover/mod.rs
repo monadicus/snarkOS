@@ -44,13 +44,14 @@ use aleo_std::StorageMode;
 use anyhow::Result;
 use colored::Colorize;
 use core::{marker::PhantomData, time::Duration};
-use parking_lot::{Mutex, RwLock};
 use rand::{rngs::OsRng, CryptoRng, Rng};
 use std::{
     net::SocketAddr,
     sync::{
         atomic::{AtomicBool, AtomicU8, Ordering},
         Arc,
+        Mutex,
+        RwLock,
     },
 };
 use tokio::task::JoinHandle;
@@ -138,7 +139,7 @@ impl<N: Network, C: ConsensusStorage<N>> Prover<N, C> {
         // Initialize the coinbase puzzle.
         node.initialize_coinbase_puzzle().await;
         // Initialize the notification message loop.
-        node.handles.lock().push(crate::start_notification_message_loop());
+        node.handles.lock().unwrap().push(crate::start_notification_message_loop());
         // Pass the node to the signal handler.
         let _ = signal_node.set(node.clone());
         // Return the node.
@@ -158,7 +159,7 @@ impl<N: Network, C: ConsensusStorage<N>> NodeInterface<N> for Prover<N, C> {
 
         // Abort the tasks.
         trace!("Shutting down the prover...");
-        self.handles.lock().iter().for_each(|handle| handle.abort());
+        self.handles.lock().unwrap().iter().for_each(|handle| handle.abort());
 
         // Shut down the router.
         self.router.shut_down().await;
@@ -172,7 +173,7 @@ impl<N: Network, C: ConsensusStorage<N>> Prover<N, C> {
     async fn initialize_coinbase_puzzle(&self) {
         for _ in 0..self.max_puzzle_instances {
             let prover = self.clone();
-            self.handles.lock().push(tokio::spawn(async move {
+            self.handles.lock().unwrap().push(tokio::spawn(async move {
                 prover.coinbase_puzzle_loop().await;
             }));
         }
@@ -196,11 +197,12 @@ impl<N: Network, C: ConsensusStorage<N>> Prover<N, C> {
             }
 
             // Read the latest epoch challenge.
-            let latest_epoch_challenge = self.latest_epoch_challenge.read().clone();
+            let latest_epoch_challenge = self.latest_epoch_challenge.read().unwrap().clone();
             // Read the latest state.
             let latest_state = self
                 .latest_block_header
                 .read()
+                .unwrap()
                 .as_ref()
                 .map(|header| (header.coinbase_target(), header.proof_target()));
 

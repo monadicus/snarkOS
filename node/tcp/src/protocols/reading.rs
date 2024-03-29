@@ -82,7 +82,7 @@ where
             }
         });
         let _ = rx_reading.await;
-        self.tcp().tasks.lock().push(reading_task);
+        self.tcp().tasks.lock().unwrap().push(reading_task);
 
         // register the Reading handler with the Tcp
         let hdl = Box::new(ProtocolHandler(conn_sender));

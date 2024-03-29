@@ -28,13 +28,13 @@ use snarkvm::prelude::{
 
 use anyhow::{anyhow, bail, Result};
 use colored::Colorize;
-use parking_lot::Mutex;
 use reqwest::Client;
 use std::{
     cmp,
     sync::{
         atomic::{AtomicBool, AtomicU32, Ordering},
         Arc,
+        Mutex,
     },
     time::{Duration, Instant},
 };
@@ -177,7 +177,7 @@ pub async fn load_blocks<N: Network>(
             std::process::exit(0);
         }
 
-        let mut candidate_blocks = pending_blocks.lock();
+        let mut candidate_blocks = pending_blocks.lock().unwrap();
 
         // Obtain the height of the nearest pending block.
         let Some(next_height) = candidate_blocks.first().map(|b| b.height()) else {
@@ -255,7 +255,7 @@ async fn download_block_bundles<N: Network>(
         }
 
         // Avoid collecting too many blocks in order to restrict memory use.
-        let num_pending_blocks = pending_blocks.lock().len();
+        let num_pending_blocks = pending_blocks.lock().unwrap().len();
         if num_pending_blocks >= MAXIMUM_PENDING_BLOCKS as usize {
             debug!("Maximum number of pending blocks reached ({num_pending_blocks}), waiting...");
             tokio::time::sleep(Duration::from_secs(5)).await;
@@ -304,7 +304,7 @@ async fn download_block_bundles<N: Network>(
                     match cdn_get(client_clone.clone(), &blocks_url, &ctx).await {
                         Ok::<Vec<Block<N>>, _>(blocks) => {
                             // Keep the collection of pending blocks sorted by the height.
-                            let mut pending_blocks = pending_blocks_clone.lock();
+                            let mut pending_blocks = pending_blocks_clone.lock().unwrap();
                             for block in blocks {
                                 match pending_blocks.binary_search_by_key(&block.height(), |b| b.height()) {
                                     Ok(_idx) => warn!("Found a duplicate pending block at height {}", block.height()),
@@ -440,8 +440,10 @@ mod tests {
     };
     use snarkvm::prelude::{block::Block, MainnetV0};
 
-    use parking_lot::RwLock;
-    use std::{sync::Arc, time::Instant};
+    use std::{
+        sync::{Arc, RwLock},
+        time::Instant,
+    };
 
     type CurrentNetwork = MainnetV0;
 
@@ -451,19 +453,19 @@ mod tests {
         let blocks = Arc::new(RwLock::new(Vec::new()));
         let blocks_clone = blocks.clone();
         let process = move |block: Block<CurrentNetwork>| {
-            blocks_clone.write().push(block);
+            blocks_clone.write().unwrap().push(block);
             Ok(())
         };
 
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
             let completed_height = load_blocks(TEST_BASE_URL, start, end, Default::default(), process).await.unwrap();
-            assert_eq!(blocks.read().len(), expected);
+            assert_eq!(blocks.read().unwrap().len(), expected);
             if expected > 0 {
-                assert_eq!(blocks.read().last().unwrap().height(), completed_height);
+                assert_eq!(blocks.read().unwrap().last().unwrap().height(), completed_height);
             }
             // Check they are sequential.
-            for (i, block) in blocks.read().iter().enumerate() {
+            for (i, block) in blocks.read().unwrap().iter().enumerate() {
                 assert_eq!(block.height(), start + i as u32);
             }
         });

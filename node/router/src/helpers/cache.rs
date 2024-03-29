@@ -17,10 +17,10 @@ use snarkvm::prelude::{coinbase::PuzzleCommitment, Network};
 
 use core::hash::Hash;
 use linked_hash_map::LinkedHashMap;
-use parking_lot::RwLock;
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     net::{IpAddr, SocketAddr},
+    sync::RwLock,
 };
 use time::{Duration, OffsetDateTime};
 
@@ -119,12 +119,12 @@ impl<N: Network> Cache<N> {
 impl<N: Network> Cache<N> {
     /// Returns `true` if the cache contains the block request for the given peer.
     pub fn contains_outbound_block_request(&self, peer_ip: &SocketAddr, request: &BlockRequest) -> bool {
-        self.seen_outbound_block_requests.read().get(peer_ip).map(|r| r.contains(request)).unwrap_or(false)
+        self.seen_outbound_block_requests.read().unwrap().get(peer_ip).map(|r| r.contains(request)).unwrap_or(false)
     }
 
     /// Inserts the block request for the given peer IP, returning the number of recent requests.
     pub fn insert_outbound_block_request(&self, peer_ip: SocketAddr, request: BlockRequest) -> usize {
-        let mut map_write = self.seen_outbound_block_requests.write();
+        let mut map_write = self.seen_outbound_block_requests.write().unwrap();
         let requests = map_write.entry(peer_ip).or_default();
         requests.insert(request);
         requests.len()
@@ -132,13 +132,13 @@ impl<N: Network> Cache<N> {
 
     /// Removes the block request for the given peer IP, returning `true` if the request was present.
     pub fn remove_outbound_block_request(&self, peer_ip: SocketAddr, request: &BlockRequest) -> bool {
-        let mut map_write = self.seen_outbound_block_requests.write();
+        let mut map_write = self.seen_outbound_block_requests.write().unwrap();
         if let Some(requests) = map_write.get_mut(&peer_ip) { requests.remove(request) } else { false }
     }
 
     /// Returns `true` if the cache contains a puzzle request from the given peer.
     pub fn contains_outbound_puzzle_request(&self, peer_ip: &SocketAddr) -> bool {
-        self.seen_outbound_puzzle_requests.read().get(peer_ip).map(|r| *r > 0).unwrap_or(false)
+        self.seen_outbound_puzzle_requests.read().unwrap().get(peer_ip).map(|r| *r > 0).unwrap_or(false)
     }
 
     /// Increment the peer IP's number of puzzle requests, returning the updated number of puzzle requests.
@@ -171,7 +171,7 @@ impl<N: Network> Cache<N> {
 
     /// Returns `true` if the cache contains a peer request from the given peer.
     pub fn contains_outbound_peer_request(&self, peer_ip: SocketAddr) -> bool {
-        self.seen_outbound_peer_requests.read().get(&peer_ip).map(|r| *r > 0).unwrap_or(false)
+        self.seen_outbound_peer_requests.read().unwrap().get(&peer_ip).map(|r| *r > 0).unwrap_or(false)
     }
 
     /// Increment the peer IP's number of peer requests, returning the updated number of peer requests.
@@ -195,7 +195,7 @@ impl<N: Network> Cache<N> {
         // Fetch the current timestamp.
         let now = OffsetDateTime::now_utc();
 
-        let mut map_write = map.write();
+        let mut map_write = map.write().unwrap();
         // Load the entry for the key.
         let timestamps = map_write.entry(key).or_default();
         // Insert the new timestamp.
@@ -210,7 +210,7 @@ impl<N: Network> Cache<N> {
 
     /// Increments the key's counter in the map, returning the updated counter.
     fn increment_counter<K: Hash + Eq>(map: &RwLock<HashMap<K, u32>>, key: K) -> u32 {
-        let mut map_write = map.write();
+        let mut map_write = map.write().unwrap();
         // Load the entry for the key, and increment the counter.
         let entry = map_write.entry(key).or_default();
         *entry = entry.saturating_add(1);
@@ -220,7 +220,7 @@ impl<N: Network> Cache<N> {
 
     /// Decrements the key's counter in the map, returning the updated counter.
     fn decrement_counter<K: Copy + Hash + Eq>(map: &RwLock<HashMap<K, u32>>, key: K) -> u32 {
-        let mut map_write = map.write();
+        let mut map_write = map.write().unwrap();
         // Load the entry for the key, and decrement the counter.
         let entry = map_write.entry(key).or_default();
         let value = entry.saturating_sub(1);
@@ -236,7 +236,7 @@ impl<N: Network> Cache<N> {
 
     /// Updates the map by enforcing the maximum cache size.
     fn refresh<K: Eq + Hash, V>(map: &RwLock<LinkedHashMap<K, V>>) {
-        let mut map_write = map.write();
+        let mut map_write = map.write().unwrap();
         while map_write.len() >= MAX_CACHE_SIZE {
             map_write.pop_front();
         }
@@ -249,7 +249,7 @@ impl<N: Network> Cache<N> {
         key: K,
     ) -> Option<OffsetDateTime> {
         // Insert the key, and return the previous timestamp if it existed.
-        let previous_timestamp = map.write().insert(key, OffsetDateTime::now_utc());
+        let previous_timestamp = map.write().unwrap().insert(key, OffsetDateTime::now_utc());
         // Refresh the cache.
         Self::refresh(map);
         // Return the previous timestamp.
@@ -273,19 +273,19 @@ mod tests {
         let solution = PuzzleCommitment::<CurrentNetwork>::default();
 
         // Check that the cache is empty.
-        assert_eq!(cache.seen_inbound_solutions.read().len(), 0);
+        assert_eq!(cache.seen_inbound_solutions.read().unwrap().len(), 0);
 
         // Insert a solution.
         assert!(cache.insert_inbound_solution(peer_ip, solution).is_none());
 
         // Check that the cache contains the solution.
-        assert_eq!(cache.seen_inbound_solutions.read().len(), 1);
+        assert_eq!(cache.seen_inbound_solutions.read().unwrap().len(), 1);
 
         // Insert the same solution again.
         assert!(cache.insert_inbound_solution(peer_ip, solution).is_some());
 
         // Check that the cache still contains the solution.
-        assert_eq!(cache.seen_inbound_solutions.read().len(), 1);
+        assert_eq!(cache.seen_inbound_solutions.read().unwrap().len(), 1);
     }
 
     #[test]
@@ -295,19 +295,19 @@ mod tests {
         let transaction = Default::default();
 
         // Check that the cache is empty.
-        assert_eq!(cache.seen_inbound_transactions.read().len(), 0);
+        assert_eq!(cache.seen_inbound_transactions.read().unwrap().len(), 0);
 
         // Insert a transaction.
         assert!(cache.insert_inbound_transaction(peer_ip, transaction).is_none());
 
         // Check that the cache contains the transaction.
-        assert_eq!(cache.seen_inbound_transactions.read().len(), 1);
+        assert_eq!(cache.seen_inbound_transactions.read().unwrap().len(), 1);
 
         // Insert the same transaction again.
         assert!(cache.insert_inbound_transaction(peer_ip, transaction).is_some());
 
         // Check that the cache still contains the transaction.
-        assert_eq!(cache.seen_inbound_transactions.read().len(), 1);
+        assert_eq!(cache.seen_inbound_transactions.read().unwrap().len(), 1);
     }
 
     #[test]
@@ -317,19 +317,19 @@ mod tests {
         let solution = PuzzleCommitment::<CurrentNetwork>::default();
 
         // Check that the cache is empty.
-        assert_eq!(cache.seen_outbound_solutions.read().len(), 0);
+        assert_eq!(cache.seen_outbound_solutions.read().unwrap().len(), 0);
 
         // Insert a solution.
         assert!(cache.insert_outbound_solution(peer_ip, solution).is_none());
 
         // Check that the cache contains the solution.
-        assert_eq!(cache.seen_outbound_solutions.read().len(), 1);
+        assert_eq!(cache.seen_outbound_solutions.read().unwrap().len(), 1);
 
         // Insert the same solution again.
         assert!(cache.insert_outbound_solution(peer_ip, solution).is_some());
 
         // Check that the cache still contains the solution.
-        assert_eq!(cache.seen_outbound_solutions.read().len(), 1);
+        assert_eq!(cache.seen_outbound_solutions.read().unwrap().len(), 1);
     }
 
     #[test]
@@ -339,19 +339,19 @@ mod tests {
         let transaction = Default::default();
 
         // Check that the cache is empty.
-        assert_eq!(cache.seen_outbound_transactions.read().len(), 0);
+        assert_eq!(cache.seen_outbound_transactions.read().unwrap().len(), 0);
 
         // Insert a transaction.
         assert!(cache.insert_outbound_transaction(peer_ip, transaction).is_none());
 
         // Check that the cache contains the transaction.
-        assert_eq!(cache.seen_outbound_transactions.read().len(), 1);
+        assert_eq!(cache.seen_outbound_transactions.read().unwrap().len(), 1);
 
         // Insert the same transaction again.
         assert!(cache.insert_outbound_transaction(peer_ip, transaction).is_some());
 
         // Check that the cache still contains the transaction.
-        assert_eq!(cache.seen_outbound_transactions.read().len(), 1);
+        assert_eq!(cache.seen_outbound_transactions.read().unwrap().len(), 1);
     }
 
     #[test]
@@ -360,7 +360,7 @@ mod tests {
         let peer_ip = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 1234);
 
         // Check the cache is empty.
-        assert!(cache.seen_outbound_peer_requests.read().is_empty());
+        assert!(cache.seen_outbound_peer_requests.read().unwrap().is_empty());
         assert!(!cache.contains_outbound_peer_request(peer_ip));
 
         // Increment the peer requests.

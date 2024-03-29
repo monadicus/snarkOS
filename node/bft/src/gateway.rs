@@ -62,9 +62,15 @@ use snarkvm::{
 use colored::Colorize;
 use futures::SinkExt;
 use indexmap::{IndexMap, IndexSet};
-use parking_lot::{Mutex, RwLock};
 use rand::seq::{IteratorRandom, SliceRandom};
-use std::{collections::HashSet, future::Future, io, net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    collections::HashSet,
+    future::Future,
+    io,
+    net::SocketAddr,
+    sync::{Arc, Mutex, RwLock},
+    time::Duration,
+};
 use tokio::{
     net::TcpStream,
     sync::{oneshot, OnceCell},
@@ -310,12 +316,12 @@ impl<N: Network> Gateway<N> {
 
     /// Returns `true` if the node is connected to the given peer IP.
     pub fn is_connected_ip(&self, ip: SocketAddr) -> bool {
-        self.connected_peers.read().contains(&ip)
+        self.connected_peers.read().unwrap().contains(&ip)
     }
 
     /// Returns `true` if the node is connecting to the given peer IP.
     pub fn is_connecting_ip(&self, ip: SocketAddr) -> bool {
-        self.connecting_peers.lock().contains(&ip)
+        self.connecting_peers.lock().unwrap().contains(&ip)
     }
 
     /// Returns `true` if the given peer IP is an authorized validator.
@@ -375,12 +381,12 @@ impl<N: Network> Gateway<N> {
 
     /// Returns the number of connected peers.
     pub fn number_of_connected_peers(&self) -> usize {
-        self.connected_peers.read().len()
+        self.connected_peers.read().unwrap().len()
     }
 
     /// Returns the list of connected addresses.
     pub fn connected_addresses(&self) -> HashSet<Address<N>> {
-        self.connected_peers.read().iter().filter_map(|peer_ip| self.resolver.get_address(*peer_ip)).collect()
+        self.connected_peers.read().unwrap().iter().filter_map(|peer_ip| self.resolver.get_address(*peer_ip)).collect()
     }
 
     /// Returns the list of connected peers.
@@ -401,7 +407,7 @@ impl<N: Network> Gateway<N> {
             debug!("Connecting to validator {peer_ip}...");
             // Attempt to connect to the peer.
             if let Err(error) = self_.tcp.connect(peer_ip).await {
-                self_.connecting_peers.lock().shift_remove(&peer_ip);
+                self_.connecting_peers.lock().unwrap().shift_remove(&peer_ip);
                 warn!("Unable to connect to '{peer_ip}' - {error}");
             }
         }))
@@ -435,7 +441,7 @@ impl<N: Network> Gateway<N> {
             bail!("{CONTEXT} Dropping connection request from '{peer_ip}' (attempted to self-connect)")
         }
         // Ensure the node is not already connecting to this peer.
-        if !self.connecting_peers.lock().insert(peer_ip) {
+        if !self.connecting_peers.lock().unwrap().insert(peer_ip) {
             bail!("{CONTEXT} Dropping connection request from '{peer_ip}' (already shaking hands as the initiator)")
         }
         // Ensure the node is not already connected to this peer.
@@ -456,8 +462,8 @@ impl<N: Network> Gateway<N> {
 
     #[cfg(feature = "metrics")]
     fn update_metrics(&self) {
-        metrics::gauge(metrics::bft::CONNECTED, self.connected_peers.read().len() as f64);
-        metrics::gauge(metrics::bft::CONNECTING, self.connecting_peers.lock().len() as f64);
+        metrics::gauge(metrics::bft::CONNECTED, self.connected_peers.read().unwrap().len() as f64);
+        metrics::gauge(metrics::bft::CONNECTING, self.connecting_peers.lock().unwrap().len() as f64);
     }
 
     /// Inserts the given peer into the connected peers.
@@ -466,7 +472,7 @@ impl<N: Network> Gateway<N> {
         // Adds a bidirectional map between the listener address and (ambiguous) peer address.
         self.resolver.insert_peer(peer_ip, peer_addr, address);
         // Add a transmission for this peer in the connected peers.
-        self.connected_peers.write().insert(peer_ip);
+        self.connected_peers.write().unwrap().insert(peer_ip);
         #[cfg(feature = "metrics")]
         self.update_metrics();
     }
@@ -478,7 +484,7 @@ impl<N: Network> Gateway<N> {
         // Adds a bidirectional map between the listener address and (ambiguous) peer address.
         self.resolver.insert_peer(peer_ip, peer_addr, address);
         // Add a transmission for this peer in the connected peers.
-        self.connected_peers.write().insert(peer_ip);
+        self.connected_peers.write().unwrap().insert(peer_ip);
     }
 
     /// Removes the connected peer and adds them to the candidate peers.
@@ -495,7 +501,7 @@ impl<N: Network> Gateway<N> {
         // Removes the bidirectional map between the listener address and (ambiguous) peer address.
         self.resolver.remove_peer(peer_ip);
         // Remove this peer from the connected peers, if it exists.
-        self.connected_peers.write().shift_remove(&peer_ip);
+        self.connected_peers.write().unwrap().shift_remove(&peer_ip);
         #[cfg(feature = "metrics")]
         self.update_metrics();
     }
@@ -711,11 +717,16 @@ impl<N: Network> Gateway<N> {
                 // Retrieve the connected peers.
                 let mut connected_peers: Vec<_> = match self.dev.is_some() {
                     // In development mode, relax the validity requirements to make operating devnets more flexible.
-                    true => self.connected_peers.read().iter().copied().collect(),
+                    true => self.connected_peers.read().unwrap().iter().copied().collect(),
                     // In production mode, ensure the peer IPs are valid.
-                    false => {
-                        self.connected_peers.read().iter().copied().filter(|ip| self.is_valid_peer_ip(*ip)).collect()
-                    }
+                    false => self
+                        .connected_peers
+                        .read()
+                        .unwrap()
+                        .iter()
+                        .copied()
+                        .filter(|ip| self.is_valid_peer_ip(*ip))
+                        .collect(),
                 };
                 // Shuffle the connected peers.
                 connected_peers.shuffle(&mut rand::thread_rng());
@@ -847,14 +858,14 @@ impl<N: Network> Gateway<N> {
     /// Spawns a task with the given future; it should only be used for long-running tasks.
     #[allow(dead_code)]
     fn spawn<T: Future<Output = ()> + Send + 'static>(&self, future: T) {
-        self.handles.lock().push(tokio::spawn(future));
+        self.handles.lock().unwrap().push(tokio::spawn(future));
     }
 
     /// Shuts down the gateway.
     pub async fn shut_down(&self) {
         info!("Shutting down the gateway...");
         // Abort the tasks.
-        self.handles.lock().iter().for_each(|handle| handle.abort());
+        self.handles.lock().unwrap().iter().for_each(|handle| handle.abort());
         // Close the listener.
         self.tcp.shut_down().await;
     }
@@ -875,7 +886,7 @@ impl<N: Network> Gateway<N> {
     /// Logs the connected validators.
     fn log_connected_validators(&self) {
         // Log the connected validators.
-        let validators = self.connected_peers().read().clone();
+        let validators = self.connected_peers().read().unwrap().clone();
         // Resolve the total number of connectable validators.
         let validators_total = self.ledger.current_committee().map_or(0, |c| c.num_members().saturating_sub(1));
         // Format the total validators message.
@@ -913,7 +924,7 @@ impl<N: Network> Gateway<N> {
         let self_ = self.clone();
         tokio::spawn(async move {
             // Retrieve the connected validators.
-            let validators = self_.connected_peers().read().clone();
+            let validators = self_.connected_peers().read().unwrap().clone();
             // Iterate over the validator IPs.
             for peer_ip in validators {
                 // Disconnect any validator that is not in the current committee.
@@ -933,7 +944,7 @@ impl<N: Network> Gateway<N> {
         // If the number of connected validators is less than the minimum, send a `ValidatorsRequest`.
         if self.number_of_connected_peers() < MIN_CONNECTED_VALIDATORS {
             // Retrieve the connected validators.
-            let validators = self.connected_peers().read().clone();
+            let validators = self.connected_peers().read().unwrap().clone();
             // If there are no validator IPs to connect to, return early.
             if validators.is_empty() {
                 return;
@@ -1002,7 +1013,7 @@ impl<N: Network> Transport<N> for Gateway<N> {
         // Ensure there are connected peers.
         if self.number_of_connected_peers() > 0 {
             let self_ = self.clone();
-            let connected_peers = self.connected_peers.read().clone();
+            let connected_peers = self.connected_peers.read().unwrap().clone();
             tokio::spawn(async move {
                 // Iterate through all connected peers.
                 for peer_ip in connected_peers {
@@ -1119,7 +1130,7 @@ impl<N: Network> Handshake for Gateway<N> {
 
         // Remove the address from the collection of connecting peers (if the handshake got to the point where it's known).
         if let Some(ip) = peer_ip {
-            self.connecting_peers.lock().shift_remove(&ip);
+            self.connecting_peers.lock().unwrap().shift_remove(&ip);
         }
         let (ref peer_ip, _) = handshake_result?;
         info!("{CONTEXT} Gateway is connected to '{peer_ip}'");

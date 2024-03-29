@@ -16,7 +16,7 @@ use std::{any::Any, collections::HashMap, io, net::SocketAddr, sync::Arc};
 
 use async_trait::async_trait;
 use futures_util::sink::SinkExt;
-use parking_lot::RwLock;
+use std::sync::RwLock;
 use tokio::{
     io::AsyncWrite,
     sync::{mpsc, oneshot},
@@ -81,7 +81,7 @@ where
             }
         });
         let _ = rx_writing.await;
-        self.tcp().tasks.lock().push(writing_task);
+        self.tcp().tasks.lock().unwrap().push(writing_task);
 
         // register the WritingHandler with the Tcp
         let hdl = Box::new(WritingHandler { handler: ProtocolHandler(conn_sender), senders });
@@ -106,7 +106,7 @@ where
         // access the protocol handler
         if let Some(handler) = self.tcp().protocols.writing.get() {
             // find the message sender for the given address
-            if let Some(sender) = handler.senders.read().get(&addr).cloned() {
+            if let Some(sender) = handler.senders.read().unwrap().get(&addr).cloned() {
                 let (msg, delivery) = WrappedMessage::new(Box::new(message));
                 sender
                     .try_send(msg)
@@ -138,7 +138,7 @@ where
     {
         // access the protocol handler
         if let Some(handler) = self.tcp().protocols.writing.get() {
-            let senders = handler.senders.read().clone();
+            let senders = handler.senders.read().unwrap().clone();
             for (addr, message_sender) in senders {
                 let (msg, _delivery) = WrappedMessage::new(Box::new(message.clone()));
                 let _ = message_sender.try_send(msg).map_err(|e| {
@@ -195,7 +195,7 @@ impl<W: Writing> WritingInternal for W {
         let (outbound_message_sender, mut outbound_message_receiver) = mpsc::channel(Self::MESSAGE_QUEUE_DEPTH);
 
         // register the connection's message sender with the Writing protocol handler
-        conn_senders.write().insert(addr, outbound_message_sender);
+        conn_senders.write().unwrap().insert(addr, outbound_message_sender);
 
         // this will automatically drop the sender upon a disconnect
         let auto_cleanup = SenderCleanup { addr, senders: Arc::clone(conn_senders) };
@@ -281,6 +281,6 @@ struct SenderCleanup {
 
 impl Drop for SenderCleanup {
     fn drop(&mut self) {
-        self.senders.write().remove(&self.addr);
+        self.senders.write().unwrap().remove(&self.addr);
     }
 }

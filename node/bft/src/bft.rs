@@ -42,7 +42,6 @@ use snarkvm::{
 
 use colored::Colorize;
 use indexmap::{IndexMap, IndexSet};
-use parking_lot::{Mutex, RwLock};
 use std::{
     collections::{BTreeMap, HashSet},
     future::Future,
@@ -50,6 +49,8 @@ use std::{
     sync::{
         atomic::{AtomicI64, Ordering},
         Arc,
+        Mutex,
+        RwLock,
     },
 };
 use tokio::{
@@ -140,7 +141,7 @@ impl<N: Network> BFT<N> {
 
     /// Returns the leader of the current even round, if one was present.
     pub fn leader(&self) -> Option<Address<N>> {
-        self.leader_certificate.read().as_ref().map(|certificate| certificate.author())
+        self.leader_certificate.read().unwrap().as_ref().map(|certificate| certificate.author())
     }
 
     /// Returns the certificate of the leader from the current even round, if one was present.
@@ -223,7 +224,7 @@ impl<N: Network> BFT<N> {
         // Log whether the round is going to update.
         if current_round % 2 == 0 {
             // Determine if there is a leader certificate.
-            if let Some(leader_certificate) = self.leader_certificate.read().as_ref() {
+            if let Some(leader_certificate) = self.leader_certificate.read().unwrap().as_ref() {
                 // Ensure the state of the leader certificate is consistent with the BFT being ready.
                 if !is_ready {
                     error!(is_ready, "BFT - A leader certificate was found, but 'is_ready' is false");
@@ -285,7 +286,7 @@ impl<N: Network> BFT<N> {
         // If there are no current certificates, set the leader certificate to 'None', and return early.
         if current_certificates.is_empty() {
             // Set the leader certificate to 'None'.
-            *self.leader_certificate.write() = None;
+            *self.leader_certificate.write().unwrap() = None;
             return false;
         }
 
@@ -318,7 +319,7 @@ impl<N: Network> BFT<N> {
         };
         // Find and set the leader certificate, if the leader was present in the current even round.
         let leader_certificate = current_certificates.iter().find(|certificate| certificate.author() == leader);
-        *self.leader_certificate.write() = leader_certificate.cloned();
+        *self.leader_certificate.write().unwrap() = leader_certificate.cloned();
 
         self.is_even_round_ready_for_next_round(current_certificates, committee_lookback, current_round)
     }
@@ -334,7 +335,7 @@ impl<N: Network> BFT<N> {
         current_round: u64,
     ) -> bool {
         // If the leader certificate is set for the current even round, return 'true'.
-        if let Some(leader_certificate) = self.leader_certificate.read().as_ref() {
+        if let Some(leader_certificate) = self.leader_certificate.read().unwrap().as_ref() {
             if leader_certificate.round() == current_round {
                 return true;
             }
@@ -376,7 +377,7 @@ impl<N: Network> BFT<N> {
         }
 
         // Retrieve the leader certificate.
-        let Some(leader_certificate) = self.leader_certificate.read().clone() else {
+        let Some(leader_certificate) = self.leader_certificate.read().unwrap().clone() else {
             // If there is no leader certificate for the previous round, return 'true'.
             return true;
         };
@@ -444,7 +445,7 @@ impl<N: Network> BFT<N> {
         // Retrieve the certificate round.
         let certificate_round = certificate.round();
         // Insert the certificate into the DAG.
-        self.dag.write().insert(certificate);
+        self.dag.write().unwrap().insert(certificate);
 
         // Construct the commit round.
         let commit_round = certificate_round.saturating_sub(1);
@@ -453,7 +454,7 @@ impl<N: Network> BFT<N> {
             return Ok(());
         }
         // If the commit round is at or below the last committed round, return early.
-        if commit_round <= self.dag.read().last_committed_round() {
+        if commit_round <= self.dag.read().unwrap().last_committed_round() {
             return Ok(());
         }
 
@@ -482,13 +483,14 @@ impl<N: Network> BFT<N> {
         };
 
         // Retrieve the leader certificate for the commit round.
-        let Some(leader_certificate) = self.dag.read().get_certificate_for_round_with_author(commit_round, leader)
+        let Some(leader_certificate) =
+            self.dag.read().unwrap().get_certificate_for_round_with_author(commit_round, leader)
         else {
             trace!("BFT did not find the leader certificate for commit round {commit_round} yet");
             return Ok(());
         };
         // Retrieve all of the certificates for the **certificate** round.
-        let Some(certificates) = self.dag.read().get_certificates_for_round(certificate_round) else {
+        let Some(certificates) = self.dag.read().unwrap().get_certificates_for_round(certificate_round) else {
             // TODO (howardwu): Investigate how many certificates we should have at this point.
             bail!("BFT failed to retrieve the certificates for certificate round {certificate_round}");
         };
@@ -529,7 +531,8 @@ impl<N: Network> BFT<N> {
             let leader_round = leader_certificate.round();
 
             let mut current_certificate = leader_certificate;
-            for round in (self.dag.read().last_committed_round() + 2..=leader_round.saturating_sub(2)).rev().step_by(2)
+            for round in
+                (self.dag.read().unwrap().last_committed_round() + 2..=leader_round.saturating_sub(2)).rev().step_by(2)
             {
                 // Retrieve the previous committee for the leader round.
                 let previous_committee_lookback = match self.ledger().get_committee_lookback_for_round(round) {
@@ -557,7 +560,8 @@ impl<N: Network> BFT<N> {
                     }
                 };
                 // Retrieve the previous leader certificate.
-                let Some(previous_certificate) = self.dag.read().get_certificate_for_round_with_author(round, leader)
+                let Some(previous_certificate) =
+                    self.dag.read().unwrap().get_certificate_for_round_with_author(round, leader)
                 else {
                     continue;
                 };
@@ -647,7 +651,7 @@ impl<N: Network> BFT<N> {
                 "\n\nCommitting a subdag from round {anchor_round} with {num_transmissions} transmissions: {subdag_metadata:?}\n"
             );
             // Update the DAG, as the subdag was successfully included into a block.
-            let mut dag_write = self.dag.write();
+            let mut dag_write = self.dag.write().unwrap();
             for certificate in commit_subdag.values().flatten() {
                 dag_write.commit(certificate, self.storage().max_gc_rounds());
             }
@@ -677,7 +681,7 @@ impl<N: Network> BFT<N> {
 
             // Check if the previous certificate is below the GC round.
             let previous_round = certificate.round().saturating_sub(1);
-            if previous_round + self.storage().max_gc_rounds() <= self.dag.read().last_committed_round() {
+            if previous_round + self.storage().max_gc_rounds() <= self.dag.read().unwrap().last_committed_round() {
                 continue;
             }
             // Iterate over the previous certificate IDs.
@@ -689,7 +693,7 @@ impl<N: Network> BFT<N> {
                     continue;
                 }
                 // If the previous certificate was recently committed, continue.
-                if self.dag.read().is_recently_committed(previous_round, *previous_certificate_id) {
+                if self.dag.read().unwrap().is_recently_committed(previous_round, *previous_certificate_id) {
                     continue;
                 }
                 // If the previous certificate already exists in the ledger, continue.
@@ -700,7 +704,12 @@ impl<N: Network> BFT<N> {
                 // Retrieve the previous certificate.
                 let previous_certificate = {
                     // Start by retrieving the previous certificate from the DAG.
-                    match self.dag.read().get_certificate_for_round_with_id(previous_round, *previous_certificate_id) {
+                    match self
+                        .dag
+                        .read()
+                        .unwrap()
+                        .get_certificate_for_round_with_id(previous_round, *previous_certificate_id)
+                    {
                         // If the previous certificate is found, return it.
                         Some(previous_certificate) => previous_certificate,
                         // If the previous certificate is not found, retrieve it from the storage.
@@ -722,7 +731,9 @@ impl<N: Network> BFT<N> {
             }
         }
         // Ensure we only retain certificates that are above the GC round.
-        commit.retain(|round, _| round + self.storage().max_gc_rounds() > self.dag.read().last_committed_round());
+        commit.retain(|round, _| {
+            round + self.storage().max_gc_rounds() > self.dag.read().unwrap().last_committed_round()
+        });
         // Return the certificates to commit.
         Ok(commit)
     }
@@ -738,7 +749,7 @@ impl<N: Network> BFT<N> {
         // Iterate over the rounds from the current certificate to the previous certificate.
         for round in (previous_certificate.round()..current_certificate.round()).rev() {
             // Retrieve all of the certificates for this past round.
-            let Some(certificates) = self.dag.read().get_certificates_for_round(round) else {
+            let Some(certificates) = self.dag.read().unwrap().get_certificates_for_round(round) else {
                 // This is a critical error, as the traversal should have these certificates.
                 // If this error is hit, it is likely that the maximum GC rounds should be increased.
                 bail!("BFT failed to retrieve the certificates for past round {round}");
@@ -812,7 +823,7 @@ impl<N: Network> BFT<N> {
     /// already exist in the ledger and therefore do not need to be re-ordered into future committed subdags.
     async fn sync_bft_dag_at_bootup(&self, certificates: Vec<BatchCertificate<N>>) {
         // Acquire the BFT write lock.
-        let mut dag = self.dag.write();
+        let mut dag = self.dag.write().unwrap();
 
         // Commit all the certificates excluding the latest leader certificate.
         for certificate in certificates {
@@ -822,7 +833,7 @@ impl<N: Network> BFT<N> {
 
     /// Spawns a task with the given future; it should only be used for long-running tasks.
     fn spawn<T: Future<Output = ()> + Send + 'static>(&self, future: T) {
-        self.handles.lock().push(tokio::spawn(future));
+        self.handles.lock().unwrap().push(tokio::spawn(future));
     }
 
     /// Shuts down the BFT.
@@ -833,7 +844,7 @@ impl<N: Network> BFT<N> {
         // Shut down the primary.
         self.primary.shut_down().await;
         // Abort the tasks.
-        self.handles.lock().iter().for_each(|handle| handle.abort());
+        self.handles.lock().unwrap().iter().for_each(|handle| handle.abort());
     }
 }
 
@@ -903,7 +914,7 @@ mod tests {
 
         // Set the leader certificate.
         let leader_certificate = sample_batch_certificate(rng);
-        *bft.leader_certificate.write() = Some(leader_certificate);
+        *bft.leader_certificate.write().unwrap() = Some(leader_certificate);
 
         // Ensure this call succeeds on an odd round.
         let result = bft.is_leader_quorum_or_nonleaders_available(1);
@@ -982,7 +993,7 @@ mod tests {
 
         // Set the leader certificate.
         let leader_certificate = sample_batch_certificate_for_round(2, rng);
-        *bft.leader_certificate.write() = Some(leader_certificate);
+        *bft.leader_certificate.write().unwrap() = Some(leader_certificate);
 
         let result = bft.is_even_round_ready_for_next_round(IndexSet::new(), committee, 2);
         // If leader certificate is set, we should be ready for next round.
@@ -1073,7 +1084,7 @@ mod tests {
         let bft = BFT::new(account, storage.clone(), ledger, None, &[], None)?;
 
         // Set the leader certificate.
-        *bft.leader_certificate.write() = Some(leader_certificate);
+        *bft.leader_certificate.write().unwrap() = Some(leader_certificate);
 
         // Update the leader certificate.
         // Ensure this call succeeds on an even round.
@@ -1111,7 +1122,8 @@ mod tests {
             let bft = BFT::new(account.clone(), storage, ledger.clone(), None, &[], None)?;
 
             // Insert a mock DAG in the BFT.
-            *bft.dag.write() = crate::helpers::dag::test_helpers::mock_dag_with_modified_last_committed_round(3);
+            *bft.dag.write().unwrap() =
+                crate::helpers::dag::test_helpers::mock_dag_with_modified_last_committed_round(3);
 
             // Insert the previous certificates into the BFT.
             for certificate in previous_certificates.clone() {
@@ -1141,7 +1153,8 @@ mod tests {
             let bft = BFT::new(account, storage, ledger, None, &[], None)?;
 
             // Insert a mock DAG in the BFT.
-            *bft.dag.write() = crate::helpers::dag::test_helpers::mock_dag_with_modified_last_committed_round(2);
+            *bft.dag.write().unwrap() =
+                crate::helpers::dag::test_helpers::mock_dag_with_modified_last_committed_round(2);
 
             // Insert the previous certificates into the BFT.
             for certificate in previous_certificates.clone() {
@@ -1259,7 +1272,8 @@ mod tests {
         let account = Account::new(rng)?;
         let bft = BFT::new(account, storage.clone(), ledger, None, &[], None)?;
         // Insert a mock DAG in the BFT.
-        *bft.dag.write() = crate::helpers::dag::test_helpers::mock_dag_with_modified_last_committed_round(commit_round);
+        *bft.dag.write().unwrap() =
+            crate::helpers::dag::test_helpers::mock_dag_with_modified_last_committed_round(commit_round);
 
         // Ensure that the `gc_round` has not been updated yet.
         assert_eq!(bft.storage().gc_round(), committee_round.saturating_sub(max_gc_rounds));
@@ -1326,7 +1340,8 @@ mod tests {
         let bft = BFT::new(account.clone(), storage, ledger.clone(), None, &[], None)?;
 
         // Insert a mock DAG in the BFT.
-        *bft.dag.write() = crate::helpers::dag::test_helpers::mock_dag_with_modified_last_committed_round(commit_round);
+        *bft.dag.write().unwrap() =
+            crate::helpers::dag::test_helpers::mock_dag_with_modified_last_committed_round(commit_round);
 
         // Insert the previous certificates into the BFT.
         for certificate in certificates.clone() {
@@ -1347,21 +1362,26 @@ mod tests {
         bootup_bft.sync_bft_dag_at_bootup(certificates.clone()).await;
 
         // Check that the BFT starts from the same last committed round.
-        assert_eq!(bft.dag.read().last_committed_round(), bootup_bft.dag.read().last_committed_round());
+        assert_eq!(
+            bft.dag.read().unwrap().last_committed_round(),
+            bootup_bft.dag.read().unwrap().last_committed_round()
+        );
 
         // Ensure that both BFTs have committed the leader certificate.
-        assert!(bft.dag.read().is_recently_committed(leader_certificate.round(), leader_certificate.id()));
-        assert!(bootup_bft.dag.read().is_recently_committed(leader_certificate.round(), leader_certificate.id()));
+        assert!(bft.dag.read().unwrap().is_recently_committed(leader_certificate.round(), leader_certificate.id()));
+        assert!(
+            bootup_bft.dag.read().unwrap().is_recently_committed(leader_certificate.round(), leader_certificate.id())
+        );
 
         // Check the state of the bootup BFT.
         for certificate in certificates {
             let certificate_round = certificate.round();
             let certificate_id = certificate.id();
             // Check that the bootup BFT has committed the certificates.
-            assert!(bootup_bft.dag.read().is_recently_committed(certificate_round, certificate_id));
+            assert!(bootup_bft.dag.read().unwrap().is_recently_committed(certificate_round, certificate_id));
             // Check that the bootup BFT does not contain the certificates in its graph, because
             // it should not need to order them again in subsequent subdags.
-            assert!(!bootup_bft.dag.read().contains_certificate_in_round(certificate_round, certificate_id));
+            assert!(!bootup_bft.dag.read().unwrap().contains_certificate_in_round(certificate_round, certificate_id));
         }
 
         Ok(())
@@ -1498,7 +1518,7 @@ mod tests {
         let bft = BFT::new(account.clone(), storage, ledger.clone(), None, &[], None)?;
 
         // Insert a mock DAG in the BFT without bootup.
-        *bft.dag.write() = crate::helpers::dag::test_helpers::mock_dag_with_modified_last_committed_round(0);
+        *bft.dag.write().unwrap() = crate::helpers::dag::test_helpers::mock_dag_with_modified_last_committed_round(0);
 
         // Insert the certificates into the BFT without bootup.
         for certificate in pre_shutdown_certificates.clone() {
@@ -1542,14 +1562,28 @@ mod tests {
         // Check that the final state of both BFTs is the same.
 
         // Check that both BFTs start from the same last committed round.
-        assert_eq!(bft.dag.read().last_committed_round(), bootup_bft.dag.read().last_committed_round());
+        assert_eq!(
+            bft.dag.read().unwrap().last_committed_round(),
+            bootup_bft.dag.read().unwrap().last_committed_round()
+        );
 
         // Ensure that both BFTs have committed the leader certificates.
-        assert!(bft.dag.read().is_recently_committed(leader_certificate.round(), leader_certificate.id()));
-        assert!(bft.dag.read().is_recently_committed(next_leader_certificate.round(), next_leader_certificate.id()));
-        assert!(bootup_bft.dag.read().is_recently_committed(leader_certificate.round(), leader_certificate.id()));
+        assert!(bft.dag.read().unwrap().is_recently_committed(leader_certificate.round(), leader_certificate.id()));
         assert!(
-            bootup_bft.dag.read().is_recently_committed(next_leader_certificate.round(), next_leader_certificate.id())
+            bft.dag
+                .read()
+                .unwrap()
+                .is_recently_committed(next_leader_certificate.round(), next_leader_certificate.id())
+        );
+        assert!(
+            bootup_bft.dag.read().unwrap().is_recently_committed(leader_certificate.round(), leader_certificate.id())
+        );
+        assert!(
+            bootup_bft
+                .dag
+                .read()
+                .unwrap()
+                .is_recently_committed(next_leader_certificate.round(), next_leader_certificate.id())
         );
 
         // Check that the bootup BFT has committed the pre shutdown certificates.
@@ -1557,12 +1591,12 @@ mod tests {
             let certificate_round = certificate.round();
             let certificate_id = certificate.id();
             // Check that both BFTs have committed the certificates.
-            assert!(bft.dag.read().is_recently_committed(certificate_round, certificate_id));
-            assert!(bootup_bft.dag.read().is_recently_committed(certificate_round, certificate_id));
+            assert!(bft.dag.read().unwrap().is_recently_committed(certificate_round, certificate_id));
+            assert!(bootup_bft.dag.read().unwrap().is_recently_committed(certificate_round, certificate_id));
             // Check that the bootup BFT does not contain the certificates in its graph, because
             // it should not need to order them again in subsequent subdags.
-            assert!(!bft.dag.read().contains_certificate_in_round(certificate_round, certificate_id));
-            assert!(!bootup_bft.dag.read().contains_certificate_in_round(certificate_round, certificate_id));
+            assert!(!bft.dag.read().unwrap().contains_certificate_in_round(certificate_round, certificate_id));
+            assert!(!bootup_bft.dag.read().unwrap().contains_certificate_in_round(certificate_round, certificate_id));
         }
 
         // Check that that the bootup BFT has committed the subdag stemming from the second leader certificate in consensus.
@@ -1570,12 +1604,12 @@ mod tests {
             let certificate_round = certificate.round();
             let certificate_id = certificate.id();
             // Check that the both BFTs have committed the certificates.
-            assert!(bft.dag.read().is_recently_committed(certificate_round, certificate_id));
-            assert!(bootup_bft.dag.read().is_recently_committed(certificate_round, certificate_id));
+            assert!(bft.dag.read().unwrap().is_recently_committed(certificate_round, certificate_id));
+            assert!(bootup_bft.dag.read().unwrap().is_recently_committed(certificate_round, certificate_id));
             // Check that the bootup BFT does not contain the certificates in its graph, because
             // it should not need to order them again in subsequent subdags.
-            assert!(!bft.dag.read().contains_certificate_in_round(certificate_round, certificate_id));
-            assert!(!bootup_bft.dag.read().contains_certificate_in_round(certificate_round, certificate_id));
+            assert!(!bft.dag.read().unwrap().contains_certificate_in_round(certificate_round, certificate_id));
+            assert!(!bootup_bft.dag.read().unwrap().contains_certificate_in_round(certificate_round, certificate_id));
         }
 
         // Check that the commit subdag metadata for the second leader is the same for both BFTs.
@@ -1700,7 +1734,8 @@ mod tests {
         let account = Account::new(rng)?;
         let bootup_bft = BFT::new(account.clone(), storage.clone(), ledger.clone(), None, &[], None)?;
         // Insert a mock DAG in the BFT without bootup.
-        *bootup_bft.dag.write() = crate::helpers::dag::test_helpers::mock_dag_with_modified_last_committed_round(0);
+        *bootup_bft.dag.write().unwrap() =
+            crate::helpers::dag::test_helpers::mock_dag_with_modified_last_committed_round(0);
         // Sync the BFT DAG at bootup.
         bootup_bft.sync_bft_dag_at_bootup(pre_shutdown_certificates.clone()).await;
 

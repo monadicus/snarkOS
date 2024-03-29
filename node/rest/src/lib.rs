@@ -45,8 +45,10 @@ use axum::{
     Json,
 };
 use axum_extra::response::ErasedJson;
-use parking_lot::Mutex;
-use std::{net::SocketAddr, sync::Arc};
+use std::{
+    net::SocketAddr,
+    sync::{Arc, Mutex},
+};
 use tokio::{net::TcpListener, task::JoinHandle};
 use tower_governor::{governor::GovernorConfigBuilder, GovernorLayer};
 use tower_http::{
@@ -200,7 +202,7 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
         };
 
         let rest_listener = TcpListener::bind(rest_ip).await.unwrap();
-        self.handles.lock().push(tokio::spawn(async move {
+        self.handles.lock().unwrap().push(tokio::spawn(async move {
             axum::serve(rest_listener, router.into_make_service_with_connect_info::<SocketAddr>())
                 .await
                 .expect("couldn't start rest server");

@@ -14,8 +14,7 @@
 
 use snarkvm::prelude::{Address, Network};
 
-use parking_lot::RwLock;
-use std::{collections::HashMap, net::SocketAddr};
+use std::{collections::HashMap, net::SocketAddr, sync::RwLock};
 
 #[derive(Debug)]
 pub struct Resolver<N: Network> {
@@ -51,41 +50,41 @@ impl<N: Network> Resolver<N> {
 impl<N: Network> Resolver<N> {
     /// Returns the listener address for the given (ambiguous) peer address, if it exists.
     pub fn get_listener(&self, peer_addr: SocketAddr) -> Option<SocketAddr> {
-        self.to_listener.read().get(&peer_addr).copied()
+        self.to_listener.read().unwrap().get(&peer_addr).copied()
     }
 
     /// Returns the (ambiguous) peer address for the given listener address, if it exists.
     pub fn get_ambiguous(&self, peer_ip: SocketAddr) -> Option<SocketAddr> {
-        self.from_listener.read().get(&peer_ip).copied()
+        self.from_listener.read().unwrap().get(&peer_ip).copied()
     }
 
     /// Returns the address for the given peer IP.
     pub fn get_address(&self, peer_ip: SocketAddr) -> Option<Address<N>> {
-        self.peer_addresses.read().get(&peer_ip).copied()
+        self.peer_addresses.read().unwrap().get(&peer_ip).copied()
     }
 
     /// Returns the peer IP for the given address.
     pub fn get_peer_ip_for_address(&self, address: Address<N>) -> Option<SocketAddr> {
-        self.address_peers.read().get(&address).copied()
+        self.address_peers.read().unwrap().get(&address).copied()
     }
 
     /// Inserts a bidirectional mapping of the listener address and the (ambiguous) peer address,
     /// alongside a bidirectional mapping of the listener address and the Aleo address.
     pub fn insert_peer(&self, listener_ip: SocketAddr, peer_addr: SocketAddr, address: Address<N>) {
-        self.from_listener.write().insert(listener_ip, peer_addr);
-        self.to_listener.write().insert(peer_addr, listener_ip);
-        self.peer_addresses.write().insert(listener_ip, address);
-        self.address_peers.write().insert(address, listener_ip);
+        self.from_listener.write().unwrap().insert(listener_ip, peer_addr);
+        self.to_listener.write().unwrap().insert(peer_addr, listener_ip);
+        self.peer_addresses.write().unwrap().insert(listener_ip, address);
+        self.address_peers.write().unwrap().insert(address, listener_ip);
     }
 
     /// Removes the bidirectional mapping of the listener address and the (ambiguous) peer address,
     /// alongside the bidirectional mapping of the listener address and the Aleo address.
     pub fn remove_peer(&self, listener_ip: SocketAddr) {
-        if let Some(peer_addr) = self.from_listener.write().remove(&listener_ip) {
-            self.to_listener.write().remove(&peer_addr);
+        if let Some(peer_addr) = self.from_listener.write().unwrap().remove(&listener_ip) {
+            self.to_listener.write().unwrap().remove(&peer_addr);
         }
-        if let Some(address) = self.peer_addresses.write().remove(&listener_ip) {
-            self.address_peers.write().remove(&address);
+        if let Some(address) = self.peer_addresses.write().unwrap().remove(&listener_ip) {
+            self.address_peers.write().unwrap().remove(&address);
         }
     }
 }

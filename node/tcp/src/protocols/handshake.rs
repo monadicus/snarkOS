@@ -85,7 +85,7 @@ where
             }
         });
         let _ = rx.await;
-        self.tcp().tasks.lock().push(handshake_task);
+        self.tcp().tasks.lock().unwrap().push(handshake_task);
 
         // register the Handshake handler with the Tcp
         let hdl = Box::new(ProtocolHandler(from_node_sender));

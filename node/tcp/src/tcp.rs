@@ -26,7 +26,7 @@ use std::{
 };
 
 use once_cell::sync::OnceCell;
-use parking_lot::Mutex;
+use std::sync::Mutex;
 use tokio::{
     io::split,
     net::{TcpListener, TcpStream},
@@ -136,7 +136,7 @@ impl Tcp {
 
     /// Checks if Tcp is currently setting up a connection with the provided address.
     pub fn is_connecting(&self, addr: SocketAddr) -> bool {
-        self.connecting.lock().contains(&addr)
+        self.connecting.lock().unwrap().contains(&addr)
     }
 
     /// Returns the number of active connections.
@@ -146,7 +146,7 @@ impl Tcp {
 
     /// Returns the number of connections that are currently being set up.
     pub fn num_connecting(&self) -> usize {
-        self.connecting.lock().len()
+        self.connecting.lock().unwrap().len()
     }
 
     /// Returns a list containing addresses of active connections.
@@ -156,7 +156,7 @@ impl Tcp {
 
     /// Returns a list containing addresses of pending connections.
     pub fn connecting_addrs(&self) -> Vec<SocketAddr> {
-        self.connecting.lock().iter().copied().collect()
+        self.connecting.lock().unwrap().iter().copied().collect()
     }
 
     /// Returns a reference to the collection of statistics of known peers.
@@ -182,7 +182,7 @@ impl Tcp {
         debug!(parent: self.span(), "Shutting down the TCP stack");
 
         // Retrieve all tasks.
-        let mut tasks = std::mem::take(&mut *self.tasks.lock()).into_iter();
+        let mut tasks = std::mem::take(&mut *self.tasks.lock().unwrap()).into_iter();
 
         // Abort the listening task first.
         if let Some(listening_task) = tasks.next() {
@@ -220,7 +220,7 @@ impl Tcp {
             return Err(io::ErrorKind::AlreadyExists.into());
         }
 
-        if !self.connecting.lock().insert(addr) {
+        if !self.connecting.lock().unwrap().insert(addr) {
             warn!(parent: self.span(), "Already connecting to {addr}");
             return Err(io::ErrorKind::AlreadyExists.into());
         }
@@ -231,11 +231,11 @@ impl Tcp {
             {
                 Ok(Ok(stream)) => Ok(stream),
                 Ok(err) => {
-                    self.connecting.lock().remove(&addr);
+                    self.connecting.lock().unwrap().remove(&addr);
                     err
                 }
                 Err(err) => {
-                    self.connecting.lock().remove(&addr);
+                    self.connecting.lock().unwrap().remove(&addr);
                     error!("connection timeout error: {}", err);
                     Err(io::ErrorKind::TimedOut.into())
                 }
@@ -244,7 +244,7 @@ impl Tcp {
         let ret = self.adapt_stream(stream, addr, ConnectionSide::Initiator).await;
 
         if let Err(ref e) = ret {
-            self.connecting.lock().remove(&addr);
+            self.connecting.lock().unwrap().remove(&addr);
             self.known_peers().register_failure(addr);
             error!(parent: self.span(), "Unable to initiate a connection with {addr}: {e}");
         }
@@ -321,7 +321,7 @@ impl Tcp {
                 }
             }
         });
-        self.tasks.lock().push(listening_task);
+        self.tasks.lock().unwrap().push(listening_task);
         let _ = rx.await;
         debug!(parent: self.span(), "Listening on {listening_addr}");
 
@@ -370,12 +370,12 @@ impl Tcp {
             return;
         }
 
-        self.connecting.lock().insert(addr);
+        self.connecting.lock().unwrap().insert(addr);
 
         let tcp = self.clone();
         tokio::spawn(async move {
             if let Err(e) = tcp.adapt_stream(stream, addr, ConnectionSide::Responder).await {
-                tcp.connecting.lock().remove(&addr);
+                tcp.connecting.lock().unwrap().remove(&addr);
                 tcp.known_peers().register_failure(addr);
                 error!(parent: tcp.span(), "Failed to connect with {addr}: {e}");
             }
@@ -439,7 +439,7 @@ impl Tcp {
         let conn_ready_tx = connection.readiness_notifier.take();
 
         self.connections.add(connection);
-        self.connecting.lock().remove(&peer_addr);
+        self.connecting.lock().unwrap().remove(&peer_addr);
 
         // Send the aforementioned notification so that reading from the socket can commence.
         if let Some(tx) = conn_ready_tx {
@@ -611,22 +611,22 @@ mod tests {
         assert!(tcp.can_add_connection());
 
         // Simulate a pending connection.
-        tcp.connecting.lock().insert(peer_ip);
+        tcp.connecting.lock().unwrap().insert(peer_ip);
         assert!(!tcp.can_add_connection());
 
         // Remove the pending connection.
-        tcp.connecting.lock().remove(&peer_ip);
+        tcp.connecting.lock().unwrap().remove(&peer_ip);
         assert!(tcp.can_add_connection());
 
         // Simulate an active and a pending connection (this case should never occur).
         let stream = TcpStream::connect(peer_ip).await.unwrap();
         tcp.connections.add(Connection::new(peer_ip, stream, ConnectionSide::Responder));
-        tcp.connecting.lock().insert(peer_ip);
+        tcp.connecting.lock().unwrap().insert(peer_ip);
         assert!(!tcp.can_add_connection());
 
         // Remove the active and pending connection.
         tcp.connections.remove(peer_ip);
-        tcp.connecting.lock().remove(&peer_ip);
+        tcp.connecting.lock().unwrap().remove(&peer_ip);
         assert!(tcp.can_add_connection());
     }
 
@@ -691,7 +691,7 @@ mod tests {
         let peer_ip = peer.enable_listener().await.unwrap();
 
         // Simulate a pending connection.
-        tcp.connecting.lock().insert(peer_ip);
+        tcp.connecting.lock().unwrap().insert(peer_ip);
         assert_eq!(tcp.num_connected(), 0);
         assert_eq!(tcp.num_connecting(), 1);
         assert!(!tcp.is_connected(peer_ip));

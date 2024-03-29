@@ -46,8 +46,12 @@ use anyhow::Result;
 use colored::Colorize;
 use indexmap::IndexMap;
 use lru::LruCache;
-use parking_lot::Mutex;
-use std::{future::Future, net::SocketAddr, num::NonZeroUsize, sync::Arc};
+use std::{
+    future::Future,
+    net::SocketAddr,
+    num::NonZeroUsize,
+    sync::{Arc, Mutex},
+};
 use tokio::{
     sync::{oneshot, OnceCell},
     task::JoinHandle,
@@ -222,7 +226,7 @@ impl<N: Network> Consensus<N> {
             let solution_id = solution.commitment();
 
             // Check if the transaction was recently seen.
-            if self.seen_solutions.lock().put(solution_id, ()).is_some() {
+            if self.seen_solutions.lock().unwrap().put(solution_id, ()).is_some() {
                 // If the transaction was recently seen, return early.
                 return Ok(());
             }
@@ -232,7 +236,7 @@ impl<N: Network> Consensus<N> {
             }
             // Add the solution to the memory pool.
             trace!("Received unconfirmed solution '{}' in the queue", fmt_id(solution_id));
-            if self.solutions_queue.lock().put(solution_id, solution).is_some() {
+            if self.solutions_queue.lock().unwrap().put(solution_id, solution).is_some() {
                 bail!("Solution '{}' exists in the memory pool", fmt_id(solution_id));
             }
         }
@@ -247,7 +251,7 @@ impl<N: Network> Consensus<N> {
             // Determine the available capacity.
             let capacity = N::MAX_SOLUTIONS.saturating_sub(num_unconfirmed);
             // Acquire the lock on the queue.
-            let mut queue = self.solutions_queue.lock();
+            let mut queue = self.solutions_queue.lock().unwrap();
             // Determine the number of solutions to send.
             let num_solutions = queue.len().min(capacity);
             // Drain the solutions from the queue.
@@ -284,7 +288,7 @@ impl<N: Network> Consensus<N> {
                 bail!("Transaction '{}' is a fee transaction {}", fmt_id(transaction_id), "(skipping)".dimmed());
             }
             // Check if the transaction was recently seen.
-            if self.seen_transactions.lock().put(transaction_id, ()).is_some() {
+            if self.seen_transactions.lock().unwrap().put(transaction_id, ()).is_some() {
                 // If the transaction was recently seen, return early.
                 return Ok(());
             }
@@ -295,10 +299,10 @@ impl<N: Network> Consensus<N> {
             // Add the transaction to the memory pool.
             trace!("Received unconfirmed transaction '{}' in the queue", fmt_id(transaction_id));
             if transaction.is_deploy() {
-                if self.transactions_queue.lock().deployments.put(transaction_id, transaction).is_some() {
+                if self.transactions_queue.lock().unwrap().deployments.put(transaction_id, transaction).is_some() {
                     bail!("Transaction '{}' exists in the memory pool", fmt_id(transaction_id));
                 }
-            } else if self.transactions_queue.lock().executions.put(transaction_id, transaction).is_some() {
+            } else if self.transactions_queue.lock().unwrap().executions.put(transaction_id, transaction).is_some() {
                 bail!("Transaction '{}' exists in the memory pool", fmt_id(transaction_id));
             }
         }
@@ -313,7 +317,7 @@ impl<N: Network> Consensus<N> {
             // Determine the available capacity.
             let capacity = BatchHeader::<N>::MAX_TRANSMISSIONS_PER_BATCH.saturating_sub(num_unconfirmed);
             // Acquire the lock on the transactions queue.
-            let mut tx_queue = self.transactions_queue.lock();
+            let mut tx_queue = self.transactions_queue.lock().unwrap();
             // Determine the number of deployments to send.
             let num_deployments = tx_queue.deployments.len().min(capacity).min(MAX_DEPLOYMENTS_PER_INTERVAL);
             // Determine the number of executions to send.
@@ -469,7 +473,7 @@ impl<N: Network> Consensus<N> {
 
     /// Spawns a task with the given future; it should only be used for long-running tasks.
     fn spawn<T: Future<Output = ()> + Send + 'static>(&self, future: T) {
-        self.handles.lock().push(tokio::spawn(future));
+        self.handles.lock().unwrap().push(tokio::spawn(future));
     }
 
     /// Shuts down the BFT.
@@ -478,6 +482,6 @@ impl<N: Network> Consensus<N> {
         // Shut down the BFT.
         self.bft.shut_down().await;
         // Abort the tasks.
-        self.handles.lock().iter().for_each(|handle| handle.abort());
+        self.handles.lock().unwrap().iter().for_each(|handle| handle.abort());
     }
 }

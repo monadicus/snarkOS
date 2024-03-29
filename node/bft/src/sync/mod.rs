@@ -29,9 +29,13 @@ use snarkvm::{
 };
 
 use anyhow::{bail, Result};
-use parking_lot::Mutex;
 use rayon::prelude::*;
-use std::{collections::HashMap, future::Future, net::SocketAddr, sync::Arc};
+use std::{
+    collections::HashMap,
+    future::Future,
+    net::SocketAddr,
+    sync::{Arc, Mutex},
+};
 use tokio::{
     sync::{oneshot, Mutex as TMutex, OnceCell},
     task::JoinHandle,
@@ -94,7 +98,7 @@ impl<N: Network> Sync<N> {
 
         // Start the block sync loop.
         let self_ = self.clone();
-        self.handles.lock().push(tokio::spawn(async move {
+        self.handles.lock().unwrap().push(tokio::spawn(async move {
             loop {
                 // Sleep briefly to avoid triggering spam detection.
                 tokio::time::sleep(std::time::Duration::from_millis(PRIMARY_PING_IN_MS)).await;
@@ -462,7 +466,7 @@ impl<N: Network> Sync<N> {
 impl<N: Network> Sync<N> {
     /// Spawns a task with the given future; it should only be used for long-running tasks.
     fn spawn<T: Future<Output = ()> + Send + 'static>(&self, future: T) {
-        self.handles.lock().push(tokio::spawn(future));
+        self.handles.lock().unwrap().push(tokio::spawn(future));
     }
 
     /// Shuts down the primary.
@@ -473,6 +477,6 @@ impl<N: Network> Sync<N> {
         // Acquire the sync lock.
         let _lock = self.sync_lock.lock().await;
         // Abort the tasks.
-        self.handles.lock().iter().for_each(|handle| handle.abort());
+        self.handles.lock().unwrap().iter().for_each(|handle| handle.abort());
     }
 }

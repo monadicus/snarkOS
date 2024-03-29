@@ -44,14 +44,13 @@ use snarkos_node_tcp::{is_bogon_ip, is_unspecified_or_broadcast_ip, Config, Tcp}
 use snarkvm::prelude::{Address, Network, PrivateKey, ViewKey};
 
 use anyhow::{bail, Result};
-use parking_lot::{Mutex, RwLock};
 use std::{
     collections::{HashMap, HashSet},
     future::Future,
     net::SocketAddr,
     ops::Deref,
     str::FromStr,
-    sync::Arc,
+    sync::{Arc, Mutex, RwLock},
     time::Instant,
 };
 use tokio::task::JoinHandle;
@@ -161,7 +160,7 @@ impl<N: Network> Router<N> {
                 }
                 // If the connection was not allowed, log the error.
                 Err(error) => {
-                    router.connecting_peers.lock().remove(&peer_ip);
+                    router.connecting_peers.lock().unwrap().remove(&peer_ip);
                     warn!("Unable to connect to '{peer_ip}' - {error}");
                     false
                 }
@@ -188,7 +187,7 @@ impl<N: Network> Router<N> {
             bail!("Dropping connection attempt to '{peer_ip}' (restricted)")
         }
         // Ensure the node is not already connecting to this peer.
-        if !self.connecting_peers.lock().insert(peer_ip) {
+        if !self.connecting_peers.lock().unwrap().insert(peer_ip) {
             bail!("Dropping connection attempt to '{peer_ip}' (already shaking hands as the initiator)")
         }
         Ok(())
@@ -272,33 +271,34 @@ impl<N: Network> Router<N> {
 
     /// Returns `true` if the node is connected to the given peer IP.
     pub fn is_connected(&self, ip: &SocketAddr) -> bool {
-        self.connected_peers.read().contains_key(ip)
+        self.connected_peers.read().unwrap().contains_key(ip)
     }
 
     /// Returns `true` if the given peer IP is a connected validator.
     pub fn is_connected_validator(&self, peer_ip: &SocketAddr) -> bool {
-        self.connected_peers.read().get(peer_ip).map_or(false, |peer| peer.is_validator())
+        self.connected_peers.read().unwrap().get(peer_ip).map_or(false, |peer| peer.is_validator())
     }
 
     /// Returns `true` if the given peer IP is a connected prover.
     pub fn is_connected_prover(&self, peer_ip: &SocketAddr) -> bool {
-        self.connected_peers.read().get(peer_ip).map_or(false, |peer| peer.is_prover())
+        self.connected_peers.read().unwrap().get(peer_ip).map_or(false, |peer| peer.is_prover())
     }
 
     /// Returns `true` if the given peer IP is a connected client.
     pub fn is_connected_client(&self, peer_ip: &SocketAddr) -> bool {
-        self.connected_peers.read().get(peer_ip).map_or(false, |peer| peer.is_client())
+        self.connected_peers.read().unwrap().get(peer_ip).map_or(false, |peer| peer.is_client())
     }
 
     /// Returns `true` if the node is currently connecting to the given peer IP.
     pub fn is_connecting(&self, ip: &SocketAddr) -> bool {
-        self.connecting_peers.lock().contains(ip)
+        self.connecting_peers.lock().unwrap().contains(ip)
     }
 
     /// Returns `true` if the given IP is restricted.
     pub fn is_restricted(&self, ip: &SocketAddr) -> bool {
         self.restricted_peers
             .read()
+            .unwrap()
             .get(ip)
             .map(|time| time.elapsed().as_secs() < Self::RADIO_SILENCE_IN_SECS)
             .unwrap_or(false)
@@ -316,72 +316,72 @@ impl<N: Network> Router<N> {
 
     /// Returns the number of connected peers.
     pub fn number_of_connected_peers(&self) -> usize {
-        self.connected_peers.read().len()
+        self.connected_peers.read().unwrap().len()
     }
 
     /// Returns the number of connected validators.
     pub fn number_of_connected_validators(&self) -> usize {
-        self.connected_peers.read().values().filter(|peer| peer.is_validator()).count()
+        self.connected_peers.read().unwrap().values().filter(|peer| peer.is_validator()).count()
     }
 
     /// Returns the number of connected provers.
     pub fn number_of_connected_provers(&self) -> usize {
-        self.connected_peers.read().values().filter(|peer| peer.is_prover()).count()
+        self.connected_peers.read().unwrap().values().filter(|peer| peer.is_prover()).count()
     }
 
     /// Returns the number of connected clients.
     pub fn number_of_connected_clients(&self) -> usize {
-        self.connected_peers.read().values().filter(|peer| peer.is_client()).count()
+        self.connected_peers.read().unwrap().values().filter(|peer| peer.is_client()).count()
     }
 
     /// Returns the number of candidate peers.
     pub fn number_of_candidate_peers(&self) -> usize {
-        self.candidate_peers.read().len()
+        self.candidate_peers.read().unwrap().len()
     }
 
     /// Returns the number of restricted peers.
     pub fn number_of_restricted_peers(&self) -> usize {
-        self.restricted_peers.read().len()
+        self.restricted_peers.read().unwrap().len()
     }
 
     /// Returns the connected peer given the peer IP, if it exists.
     pub fn get_connected_peer(&self, ip: &SocketAddr) -> Option<Peer<N>> {
-        self.connected_peers.read().get(ip).cloned()
+        self.connected_peers.read().unwrap().get(ip).cloned()
     }
 
     /// Returns the connected peers.
     pub fn get_connected_peers(&self) -> Vec<Peer<N>> {
-        self.connected_peers.read().values().cloned().collect()
+        self.connected_peers.read().unwrap().values().cloned().collect()
     }
 
     /// Returns the list of connected peers.
     pub fn connected_peers(&self) -> Vec<SocketAddr> {
-        self.connected_peers.read().keys().copied().collect()
+        self.connected_peers.read().unwrap().keys().copied().collect()
     }
 
     /// Returns the list of connected validators.
     pub fn connected_validators(&self) -> Vec<SocketAddr> {
-        self.connected_peers.read().iter().filter(|(_, peer)| peer.is_validator()).map(|(ip, _)| *ip).collect()
+        self.connected_peers.read().unwrap().iter().filter(|(_, peer)| peer.is_validator()).map(|(ip, _)| *ip).collect()
     }
 
     /// Returns the list of connected provers.
     pub fn connected_provers(&self) -> Vec<SocketAddr> {
-        self.connected_peers.read().iter().filter(|(_, peer)| peer.is_prover()).map(|(ip, _)| *ip).collect()
+        self.connected_peers.read().unwrap().iter().filter(|(_, peer)| peer.is_prover()).map(|(ip, _)| *ip).collect()
     }
 
     /// Returns the list of connected clients.
     pub fn connected_clients(&self) -> Vec<SocketAddr> {
-        self.connected_peers.read().iter().filter(|(_, peer)| peer.is_client()).map(|(ip, _)| *ip).collect()
+        self.connected_peers.read().unwrap().iter().filter(|(_, peer)| peer.is_client()).map(|(ip, _)| *ip).collect()
     }
 
     /// Returns the list of candidate peers.
     pub fn candidate_peers(&self) -> HashSet<SocketAddr> {
-        self.candidate_peers.read().clone()
+        self.candidate_peers.read().unwrap().clone()
     }
 
     /// Returns the list of restricted peers.
     pub fn restricted_peers(&self) -> Vec<SocketAddr> {
-        self.restricted_peers.read().keys().copied().collect()
+        self.restricted_peers.read().unwrap().keys().copied().collect()
     }
 
     /// Returns the list of trusted peers.
@@ -405,14 +405,14 @@ impl<N: Network> Router<N> {
 
     /// Returns the list of metrics for the connected peers.
     pub fn connected_metrics(&self) -> Vec<(SocketAddr, NodeType)> {
-        self.connected_peers.read().iter().map(|(ip, peer)| (*ip, peer.node_type())).collect()
+        self.connected_peers.read().unwrap().iter().map(|(ip, peer)| (*ip, peer.node_type())).collect()
     }
 
     #[cfg(feature = "metrics")]
     fn update_metrics(&self) {
-        metrics::gauge(metrics::router::CONNECTED, self.connected_peers.read().len() as f64);
-        metrics::gauge(metrics::router::CANDIDATE, self.candidate_peers.read().len() as f64);
-        metrics::gauge(metrics::router::RESTRICTED, self.restricted_peers.read().len() as f64);
+        metrics::gauge(metrics::router::CONNECTED, self.connected_peers.read().unwrap().len() as f64);
+        metrics::gauge(metrics::router::CANDIDATE, self.candidate_peers.read().unwrap().len() as f64);
+        metrics::gauge(metrics::router::RESTRICTED, self.restricted_peers.read().unwrap().len() as f64);
     }
 
     /// Inserts the given peer into the connected peers.
@@ -421,11 +421,11 @@ impl<N: Network> Router<N> {
         // Adds a bidirectional map between the listener address and (ambiguous) peer address.
         self.resolver.insert_peer(peer_ip, peer_addr);
         // Add an entry for this `Peer` in the connected peers.
-        self.connected_peers.write().insert(peer_ip, peer);
+        self.connected_peers.write().unwrap().insert(peer_ip, peer);
         // Remove this peer from the candidate peers, if it exists.
-        self.candidate_peers.write().remove(&peer_ip);
+        self.candidate_peers.write().unwrap().remove(&peer_ip);
         // Remove this peer from the restricted peers, if it exists.
-        self.restricted_peers.write().remove(&peer_ip);
+        self.restricted_peers.write().unwrap().remove(&peer_ip);
         #[cfg(feature = "metrics")]
         self.update_metrics();
     }
@@ -447,7 +447,7 @@ impl<N: Network> Router<N> {
             .take(max_candidate_peers);
 
         // Proceed to insert the eligible candidate peer IPs.
-        self.candidate_peers.write().extend(eligible_peers);
+        self.candidate_peers.write().unwrap().extend(eligible_peers);
         #[cfg(feature = "metrics")]
         self.update_metrics();
     }
@@ -455,9 +455,9 @@ impl<N: Network> Router<N> {
     /// Inserts the given peer into the restricted peers.
     pub fn insert_restricted_peer(&self, peer_ip: SocketAddr) {
         // Remove this peer from the candidate peers, if it exists.
-        self.candidate_peers.write().remove(&peer_ip);
+        self.candidate_peers.write().unwrap().remove(&peer_ip);
         // Add the peer to the restricted peers.
-        self.restricted_peers.write().insert(peer_ip, Instant::now());
+        self.restricted_peers.write().unwrap().insert(peer_ip, Instant::now());
         #[cfg(feature = "metrics")]
         self.update_metrics();
     }
@@ -470,7 +470,7 @@ impl<N: Network> Router<N> {
         mut write_fn: Fn,
     ) -> Result<()> {
         // Retrieve the peer.
-        if let Some(peer) = self.connected_peers.write().get_mut(&peer_ip) {
+        if let Some(peer) = self.connected_peers.write().unwrap().get_mut(&peer_ip) {
             // Ensure the node type has not changed.
             if peer.node_type() != node_type {
                 bail!("Peer '{peer_ip}' has changed node types from {} to {node_type}", peer.node_type())
@@ -486,37 +486,37 @@ impl<N: Network> Router<N> {
         // Removes the bidirectional map between the listener address and (ambiguous) peer address.
         self.resolver.remove_peer(&peer_ip);
         // Remove this peer from the connected peers, if it exists.
-        self.connected_peers.write().remove(&peer_ip);
+        self.connected_peers.write().unwrap().remove(&peer_ip);
         // Add the peer to the candidate peers.
-        self.candidate_peers.write().insert(peer_ip);
+        self.candidate_peers.write().unwrap().insert(peer_ip);
         #[cfg(feature = "metrics")]
         self.update_metrics();
     }
 
     #[cfg(feature = "test")]
     pub fn clear_candidate_peers(&self) {
-        self.candidate_peers.write().clear();
+        self.candidate_peers.write().unwrap().clear();
         #[cfg(feature = "metrics")]
         self.update_metrics();
     }
 
     /// Removes the given address from the candidate peers, if it exists.
     pub fn remove_candidate_peer(&self, peer_ip: SocketAddr) {
-        self.candidate_peers.write().remove(&peer_ip);
+        self.candidate_peers.write().unwrap().remove(&peer_ip);
         #[cfg(feature = "metrics")]
         self.update_metrics();
     }
 
     /// Spawns a task with the given future; it should only be used for long-running tasks.
     pub fn spawn<T: Future<Output = ()> + Send + 'static>(&self, future: T) {
-        self.handles.lock().push(tokio::spawn(future));
+        self.handles.lock().unwrap().push(tokio::spawn(future));
     }
 
     /// Shuts down the router.
     pub async fn shut_down(&self) {
         info!("Shutting down the router...");
         // Abort the tasks.
-        self.handles.lock().iter().for_each(|handle| handle.abort());
+        self.handles.lock().unwrap().iter().for_each(|handle| handle.abort());
         // Close the listener.
         self.tcp.shut_down().await;
     }

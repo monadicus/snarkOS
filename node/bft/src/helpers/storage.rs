@@ -24,12 +24,12 @@ use snarkvm::{
 };
 
 use indexmap::{map::Entry, IndexMap, IndexSet};
-use parking_lot::RwLock;
 use std::{
     collections::{HashMap, HashSet},
     sync::{
         atomic::{AtomicU32, AtomicU64, Ordering},
         Arc,
+        RwLock,
     },
 };
 
@@ -233,24 +233,24 @@ impl<N: Network> Storage<N> {
     /// Returns `true` if the storage contains the specified `round`.
     pub fn contains_certificates_for_round(&self, round: u64) -> bool {
         // Check if the round exists in storage.
-        self.rounds.read().contains_key(&round)
+        self.rounds.read().unwrap().contains_key(&round)
     }
 
     /// Returns `true` if the storage contains the specified `certificate ID`.
     pub fn contains_certificate(&self, certificate_id: Field<N>) -> bool {
         // Check if the certificate ID exists in storage.
-        self.certificates.read().contains_key(&certificate_id)
+        self.certificates.read().unwrap().contains_key(&certificate_id)
     }
 
     /// Returns `true` if the storage contains a certificate from the specified `author` in the given `round`.
     pub fn contains_certificate_in_round_from(&self, round: u64, author: Address<N>) -> bool {
-        self.rounds.read().get(&round).map_or(false, |set| set.iter().any(|(_, _, a)| a == &author))
+        self.rounds.read().unwrap().get(&round).map_or(false, |set| set.iter().any(|(_, _, a)| a == &author))
     }
 
     /// Returns `true` if the storage contains the specified `batch ID`.
     pub fn contains_batch(&self, batch_id: Field<N>) -> bool {
         // Check if the batch ID exists in storage.
-        self.batch_ids.read().contains_key(&batch_id)
+        self.batch_ids.read().unwrap().contains_key(&batch_id)
     }
 
     /// Returns `true` if the storage contains the specified `transmission ID`.
@@ -268,28 +268,28 @@ impl<N: Network> Storage<N> {
     /// If the certificate ID does not exist in storage, `None` is returned.
     pub fn get_round_for_certificate(&self, certificate_id: Field<N>) -> Option<u64> {
         // Get the round.
-        self.certificates.read().get(&certificate_id).map(|certificate| certificate.round())
+        self.certificates.read().unwrap().get(&certificate_id).map(|certificate| certificate.round())
     }
 
     /// Returns the round for the given `batch ID`.
     /// If the batch ID does not exist in storage, `None` is returned.
     pub fn get_round_for_batch(&self, batch_id: Field<N>) -> Option<u64> {
         // Get the round.
-        self.batch_ids.read().get(&batch_id).copied()
+        self.batch_ids.read().unwrap().get(&batch_id).copied()
     }
 
     /// Returns the certificate round for the given `certificate ID`.
     /// If the certificate ID does not exist in storage, `None` is returned.
     pub fn get_certificate_round(&self, certificate_id: Field<N>) -> Option<u64> {
         // Get the batch certificate and return the round.
-        self.certificates.read().get(&certificate_id).map(|certificate| certificate.round())
+        self.certificates.read().unwrap().get(&certificate_id).map(|certificate| certificate.round())
     }
 
     /// Returns the certificate for the given `certificate ID`.
     /// If the certificate ID does not exist in storage, `None` is returned.
     pub fn get_certificate(&self, certificate_id: Field<N>) -> Option<BatchCertificate<N>> {
         // Get the batch certificate.
-        self.certificates.read().get(&certificate_id).cloned()
+        self.certificates.read().unwrap().get(&certificate_id).cloned()
     }
 
     /// Returns the certificate for the given `round` and `author`.
@@ -297,8 +297,8 @@ impl<N: Network> Storage<N> {
     /// If the author for the round does not exist in storage, `None` is returned.
     pub fn get_certificate_for_round_with_author(&self, round: u64, author: Address<N>) -> Option<BatchCertificate<N>> {
         // Retrieve the certificates.
-        if let Some(entries) = self.rounds.read().get(&round) {
-            let certificates = self.certificates.read();
+        if let Some(entries) = self.rounds.read().unwrap().get(&round) {
+            let certificates = self.certificates.read().unwrap();
             entries.iter().find_map(
                 |(certificate_id, _, a)| if a == &author { certificates.get(certificate_id).cloned() } else { None },
             )
@@ -315,8 +315,8 @@ impl<N: Network> Storage<N> {
             return Default::default();
         }
         // Retrieve the certificates.
-        if let Some(entries) = self.rounds.read().get(&round) {
-            let certificates = self.certificates.read();
+        if let Some(entries) = self.rounds.read().unwrap().get(&round) {
+            let certificates = self.certificates.read().unwrap();
             entries.iter().flat_map(|(certificate_id, _, _)| certificates.get(certificate_id).cloned()).collect()
         } else {
             Default::default()
@@ -533,13 +533,13 @@ impl<N: Network> Storage<N> {
         let author = certificate.author();
 
         // Insert the round to certificate ID entry.
-        self.rounds.write().entry(round).or_default().insert((certificate_id, batch_id, author));
+        self.rounds.write().unwrap().entry(round).or_default().insert((certificate_id, batch_id, author));
         // Obtain the certificate's transmission ids.
         let transmission_ids = certificate.transmission_ids().clone();
         // Insert the certificate.
-        self.certificates.write().insert(certificate_id, certificate);
+        self.certificates.write().unwrap().insert(certificate_id, certificate);
         // Insert the batch ID.
-        self.batch_ids.write().insert(batch_id, round);
+        self.batch_ids.write().unwrap().insert(batch_id, round);
         // Insert the certificate ID for each of the transmissions into storage.
         self.transmissions.insert_transmissions(certificate_id, transmission_ids, missing_transmissions);
     }
@@ -568,7 +568,7 @@ impl<N: Network> Storage<N> {
         //  It will be better to write tests that compare the union of the sets.
 
         // Update the round.
-        match self.rounds.write().entry(round) {
+        match self.rounds.write().unwrap().entry(round) {
             Entry::Occupied(mut entry) => {
                 // Remove the round to certificate ID entry.
                 entry.get_mut().swap_remove(&(certificate_id, batch_id, author));
@@ -580,9 +580,9 @@ impl<N: Network> Storage<N> {
             Entry::Vacant(_) => {}
         }
         // Remove the certificate.
-        self.certificates.write().swap_remove(&certificate_id);
+        self.certificates.write().unwrap().swap_remove(&certificate_id);
         // Remove the batch ID.
-        self.batch_ids.write().swap_remove(&batch_id);
+        self.batch_ids.write().unwrap().swap_remove(&batch_id);
         // Remove the transmission entries in the certificate from storage.
         self.transmissions.remove_transmissions(&certificate_id, certificate.transmission_ids());
         // Return successfully.
@@ -700,17 +700,17 @@ impl<N: Network> Storage<N> {
 
     /// Returns an iterator over the `(round, (certificate ID, batch ID, author))` entries.
     pub fn rounds_iter(&self) -> impl Iterator<Item = (u64, IndexSet<(Field<N>, Field<N>, Address<N>)>)> {
-        self.rounds.read().clone().into_iter()
+        self.rounds.read().unwrap().clone().into_iter()
     }
 
     /// Returns an iterator over the `(certificate ID, certificate)` entries.
     pub fn certificates_iter(&self) -> impl Iterator<Item = (Field<N>, BatchCertificate<N>)> {
-        self.certificates.read().clone().into_iter()
+        self.certificates.read().unwrap().clone().into_iter()
     }
 
     /// Returns an iterator over the `(batch ID, round)` entries.
     pub fn batch_ids_iter(&self) -> impl Iterator<Item = (Field<N>, u64)> {
-        self.batch_ids.read().clone().into_iter()
+        self.batch_ids.read().unwrap().clone().into_iter()
     }
 
     /// Returns an iterator over the `(transmission ID, (transmission, certificate IDs))` entries.
@@ -735,13 +735,13 @@ impl<N: Network> Storage<N> {
         let author = certificate.author();
 
         // Insert the round to certificate ID entry.
-        self.rounds.write().entry(round).or_default().insert((certificate_id, batch_id, author));
+        self.rounds.write().unwrap().entry(round).or_default().insert((certificate_id, batch_id, author));
         // Obtain the certificate's transmission ids.
         let transmission_ids = certificate.transmission_ids().clone();
         // Insert the certificate.
-        self.certificates.write().insert(certificate_id, certificate);
+        self.certificates.write().unwrap().insert(certificate_id, certificate);
         // Insert the batch ID.
-        self.batch_ids.write().insert(batch_id, round);
+        self.batch_ids.write().unwrap().insert(batch_id, round);
 
         // Construct the dummy missing transmissions (for testing purposes).
         let missing_transmissions = transmission_ids

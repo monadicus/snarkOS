@@ -27,8 +27,10 @@ use snarkvm::{
 };
 
 use indexmap::IndexMap;
-use parking_lot::RwLock;
-use std::{str::FromStr, sync::Arc};
+use std::{
+    str::FromStr,
+    sync::{Arc, RwLock},
+};
 
 const ITERATIONS: u32 = 100;
 

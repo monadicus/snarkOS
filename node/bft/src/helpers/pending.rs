@@ -16,12 +16,11 @@ use crate::MAX_FETCH_TIMEOUT_IN_MS;
 use snarkos_node_bft_ledger_service::LedgerService;
 use snarkvm::{console::network::Network, ledger::committee::Committee};
 
-use parking_lot::{Mutex, RwLock};
 use std::{
     collections::{HashMap, HashSet},
     hash::Hash,
     net::SocketAddr,
-    sync::Arc,
+    sync::{Arc, Mutex, RwLock},
 };
 use time::OffsetDateTime;
 use tokio::sync::oneshot;
@@ -67,27 +66,27 @@ impl<T: Copy + Clone + PartialEq + Eq + Hash, V: Clone> Pending<T, V> {
 
     /// Returns `true` if the pending queue is empty.
     pub fn is_empty(&self) -> bool {
-        self.pending.read().is_empty()
+        self.pending.read().unwrap().is_empty()
     }
 
     /// Returns the number of pending in the pending queue.
     pub fn len(&self) -> usize {
-        self.pending.read().len()
+        self.pending.read().unwrap().len()
     }
 
     /// Returns `true` if the pending queue contains the specified `item`.
     pub fn contains(&self, item: impl Into<T>) -> bool {
-        self.pending.read().contains_key(&item.into())
+        self.pending.read().unwrap().contains_key(&item.into())
     }
 
     /// Returns `true` if the pending queue contains the specified `item` for the specified `peer IP`.
     pub fn contains_peer(&self, item: impl Into<T>, peer_ip: SocketAddr) -> bool {
-        self.pending.read().get(&item.into()).map_or(false, |peer_ips| peer_ips.contains(&peer_ip))
+        self.pending.read().unwrap().get(&item.into()).map_or(false, |peer_ips| peer_ips.contains(&peer_ip))
     }
 
     /// Returns the peer IPs for the specified `item`.
     pub fn get(&self, item: impl Into<T>) -> Option<HashSet<SocketAddr>> {
-        self.pending.read().get(&item.into()).cloned()
+        self.pending.read().unwrap().get(&item.into()).cloned()
     }
 
     /// Returns the number of pending callbacks for the specified `item`.
@@ -96,7 +95,7 @@ impl<T: Copy + Clone + PartialEq + Eq + Hash, V: Clone> Pending<T, V> {
         // Clear the callbacks that have expired.
         self.clear_expired_callbacks_for_item(item);
         // Return the number of live callbacks.
-        self.callbacks.lock().get(&item).map_or(0, |callbacks| callbacks.len())
+        self.callbacks.lock().unwrap().get(&item).map_or(0, |callbacks| callbacks.len())
     }
 
     /// Returns the number of pending sent requests for the specified `item`.
@@ -107,6 +106,7 @@ impl<T: Copy + Clone + PartialEq + Eq + Hash, V: Clone> Pending<T, V> {
         // Return the number of live callbacks.
         self.callbacks
             .lock()
+            .unwrap()
             .get(&item)
             .map_or(0, |callbacks| callbacks.iter().filter(|(_, _, request_sent)| *request_sent).count())
     }
@@ -124,14 +124,14 @@ impl<T: Copy + Clone + PartialEq + Eq + Hash, V: Clone> Pending<T, V> {
     ) -> bool {
         let item = item.into();
         // Insert the peer IP into the pending queue.
-        let result = self.pending.write().entry(item).or_default().insert(peer_ip);
+        let result = self.pending.write().unwrap().entry(item).or_default().insert(peer_ip);
 
         // Clear the callbacks that have expired.
         self.clear_expired_callbacks_for_item(item);
 
         // If a callback is provided, insert it into the callback queue.
         if let Some((callback, request_sent)) = callback {
-            self.callbacks.lock().entry(item).or_default().push((
+            self.callbacks.lock().unwrap().entry(item).or_default().push((
                 callback,
                 OffsetDateTime::now_utc().unix_timestamp(),
                 request_sent,
@@ -147,9 +147,9 @@ impl<T: Copy + Clone + PartialEq + Eq + Hash, V: Clone> Pending<T, V> {
     pub fn remove(&self, item: impl Into<T>, callback_value: Option<V>) -> Option<HashSet<SocketAddr>> {
         let item = item.into();
         // Remove the item from the pending queue.
-        let result = self.pending.write().remove(&item);
+        let result = self.pending.write().unwrap().remove(&item);
         // Remove the callback for the item, and process any remaining callbacks.
-        if let Some(callbacks) = self.callbacks.lock().remove(&item) {
+        if let Some(callbacks) = self.callbacks.lock().unwrap().remove(&item) {
             if let Some(callback_value) = callback_value {
                 // Send a notification to the callback.
                 for (callback, _, _) in callbacks {
@@ -164,7 +164,7 @@ impl<T: Copy + Clone + PartialEq + Eq + Hash, V: Clone> Pending<T, V> {
     /// Removes the callbacks for the specified `item` that have expired.
     pub fn clear_expired_callbacks_for_item(&self, item: impl Into<T>) {
         // Clear the callbacks that have expired.
-        if let Some(callbacks) = self.callbacks.lock().get_mut(&item.into()) {
+        if let Some(callbacks) = self.callbacks.lock().unwrap().get_mut(&item.into()) {
             // Fetch the current timestamp.
             let now = OffsetDateTime::now_utc().unix_timestamp();
             // Remove the callbacks that have expired.

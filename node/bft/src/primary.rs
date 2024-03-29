@@ -57,13 +57,12 @@ use snarkvm::{
 use colored::Colorize;
 use futures::stream::{FuturesUnordered, StreamExt};
 use indexmap::{IndexMap, IndexSet};
-use parking_lot::{Mutex, RwLock};
 use rayon::prelude::*;
 use std::{
     collections::{HashMap, HashSet},
     future::Future,
     net::SocketAddr,
-    sync::Arc,
+    sync::{Arc, Mutex, RwLock},
     time::Duration,
 };
 use tokio::{
@@ -286,7 +285,7 @@ impl<N: Network> Primary<N> {
 
         // If there is a batch being proposed already,
         // rebroadcast the batch header to the non-signers, and return early.
-        if let Some(proposal) = self.proposed_batch.read().as_ref() {
+        if let Some(proposal) = self.proposed_batch.read().unwrap().as_ref() {
             // Construct the event.
             // TODO(ljedrz): the BatchHeader should be serialized only once in advance before being sent to non-signers.
             let event = Event::BatchPropose(proposal.batch_header().clone().into());
@@ -473,7 +472,7 @@ impl<N: Network> Primary<N> {
         // Broadcast the batch to all validators for signing.
         self.gateway.broadcast(Event::BatchPropose(batch_header.into()));
         // Set the proposed batch.
-        *self.proposed_batch.write() = Some(proposal);
+        *self.proposed_batch.write().unwrap() = Some(proposal);
         Ok(())
     }
 
@@ -537,7 +536,7 @@ impl<N: Network> Primary<N> {
 
         // Retrieve the cached round and batch ID for this validator.
         if let Some((signed_round, signed_batch_id, signature)) =
-            self.signed_proposals.read().get(&batch_author).copied()
+            self.signed_proposals.read().unwrap().get(&batch_author).copied()
         {
             // If the signed round is ahead of the peer's batch round, then the validator is malicious.
             if signed_round > batch_header.round() {
@@ -609,7 +608,7 @@ impl<N: Network> Primary<N> {
         // Note: Due to the need to sync the batch header with the peer, it is possible
         // for the primary to receive the same 'BatchPropose' event again, whereby only
         // one instance of this handler should sign the batch. This check guarantees this.
-        match self.signed_proposals.write().entry(batch_author) {
+        match self.signed_proposals.write().unwrap().entry(batch_author) {
             std::collections::hash_map::Entry::Occupied(mut entry) => {
                 // If the validator has already signed a batch for this round, then return early,
                 // since, if the peer still has not received the signature, they will request it again,
@@ -676,7 +675,7 @@ impl<N: Network> Primary<N> {
         let self_ = self.clone();
         let Some(proposal) = spawn_blocking!({
             // Acquire the write lock.
-            let mut proposed_batch = self_.proposed_batch.write();
+            let mut proposed_batch = self_.proposed_batch.write().unwrap();
             // Add the signature to the batch, and determine if the batch is ready to be certified.
             match proposed_batch.as_mut() {
                 Some(proposal) => {
@@ -798,7 +797,7 @@ impl<N: Network> Primary<N> {
         // Determine if we are currently proposing a round that is relevant.
         // Note: This is important, because while our peers have advanced,
         // they may not be proposing yet, and thus still able to sign our proposed batch.
-        let should_advance = match &*self.proposed_batch.read() {
+        let should_advance = match &*self.proposed_batch.read().unwrap() {
             // We advance if the proposal round is less than the current round that was just certified.
             Some(proposal) => proposal.round() < certificate_round,
             // If there's no proposal, we consider advancing.
@@ -1073,14 +1072,14 @@ impl<N: Network> Primary<N> {
     /// Checks if the proposed batch is expired, and clears the proposed batch if it has expired.
     async fn check_proposed_batch_for_expiration(&self) -> Result<()> {
         // Check if the proposed batch is timed out or stale.
-        let is_expired = match self.proposed_batch.read().as_ref() {
+        let is_expired = match self.proposed_batch.read().unwrap().as_ref() {
             Some(proposal) => proposal.round() < self.current_round(),
             None => false,
         };
         // If the batch is expired, clear the proposed batch.
         if is_expired {
             // Reset the proposed batch.
-            let proposal = self.proposed_batch.write().take();
+            let proposal = self.proposed_batch.write().unwrap().take();
             if let Some(proposal) = proposal {
                 self.reinsert_transmissions_into_workers(proposal)?;
             }
@@ -1098,7 +1097,7 @@ impl<N: Network> Primary<N> {
                 // Update to the next round in storage.
                 fast_forward_round = self.storage.increment_to_next_round(fast_forward_round)?;
                 // Clear the proposed batch.
-                *self.proposed_batch.write() = None;
+                *self.proposed_batch.write().unwrap() = None;
             }
         }
 
@@ -1155,7 +1154,7 @@ impl<N: Network> Primary<N> {
             bail!("Primary is on round {current_round}, and no longer signing for round {batch_round}")
         }
         // Check if the primary is still signing for the batch round.
-        if let Some(signing_round) = self.proposed_batch.read().as_ref().map(|proposal| proposal.round()) {
+        if let Some(signing_round) = self.proposed_batch.read().unwrap().as_ref().map(|proposal| proposal.round()) {
             if signing_round > batch_round {
                 bail!("Our primary at round {signing_round} is no longer signing for round {batch_round}")
             }
@@ -1448,7 +1447,7 @@ impl<N: Network> Primary<N> {
 impl<N: Network> Primary<N> {
     /// Spawns a task with the given future; it should only be used for long-running tasks.
     fn spawn<T: Future<Output = ()> + Send + 'static>(&self, future: T) {
-        self.handles.lock().push(tokio::spawn(future));
+        self.handles.lock().unwrap().push(tokio::spawn(future));
     }
 
     /// Shuts down the primary.
@@ -1457,7 +1456,7 @@ impl<N: Network> Primary<N> {
         // Shut down the workers.
         self.workers.iter().for_each(|worker| worker.shut_down());
         // Abort the tasks.
-        self.handles.lock().iter().for_each(|handle| handle.abort());
+        self.handles.lock().unwrap().iter().for_each(|handle| handle.abort());
         // Close the gateway.
         self.gateway.shut_down().await;
     }
@@ -1604,7 +1603,7 @@ mod tests {
             if account.address() == primary.gateway.account().address() {
                 continue;
             }
-            let batch_id = primary.proposed_batch.read().as_ref().unwrap().batch_id();
+            let batch_id = primary.proposed_batch.read().unwrap().as_ref().unwrap().batch_id();
             let signature = account.sign(&[batch_id], rng).unwrap();
             signatures.push((*socket_addr, BatchSignature::new(batch_id, signature)));
         }
@@ -1714,12 +1713,12 @@ mod tests {
         let (primary, _) = primary_without_handlers(&mut rng).await;
 
         // Check there is no batch currently proposed.
-        assert!(primary.proposed_batch.read().is_none());
+        assert!(primary.proposed_batch.read().unwrap().is_none());
 
         // Try to propose a batch. There are no transmissions in the workers so the method should
         // just return without proposing a batch.
         assert!(primary.propose_batch().await.is_ok());
-        assert!(primary.proposed_batch.read().is_none());
+        assert!(primary.proposed_batch.read().unwrap().is_none());
 
         // Generate a solution and a transaction.
         let (solution_commitment, solution) = sample_unconfirmed_solution(&mut rng);
@@ -1731,7 +1730,7 @@ mod tests {
 
         // Try to propose a batch again. This time, it should succeed.
         assert!(primary.propose_batch().await.is_ok());
-        assert!(primary.proposed_batch.read().is_some());
+        assert!(primary.proposed_batch.read().unwrap().is_some());
     }
 
     #[tokio::test]
@@ -1746,7 +1745,7 @@ mod tests {
         // Try to propose a batch. There are no transmissions in the workers so the method should
         // just return without proposing a batch.
         assert!(primary.propose_batch().await.is_ok());
-        assert!(primary.proposed_batch.read().is_none());
+        assert!(primary.proposed_batch.read().unwrap().is_none());
 
         // Generate a solution and a transaction.
         let (solution_commitment, solution) = sample_unconfirmed_solution(&mut rng);
@@ -1758,7 +1757,7 @@ mod tests {
 
         // Propose a batch again. This time, it should succeed.
         assert!(primary.propose_batch().await.is_ok());
-        assert!(primary.proposed_batch.read().is_some());
+        assert!(primary.proposed_batch.read().unwrap().is_some());
     }
 
     #[tokio::test]
@@ -1928,7 +1927,7 @@ mod tests {
         );
 
         // Store the proposal on the primary.
-        *primary.proposed_batch.write() = Some(proposal);
+        *primary.proposed_batch.write().unwrap() = Some(proposal);
 
         // Each committee member signs the batch.
         let signatures = peer_signatures_for_proposal(&primary, &accounts, &mut rng);
@@ -1966,7 +1965,7 @@ mod tests {
         );
 
         // Store the proposal on the primary.
-        *primary.proposed_batch.write() = Some(proposal);
+        *primary.proposed_batch.write().unwrap() = Some(proposal);
 
         // Each committee member signs the batch.
         let signatures = peer_signatures_for_proposal(&primary, &accounts, &mut rng);
@@ -2001,7 +2000,7 @@ mod tests {
         );
 
         // Store the proposal on the primary.
-        *primary.proposed_batch.write() = Some(proposal);
+        *primary.proposed_batch.write().unwrap() = Some(proposal);
 
         // Each committee member signs the batch.
         let signatures = peer_signatures_for_proposal(&primary, &accounts, &mut rng);
@@ -2038,7 +2037,7 @@ mod tests {
         );
 
         // Store the proposal on the primary.
-        *primary.proposed_batch.write() = Some(proposal);
+        *primary.proposed_batch.write().unwrap() = Some(proposal);
 
         // Each committee member signs the batch.
         let signatures = peer_signatures_for_proposal(&primary, &accounts, &mut rng);

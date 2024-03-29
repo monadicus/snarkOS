@@ -15,10 +15,10 @@
 use snarkvm::{console::types::Field, ledger::narwhal::TransmissionID, prelude::Network};
 
 use core::hash::Hash;
-use parking_lot::RwLock;
 use std::{
     collections::{BTreeMap, HashMap},
     net::{IpAddr, SocketAddr},
+    sync::RwLock,
 };
 use time::OffsetDateTime;
 
@@ -107,7 +107,7 @@ impl<N: Network> Cache<N> {
 impl<N: Network> Cache<N> {
     /// Returns `true` if the cache contains a validators request from the given IP.
     pub fn contains_outbound_validators_request(&self, peer_ip: SocketAddr) -> bool {
-        self.seen_outbound_validators_requests.read().get(&peer_ip).map(|r| *r > 0).unwrap_or(false)
+        self.seen_outbound_validators_requests.read().unwrap().get(&peer_ip).map(|r| *r > 0).unwrap_or(false)
     }
 
     /// Increment the IP's number of validators requests, returning the updated number of validators requests.
@@ -132,7 +132,7 @@ impl<N: Network> Cache<N> {
         let now = OffsetDateTime::now_utc().unix_timestamp();
 
         // Get the write lock.
-        let mut map_write = map.write();
+        let mut map_write = map.write().unwrap();
         // Insert the new timestamp and increment the frequency for the key.
         *map_write.entry(now).or_default().entry(key).or_default() += 1;
         // Calculate the cutoff time for the entries to retain.
@@ -163,7 +163,7 @@ impl<N: Network> Cache<N> {
 
     /// Increments the key's counter in the map, returning the updated counter.
     fn increment_counter<K: Hash + Eq>(map: &RwLock<HashMap<K, u32>>, key: K) -> u32 {
-        let mut map_write = map.write();
+        let mut map_write = map.write().unwrap();
         // Load the entry for the key, and increment the counter.
         let entry = map_write.entry(key).or_default();
         *entry = entry.saturating_add(1);
@@ -173,7 +173,7 @@ impl<N: Network> Cache<N> {
 
     /// Decrements the key's counter in the map, returning the updated counter.
     fn decrement_counter<K: Copy + Hash + Eq>(map: &RwLock<HashMap<K, u32>>, key: K) -> u32 {
-        let mut map_write = map.write();
+        let mut map_write = map.write().unwrap();
         // Load the entry for the key, and decrement the counter.
         let entry = map_write.entry(key).or_default();
         let value = entry.saturating_sub(1);
@@ -237,7 +237,7 @@ mod tests {
                         let input = Input::input();
 
                         // Check that the cache is empty.
-                        assert!(cache.[<seen_ $name s>].read().is_empty());
+                        assert!(cache.[<seen_ $name s>].read().unwrap().is_empty());
 
                         // Insert an input, recent events should be 1.
                         assert_eq!(cache.[<insert_ $name>](input, INTERVAL_IN_SECS), 1);
@@ -251,17 +251,17 @@ mod tests {
                         assert_eq!(cache.[<insert_ $name>](input, INTERVAL_IN_SECS), 3);
 
                         // Check that the cache contains the input for 3 entries.
-                        assert_eq!(cache.[<seen_ $name s>].read().len(), 3);
+                        assert_eq!(cache.[<seen_ $name s>].read().unwrap().len(), 3);
 
                         // Insert the input again with a small interval, causing one entry to be removed.
                         cache.[<insert_ $name>](input, 1);
                         // Check that the cache contains the input for 2 entries.
-                        assert_eq!(cache.[<seen_ $name s>].read().len(), 2);
+                        assert_eq!(cache.[<seen_ $name s>].read().unwrap().len(), 2);
 
                         // Insert the input again with a large interval, causing nothing to be removed.
                         cache.[<insert_ $name>](input, 10);
                         // Check that the cache contains the input for 2 entries.
-                        assert_eq!(cache.[<seen_ $name s>].read().len(), 2);
+                        assert_eq!(cache.[<seen_ $name s>].read().unwrap().len(), 2);
 
                         // Wait for the input to expire.
                         thread::sleep(Duration::from_secs(INTERVAL_IN_SECS as u64 + 1));
@@ -270,14 +270,14 @@ mod tests {
                         assert_eq!(cache.[<insert_ $name>](input, INTERVAL_IN_SECS), 1);
 
                         // Check that the cache contains the input for 1 entry.
-                        assert_eq!(cache.[<seen_ $name s>].read().len(), 1);
+                        assert_eq!(cache.[<seen_ $name s>].read().unwrap().len(), 1);
 
                         // Check that the cache still contains the input.
-                        let counts: u32 = cache.[<seen_ $name s>].read().values().map(|hash_map| hash_map.get(&input).unwrap_or(&0)).cloned().sum();
+                        let counts: u32 = cache.[<seen_ $name s>].read().unwrap().values().map(|hash_map| hash_map.get(&input).unwrap_or(&0)).cloned().sum();
                         assert_eq!(counts, 1);
 
                         // Check that the cache contains the input and 1 timestamp entry.
-                        assert_eq!(cache.[<seen_ $name s>].read().len(), 1);
+                        assert_eq!(cache.[<seen_ $name s>].read().unwrap().len(), 1);
                     }
                 }
             )*

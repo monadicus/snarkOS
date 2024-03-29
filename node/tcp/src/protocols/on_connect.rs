@@ -60,7 +60,7 @@ where
             }
         });
         let _ = rx.await;
-        self.tcp().tasks.lock().push(on_connect_task);
+        self.tcp().tasks.lock().unwrap().push(on_connect_task);
 
         // register the OnConnect handler with the Node
         let hdl = Box::new(ProtocolHandler(from_node_sender));

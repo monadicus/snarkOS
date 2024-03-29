@@ -16,7 +16,7 @@
 
 use std::{collections::HashMap, net::SocketAddr, ops::Not};
 
-use parking_lot::RwLock;
+use std::sync::RwLock;
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     net::TcpStream,
@@ -34,27 +34,27 @@ pub(crate) struct Connections(RwLock<HashMap<SocketAddr, Connection>>);
 impl Connections {
     /// Adds the given connection to the list of active connections.
     pub(crate) fn add(&self, conn: Connection) {
-        self.0.write().insert(conn.addr, conn);
+        self.0.write().unwrap().insert(conn.addr, conn);
     }
 
     /// Returns `true` if the given address is connected.
     pub(crate) fn is_connected(&self, addr: SocketAddr) -> bool {
-        self.0.read().contains_key(&addr)
+        self.0.read().unwrap().contains_key(&addr)
     }
 
     /// Removes the connection associated with the given address.
     pub(crate) fn remove(&self, addr: SocketAddr) -> Option<Connection> {
-        self.0.write().remove(&addr)
+        self.0.write().unwrap().remove(&addr)
     }
 
     /// Returns the number of connected addresses.
     pub(crate) fn num_connected(&self) -> usize {
-        self.0.read().len()
+        self.0.read().unwrap().len()
     }
 
     /// Returns the list of connected addresses.
     pub(crate) fn addrs(&self) -> Vec<SocketAddr> {
-        self.0.read().keys().copied().collect()
+        self.0.read().unwrap().keys().copied().collect()
     }
 }
 

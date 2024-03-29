@@ -32,8 +32,12 @@ use snarkvm::{
 };
 
 use indexmap::{IndexMap, IndexSet};
-use parking_lot::Mutex;
-use std::{future::Future, net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    future::Future,
+    net::SocketAddr,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 use tokio::{sync::oneshot, task::JoinHandle, time::timeout};
 
 #[derive(Clone)]
@@ -156,7 +160,7 @@ impl<N: Network> Worker<N> {
         let transmission_id = transmission_id.into();
         // Check if the transmission ID exists in the ready queue, proposed batch, storage, or ledger.
         self.ready.contains(transmission_id)
-            || self.proposed_batch.read().as_ref().map_or(false, |p| p.contains_transmission(transmission_id))
+            || self.proposed_batch.read().unwrap().as_ref().map_or(false, |p| p.contains_transmission(transmission_id))
             || self.storage.contains_transmission(transmission_id)
             || self.ledger.contains_transmission(&transmission_id).unwrap_or(false)
     }
@@ -176,7 +180,7 @@ impl<N: Network> Worker<N> {
         }
         // Check if the transmission ID exists in the proposed batch.
         if let Some(transmission) =
-            self.proposed_batch.read().as_ref().and_then(|p| p.get_transmission(transmission_id))
+            self.proposed_batch.read().unwrap().as_ref().and_then(|p| p.get_transmission(transmission_id))
         {
             return Some(transmission.clone());
         }
@@ -459,14 +463,14 @@ impl<N: Network> Worker<N> {
 
     /// Spawns a task with the given future; it should only be used for long-running tasks.
     fn spawn<T: Future<Output = ()> + Send + 'static>(&self, future: T) {
-        self.handles.lock().push(tokio::spawn(future));
+        self.handles.lock().unwrap().push(tokio::spawn(future));
     }
 
     /// Shuts down the worker.
     pub(crate) fn shut_down(&self) {
         trace!("Shutting down worker {}...", self.id);
         // Abort the tasks.
-        self.handles.lock().iter().for_each(|handle| handle.abort());
+        self.handles.lock().unwrap().iter().for_each(|handle| handle.abort());
     }
 }
 
