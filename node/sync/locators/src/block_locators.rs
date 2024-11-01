@@ -208,7 +208,7 @@ impl<N: Network> BlockLocators<N> {
             last_height = *current_height;
         }
 
-        // If the last height is below NUM_RECENTS, ensure the number of recent blocks matches the last height.
+        // If the last height is below NUM_RECENT_BLOCKS, ensure the number of recent blocks matches the last height.
         if last_height < NUM_RECENT_BLOCKS as u32 && recents.len().saturating_sub(1) as u32 != last_height {
             bail!("As the last height is below {NUM_RECENT_BLOCKS}, the number of recent blocks must match the height")
         }
@@ -336,10 +336,10 @@ pub mod test_helpers {
         BlockLocators::new(recents, checkpoints).unwrap()
     }
 
-    /// Simulates a block locator at the given height, with a fork within NUM_RECENTS of the given height.
+    /// Simulates a block locator at the given height, with a fork within NUM_RECENT_BLOCKS of the given height.
     pub fn sample_block_locators_with_fork(height: u32, fork_height: u32) -> BlockLocators<CurrentNetwork> {
         assert!(fork_height <= height, "Fork height must be less than or equal to the given height");
-        assert!(height - fork_height < NUM_RECENT_BLOCKS as u32, "Fork must be within NUM_RECENTS of the given height");
+        assert!(height - fork_height < NUM_RECENT_BLOCKS as u32, "Fork must be within NUM_RECENT_BLOCKS of the given height");
 
         // Create the recent locators.
         let mut recents = IndexMap::new();
@@ -405,17 +405,17 @@ mod tests {
                 let block_locators =
                     BlockLocators::<CurrentNetwork>::new_unchecked(recents.clone(), checkpoints.clone());
                 if height == 0 && recents.len() < NUM_RECENT_BLOCKS {
-                    // For the first NUM_RECENTS blocks, ensure NUM_RECENTS - 1 or less is valid.
+                    // For the first NUM_RECENT_BLOCKS, ensure NUM_RECENT_BLOCKS - 1 or less is valid.
                     block_locators.ensure_is_valid().unwrap();
                 } else if recents.len() < NUM_RECENT_BLOCKS {
-                    // After the first NUM_RECENTS blocks from genesis, ensure NUM_RECENTS - 1 or less is not valid.
+                    // After the first NUM_RECENT_BLOCKS blocks from genesis, ensure NUM_RECENT_BLOCKS - 1 or less is not valid.
                     block_locators.ensure_is_valid().unwrap_err();
                 } else {
-                    // After the first NUM_RECENTS blocks from genesis, ensure NUM_RECENTS is valid.
+                    // After the first NUM_RECENT_BLOCKS blocks from genesis, ensure NUM_RECENT_BLOCKS is valid.
                     block_locators.ensure_is_valid().unwrap();
                 }
             }
-            // Ensure NUM_RECENTS + 1 is not valid.
+            // Ensure NUM_RECENT_BLOCKS + 1 is not valid.
             recents.insert(
                 height + NUM_RECENT_BLOCKS as u32,
                 (Field::<CurrentNetwork>::from_u32(height + NUM_RECENT_BLOCKS as u32)).into(),
@@ -477,7 +477,7 @@ mod tests {
             let block_locators = BlockLocators::<CurrentNetwork>::new(recents.clone(), checkpoints.clone()).unwrap();
             block_locators.ensure_is_valid().unwrap();
         }
-        // Ensure NUM_RECENTS + 1 is not valid.
+        // Ensure NUM_RECENT_BLOCKS + 1 is not valid.
         recents.insert(NUM_RECENT_BLOCKS as u32, (Field::<CurrentNetwork>::from_u32(NUM_RECENT_BLOCKS as u32)).into());
         let block_locators = BlockLocators::<CurrentNetwork>::new_unchecked(recents.clone(), checkpoints);
         block_locators.ensure_is_valid().unwrap_err();
