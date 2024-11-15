@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -14,24 +15,25 @@
 
 use super::*;
 use snarkos_node_router::{
+    Routing,
     messages::{
         BlockRequest,
         BlockResponse,
         DataBlocks,
         DisconnectReason,
         MessageCodec,
+        PeerRequest,
         Ping,
         Pong,
         PuzzleResponse,
         UnconfirmedTransaction,
     },
-    Routing,
 };
 use snarkos_node_sync::communication_service::CommunicationService;
 use snarkos_node_tcp::{Connection, ConnectionSide, Tcp};
 use snarkvm::{
     ledger::narwhal::Data,
-    prelude::{block::Transaction, Network},
+    prelude::{Network, block::Transaction},
 };
 
 use std::{io, net::SocketAddr, time::Duration};
@@ -67,6 +69,12 @@ where
     async fn on_connect(&self, peer_addr: SocketAddr) {
         // Resolve the peer address to the listener address.
         let Some(peer_ip) = self.router.resolve_to_listener(&peer_addr) else { return };
+        // Promote the peer's status from "connecting" to "connected".
+        self.router().insert_connected_peer(peer_ip);
+        // If it's a bootstrap peer, first request its peers.
+        if self.router.bootstrap_peers().contains(&peer_ip) {
+            Outbound::send(self, peer_ip, Message::PeerRequest(PeerRequest));
+        }
         // Retrieve the block locators.
         let block_locators = match self.sync.get_block_locators() {
             Ok(block_locators) => Some(block_locators),
@@ -295,34 +303,13 @@ impl<N: Network, C: ConsensusStorage<N>> Inbound<N> for Client<N, C> {
         serialized: UnconfirmedSolution<N>,
         solution: Solution<N>,
     ) -> bool {
-        // Retrieve the latest epoch hash.
-        if let Ok(epoch_hash) = self.ledger.latest_epoch_hash() {
-            // Retrieve the latest proof target.
-            let proof_target = self.ledger.latest_block().header().proof_target();
-            // Ensure that the solution is valid for the given epoch.
-            let puzzle = self.puzzle.clone();
-            let is_valid =
-                tokio::task::spawn_blocking(move || puzzle.check_solution(&solution, epoch_hash, proof_target)).await;
-
-            match is_valid {
-                // If the solution is valid, propagate the `UnconfirmedSolution`.
-                Ok(Ok(())) => {
-                    let message = Message::UnconfirmedSolution(serialized);
-                    // Propagate the "UnconfirmedSolution".
-                    self.propagate(message, &[peer_ip]);
-                }
-                Ok(Err(_)) => {
-                    trace!("Invalid solution '{}' for the proof target.", solution.id())
-                }
-                // If error occurs after the first 10 blocks of the epoch, log it as a warning, otherwise ignore.
-                Err(error) => {
-                    if self.ledger.latest_height() % N::NUM_BLOCKS_PER_EPOCH > 10 {
-                        warn!("Failed to verify the solution - {error}")
-                    }
-                }
-            }
+        // Try to add the solution to the verification queue, without changing LRU status of known solutions.
+        let mut solution_queue = self.solution_queue.lock();
+        if !solution_queue.contains(&solution.id()) {
+            solution_queue.put(solution.id(), (peer_ip, serialized, solution));
         }
-        true
+
+        true // Maintain the connection
     }
 
     /// Handles an `UnconfirmedTransaction` message.
@@ -332,15 +319,23 @@ impl<N: Network, C: ConsensusStorage<N>> Inbound<N> for Client<N, C> {
         serialized: UnconfirmedTransaction<N>,
         transaction: Transaction<N>,
     ) -> bool {
-        // Check that the transaction is not a fee transaction.
-        if transaction.is_fee() {
-            return true; // Maintain the connection.
+        // Try to add the transaction to a verification queue, without changing LRU status of known transactions.
+        match &transaction {
+            Transaction::<N>::Fee(..) => (), // Fee Transactions are not valid.
+            Transaction::<N>::Deploy(..) => {
+                let mut deploy_queue = self.deploy_queue.lock();
+                if !deploy_queue.contains(&transaction.id()) {
+                    deploy_queue.put(transaction.id(), (peer_ip, serialized, transaction));
+                }
+            }
+            Transaction::<N>::Execute(..) => {
+                let mut execute_queue = self.execute_queue.lock();
+                if !execute_queue.contains(&transaction.id()) {
+                    execute_queue.put(transaction.id(), (peer_ip, serialized, transaction));
+                }
+            }
         }
-        // Check that the transaction is well-formed and unique.
-        if self.ledger.check_transaction_basic(&transaction, None, &mut rand::thread_rng()).is_ok() {
-            // Propagate the `UnconfirmedTransaction`.
-            self.propagate(Message::UnconfirmedTransaction(serialized), &[peer_ip]);
-        }
-        true
+
+        true // Maintain the connection
     }
 }

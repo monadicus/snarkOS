@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -16,13 +17,13 @@
 mod common;
 
 use crate::common::{
+    CurrentNetwork,
     primary::new_test_committee,
     test_peer::TestPeer,
     utils::{sample_gateway, sample_ledger, sample_storage},
-    CurrentNetwork,
 };
 use snarkos_account::Account;
-use snarkos_node_bft::{helpers::init_primary_channels, Gateway};
+use snarkos_node_bft::{Gateway, helpers::init_primary_channels};
 use snarkos_node_bft_events::{ChallengeRequest, ChallengeResponse, Disconnect, DisconnectReason, Event, WorkerPing};
 use snarkos_node_tcp::P2P;
 use snarkvm::{ledger::narwhal::Data, prelude::TestRng};

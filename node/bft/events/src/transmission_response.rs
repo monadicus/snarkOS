@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -62,8 +63,8 @@ impl<N: Network> FromBytes for TransmissionResponse<N> {
 #[cfg(test)]
 pub mod prop_tests {
     use crate::{
-        prop_tests::{any_solution_id, any_transaction_id, any_transmission_checksum},
         TransmissionResponse,
+        prop_tests::{any_solution_id, any_transaction_id, any_transmission_checksum},
     };
     use snarkvm::{
         console::prelude::{FromBytes, ToBytes},
@@ -73,7 +74,7 @@ pub mod prop_tests {
     use bytes::{Buf, BufMut, Bytes, BytesMut};
     use proptest::{
         collection,
-        prelude::{any, BoxedStrategy, Strategy},
+        prelude::{BoxedStrategy, Strategy, any},
         prop_oneof,
     };
     use test_strategy::proptest;

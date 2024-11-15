@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -12,12 +13,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::common::{primary, CurrentNetwork, TranslucentLedgerService};
+use crate::common::{CurrentNetwork, TranslucentLedgerService, primary};
 use snarkos_account::Account;
 use snarkos_node_bft::{
-    helpers::{PrimarySender, Storage},
     Gateway,
     Worker,
+    helpers::{PrimarySender, Storage},
 };
 
 use snarkos_node_bft_storage_service::BFTMemoryService;
@@ -29,13 +30,13 @@ use snarkvm::{
         store::helpers::memory::ConsensusMemory,
     },
     prelude::{
-        block::Transaction,
-        committee::MIN_VALIDATOR_STAKE,
-        puzzle::{Solution, SolutionID},
         Field,
         Network,
         TestRng,
         Uniform,
+        block::Transaction,
+        committee::MIN_VALIDATOR_STAKE,
+        puzzle::{Solution, SolutionID},
     },
 };
 

@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -13,21 +14,21 @@
 // limitations under the License.
 
 use crate::{
-    messages::{ChallengeRequest, ChallengeResponse, DisconnectReason, Message, MessageCodec, MessageTrait},
     NodeType,
     Peer,
     Router,
+    messages::{ChallengeRequest, ChallengeResponse, DisconnectReason, Message, MessageCodec, MessageTrait},
 };
-use snarkos_node_tcp::{ConnectionSide, Tcp, P2P};
+use snarkos_node_tcp::{ConnectionSide, P2P, Tcp};
 use snarkvm::{
     ledger::narwhal::Data,
-    prelude::{block::Header, error, Address, Field, Network},
+    prelude::{Address, Field, Network, block::Header, error},
 };
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use futures::SinkExt;
-use rand::{rngs::OsRng, Rng};
-use std::{io, net::SocketAddr};
+use rand::{Rng, rngs::OsRng};
+use std::{collections::hash_map::Entry, io, net::SocketAddr};
 use tokio::net::TcpStream;
 use tokio_stream::StreamExt;
 use tokio_util::codec::Framed;
@@ -100,6 +101,26 @@ impl<N: Network> Router<N> {
             Some(peer_addr)
         };
 
+        // Check (or impose) IP-level bans.
+        #[cfg(not(any(test)))]
+        if !self.is_dev() && peer_side == ConnectionSide::Initiator {
+            // If the IP is already banned reject the connection.
+            if self.is_ip_banned(peer_addr.ip()) {
+                trace!("Rejected a connection request from banned IP '{}'", peer_addr.ip());
+                return Err(error(format!("'{}' is a banned IP address", peer_addr.ip())));
+            }
+
+            let num_attempts =
+                self.cache.insert_inbound_connection(peer_addr.ip(), Router::<N>::CONNECTION_ATTEMPTS_SINCE_SECS);
+
+            debug!("Number of connection attempts from '{}': {}", peer_addr.ip(), num_attempts);
+            if num_attempts > Router::<N>::MAX_CONNECTION_ATTEMPTS {
+                self.update_ip_ban(peer_addr.ip());
+                trace!("Rejected a consecutive connection request from IP '{}'", peer_addr.ip());
+                return Err(error(format!("'{}' appears to be spamming connections", peer_addr.ip())));
+            }
+        }
+
         // Perform the handshake; we pass on a mutable reference to peer_ip in case the process is broken at any point in time.
         let handshake_result = if peer_side == ConnectionSide::Responder {
             self.handshake_inner_initiator(peer_addr, &mut peer_ip, stream, genesis_header, restrictions_id).await
@@ -107,14 +128,11 @@ impl<N: Network> Router<N> {
             self.handshake_inner_responder(peer_addr, &mut peer_ip, stream, genesis_header, restrictions_id).await
         };
 
-        // Remove the address from the collection of connecting peers (if the handshake got to the point where it's known).
         if let Some(ip) = peer_ip {
-            self.connecting_peers.lock().remove(&ip);
-        }
-
-        // If the handshake succeeded, announce it.
-        if let Ok((ref peer_ip, _)) = handshake_result {
-            info!("Connected to '{peer_ip}'");
+            if handshake_result.is_err() {
+                // Remove the address from the collection of connecting peers (if the handshake got to the point where it's known).
+                self.connecting_peers.lock().remove(&ip);
+            }
         }
 
         handshake_result
@@ -190,8 +208,10 @@ impl<N: Network> Router<N> {
         };
         send(&mut framed, peer_addr, Message::ChallengeResponse(our_response)).await?;
 
-        // Add the peer to the router.
-        self.insert_connected_peer(Peer::new(peer_ip, &peer_request), peer_addr);
+        // Finalize the connecting peer information.
+        self.connecting_peers.lock().insert(peer_ip, Some(Peer::new(peer_ip, peer_addr, &peer_request)));
+        // Adds a bidirectional map between the listener address and (ambiguous) peer address.
+        self.resolver.insert_peer(peer_ip, peer_addr);
 
         Ok((peer_ip, framed))
     }
@@ -272,8 +292,11 @@ impl<N: Network> Router<N> {
             send(&mut framed, peer_addr, reason.into()).await?;
             return Err(error(format!("Dropped '{peer_addr}' for reason: {reason:?}")));
         }
-        // Add the peer to the router.
-        self.insert_connected_peer(Peer::new(peer_ip, &peer_request), peer_addr);
+
+        // Finalize the connecting peer information.
+        self.connecting_peers.lock().insert(peer_ip, Some(Peer::new(peer_ip, peer_addr, &peer_request)));
+        // Adds a bidirectional map between the listener address and (ambiguous) peer address.
+        self.resolver.insert_peer(peer_ip, peer_addr);
 
         Ok((peer_ip, framed))
     }
@@ -285,9 +308,12 @@ impl<N: Network> Router<N> {
             bail!("Dropping connection request from '{peer_ip}' (attempted to self-connect)")
         }
         // Ensure the node is not already connecting to this peer.
-        if !self.connecting_peers.lock().insert(peer_ip) {
-            bail!("Dropping connection request from '{peer_ip}' (already shaking hands as the initiator)")
-        }
+        match self.connecting_peers.lock().entry(peer_ip) {
+            Entry::Vacant(entry) => entry.insert(None),
+            Entry::Occupied(_) => {
+                bail!("Dropping connection request from '{peer_ip}' (already shaking hands as the initiator)")
+            }
+        };
         // Ensure the node is not already connected to this peer.
         if self.is_connected(&peer_ip) {
             bail!("Dropping connection request from '{peer_ip}' (already connected)")

@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -67,7 +68,7 @@ pub use worker_ping::WorkerPing;
 
 use snarkos_node_sync_locators::BlockLocators;
 use snarkvm::{
-    console::prelude::{error, FromBytes, Network, Read, ToBytes, Write},
+    console::prelude::{FromBytes, Network, Read, ToBytes, Write, error},
     ledger::{
         block::Block,
         narwhal::{BatchCertificate, BatchHeader, Data, Transmission, TransmissionID},
@@ -75,7 +76,7 @@ use snarkvm::{
     prelude::{Address, Field, Signature},
 };
 
-use anyhow::{bail, ensure, Result};
+use anyhow::{Result, bail, ensure};
 use indexmap::{IndexMap, IndexSet};
 use serde::{Deserialize, Serialize};
 pub use std::io::{self, Result as IoResult};
@@ -117,7 +118,7 @@ impl<N: Network> From<DisconnectReason> for Event<N> {
 
 impl<N: Network> Event<N> {
     /// The version of the event protocol; it can be incremented in order to force users to update.
-    pub const VERSION: u32 = 7;
+    pub const VERSION: u32 = 8;
 
     /// Returns the event name.
     #[inline]
@@ -214,7 +215,7 @@ impl<N: Network> FromBytes for Event<N> {
             13 => Self::ValidatorsRequest(ValidatorsRequest::read_le(&mut reader)?),
             14 => Self::ValidatorsResponse(ValidatorsResponse::read_le(&mut reader)?),
             15 => Self::WorkerPing(WorkerPing::read_le(&mut reader)?),
-            16.. => return Err(error("Unknown event ID {id}")),
+            16.. => return Err(error(format!("Unknown event ID {id}"))),
         };
 
         // Ensure that there are no "dangling" bytes.
@@ -248,6 +249,9 @@ mod tests {
 #[cfg(test)]
 pub mod prop_tests {
     use crate::{
+        Disconnect,
+        DisconnectReason,
+        Event,
         batch_certified::prop_tests::any_batch_certified,
         batch_propose::prop_tests::any_batch_propose,
         batch_signature::prop_tests::any_batch_signature,
@@ -258,9 +262,6 @@ pub mod prop_tests {
         transmission_request::prop_tests::any_transmission_request,
         transmission_response::prop_tests::any_transmission_response,
         worker_ping::prop_tests::any_worker_ping,
-        Disconnect,
-        DisconnectReason,
-        Event,
     };
     use snarkvm::{
         console::{network::Network, types::Field},
@@ -269,7 +270,7 @@ pub mod prop_tests {
     };
 
     use proptest::{
-        prelude::{any, BoxedStrategy, Just, Strategy},
+        prelude::{BoxedStrategy, Just, Strategy, any},
         prop_oneof,
         sample::Selector,
     };

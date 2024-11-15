@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -16,18 +17,18 @@ use super::Developer;
 use snarkvm::{
     console::network::{CanaryV0, MainnetV0, Network, TestnetV0},
     prelude::{
-        query::Query,
-        store::{helpers::memory::ConsensusMemory, ConsensusStore},
         Address,
         Locator,
         PrivateKey,
-        Value,
         VM,
+        Value,
+        query::Query,
+        store::{ConsensusStore, helpers::memory::ConsensusMemory},
     },
 };
 
 use aleo_std::StorageMode;
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use clap::Parser;
 use std::{path::PathBuf, str::FromStr};
 use zeroize::Zeroize;
@@ -132,7 +133,7 @@ impl TransferPrivate {
 
             // Prepare the inputs for a transfer.
             let input_record = Developer::parse_record(&private_key, &self.input_record)?;
-            let inputs = vec![
+            let inputs = [
                 Value::Record(input_record),
                 Value::from_str(&format!("{}", recipient))?,
                 Value::from_str(&format!("{}u64", self.amount))?,

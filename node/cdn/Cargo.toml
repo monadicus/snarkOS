@@ -1,10 +1,10 @@
 [package]
 name = "snarkos-node-cdn"
-version = "2.2.7"
+version = "3.0.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A CDN client for a decentralized operating system"
 homepage = "https://aleo.org"
-repository = "https://github.com/AleoHQ/snarkOS"
+repository = "https://github.com/AleoNet/snarkOS"
 keywords = [
   "aleo",
   "cryptography",
@@ -12,13 +12,14 @@ keywords = [
   "decentralized",
   "zero-knowledge"
 ]
-categories = [ "cryptography", "operating-systems" ]
+categories = [ "cryptography", "cryptography::cryptocurrencies", "os" ]
 license = "Apache-2.0"
 edition = "2021"
 
 [features]
 default = [ "parallel" ]
 parallel = [ "rayon" ]
+test_targets = [ "snarkvm/test_targets" ]
 
 [dependencies.anyhow]
 version = "1.0.79"
@@ -41,6 +42,7 @@ optional = true
 
 [dependencies.reqwest]
 version = "0.11"
+features = [ "rustls-tls" ]
 
 [dependencies.serde]
 version = "1"
