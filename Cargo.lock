@@ -3325,6 +3325,7 @@ dependencies = [
  "futures",
  "indexmap 2.5.0",
  "itertools 0.12.1",
+ "lru",
  "mockall",
  "open",
  "parking_lot",

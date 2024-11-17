@@ -916,9 +916,18 @@ impl<N: Network> Primary<N> {
         peer_ip: SocketAddr,
         certificate: BatchCertificate<N>,
     ) -> Result<()> {
+        // Ensure the batch certificate is from an authorized validator.
+        if !self.gateway.is_authorized_validator_ip(peer_ip) {
+            // Proceed to disconnect the validator.
+            self.gateway.disconnect(peer_ip);
+            bail!("Malicious peer - Received a batch certificate from an unauthorized validator IP ({peer_ip})");
+        }
         // Ensure storage does not already contain the certificate.
         if self.storage.contains_certificate(certificate.id()) {
             return Ok(());
+        // Otherwise, ensure ephemeral storage contains the certificate.
+        } else if !self.storage.contains_unprocessed_certificate(certificate.id()) {
+            self.storage.insert_unprocessed_certificate(certificate.clone())?;
         }
 
         // Retrieve the batch certificate author.
@@ -928,12 +937,6 @@ impl<N: Network> Primary<N> {
         // Retrieve the batch certificate committee ID.
         let committee_id = certificate.committee_id();
 
-        // Ensure the batch certificate is from an authorized validator.
-        if !self.gateway.is_authorized_validator_ip(peer_ip) {
-            // Proceed to disconnect the validator.
-            self.gateway.disconnect(peer_ip);
-            bail!("Malicious peer - Received a batch certificate from an unauthorized validator IP ({peer_ip})");
-        }
         // Ensure the batch certificate is not from the current primary.
         if self.gateway.account().address() == author {
             bail!("Received a batch certificate for myself ({author})");
@@ -1668,14 +1671,23 @@ impl<N: Network> Primary<N> {
     ) -> Result<HashSet<BatchCertificate<N>>> {
         // Initialize a list for the missing certificates.
         let mut fetch_certificates = FuturesUnordered::new();
+        // Initialize a set for the missing certificates.
+        let mut missing_certificates = HashSet::default();
         // Iterate through the certificate IDs.
         for certificate_id in certificate_ids {
             // Check if the certificate already exists in the ledger.
             if self.ledger.contains_certificate(certificate_id)? {
                 continue;
             }
-            // If we do not have the certificate, request it.
-            if !self.storage.contains_certificate(*certificate_id) {
+            // Check if the certificate already exists in storage.
+            if self.storage.contains_certificate(*certificate_id) {
+                continue;
+            }
+            // If we have not fully processed the certificate yet, store it.
+            if let Some(certificate) = self.storage.get_unprocessed_certificate(*certificate_id) {
+                missing_certificates.insert(certificate);
+            } else {
+                // If we do not have the certificate, request it.
                 trace!("Primary - Found a new certificate ID for round {round} from '{peer_ip}'");
                 // TODO (howardwu): Limit the number of open requests we send to a peer.
                 // Send an certificate request to the peer.
@@ -1692,8 +1704,6 @@ impl<N: Network> Primary<N> {
             ),
         }
 
-        // Initialize a set for the missing certificates.
-        let mut missing_certificates = HashSet::with_capacity(fetch_certificates.len());
         // Wait for all of the missing certificates to be fetched.
         while let Some(result) = fetch_certificates.next().await {
             // Insert the missing certificate into the set.

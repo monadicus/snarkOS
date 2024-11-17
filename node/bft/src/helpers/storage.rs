@@ -25,9 +25,11 @@ use snarkvm::{
 };
 
 use indexmap::{IndexMap, IndexSet, map::Entry};
+use lru::LruCache;
 use parking_lot::RwLock;
 use std::{
     collections::{HashMap, HashSet},
+    num::NonZeroUsize,
     sync::{
         Arc,
         atomic::{AtomicU32, AtomicU64, Ordering},
@@ -81,6 +83,8 @@ pub struct StorageInner<N: Network> {
     /* Once per batch */
     /// The map of `round` to a list of `(certificate ID, batch ID, author)` entries.
     rounds: RwLock<IndexMap<u64, IndexSet<(Field<N>, Field<N>, Address<N>)>>>,
+    /// A cache of `certificate ID` to unprocessed `certificate`.
+    unprocessed_certificates: RwLock<LruCache<Field<N>, BatchCertificate<N>>>,
     /// The map of `certificate ID` to `certificate`.
     certificates: RwLock<IndexMap<Field<N>, BatchCertificate<N>>>,
     /// The map of `batch ID` to `round`.
@@ -100,6 +104,8 @@ impl<N: Network> Storage<N> {
         let committee = ledger.current_committee().expect("Ledger is missing a committee.");
         // Retrieve the current round.
         let current_round = committee.starting_round().max(1);
+        // Set the unprocessed certificates cache size.
+        let unprocessed_cache_size = NonZeroUsize::new((N::MAX_CERTIFICATES * 2) as usize).unwrap();
 
         // Return the storage.
         let storage = Self(Arc::new(StorageInner {
@@ -109,6 +115,7 @@ impl<N: Network> Storage<N> {
             gc_round: Default::default(),
             max_gc_rounds,
             rounds: Default::default(),
+            unprocessed_certificates: RwLock::new(LruCache::new(unprocessed_cache_size)),
             certificates: Default::default(),
             batch_ids: Default::default(),
             transmissions,
@@ -248,6 +255,12 @@ impl<N: Network> Storage<N> {
         self.rounds.read().get(&round).map_or(false, |set| set.iter().any(|(_, _, a)| a == &author))
     }
 
+    /// Returns `true` if the storage contains the specified `certificate ID`.
+    pub fn contains_unprocessed_certificate(&self, certificate_id: Field<N>) -> bool {
+        // Check if the certificate ID exists in storage.
+        self.unprocessed_certificates.read().contains(&certificate_id)
+    }
+
     /// Returns `true` if the storage contains the specified `batch ID`.
     pub fn contains_batch(&self, batch_id: Field<N>) -> bool {
         // Check if the batch ID exists in storage.
@@ -291,6 +304,13 @@ impl<N: Network> Storage<N> {
     pub fn get_certificate(&self, certificate_id: Field<N>) -> Option<BatchCertificate<N>> {
         // Get the batch certificate.
         self.certificates.read().get(&certificate_id).cloned()
+    }
+
+    /// Returns the unprocessed certificate for the given `certificate ID`.
+    /// If the certificate ID does not exist in storage, `None` is returned.
+    pub fn get_unprocessed_certificate(&self, certificate_id: Field<N>) -> Option<BatchCertificate<N>> {
+        // Get the unprocessed certificate.
+        self.unprocessed_certificates.read().peek(&certificate_id).cloned()
     }
 
     /// Returns the certificate for the given `round` and `author`.
@@ -574,6 +594,8 @@ impl<N: Network> Storage<N> {
         let transmission_ids = certificate.transmission_ids().clone();
         // Insert the certificate.
         self.certificates.write().insert(certificate_id, certificate);
+        // Remove the unprocessed certificate.
+        self.unprocessed_certificates.write().pop(&certificate_id);
         // Insert the batch ID.
         self.batch_ids.write().insert(batch_id, round);
         // Insert the certificate ID for each of the transmissions into storage.
@@ -583,6 +605,18 @@ impl<N: Network> Storage<N> {
             aborted_transmission_ids,
             missing_transmissions,
         );
+    }
+
+    /// Inserts the given unprocessed `certificate` into storage.
+    ///
+    /// This is a temporary storage, which is cleared again when calling `insert_certificate_atomic`.
+    pub fn insert_unprocessed_certificate(&self, certificate: BatchCertificate<N>) -> Result<()> {
+        // Ensure the certificate round is above the GC round.
+        ensure!(certificate.round() > self.gc_round(), "Certificate round is at or below the GC round");
+        // Insert the certificate.
+        self.unprocessed_certificates.write().put(certificate.id(), certificate);
+
+        Ok(())
     }
 
     /// Removes the given `certificate ID` from storage.
@@ -622,6 +656,8 @@ impl<N: Network> Storage<N> {
         }
         // Remove the certificate.
         self.certificates.write().swap_remove(&certificate_id);
+        // Remove the unprocessed certificate.
+        self.unprocessed_certificates.write().pop(&certificate_id);
         // Remove the batch ID.
         self.batch_ids.write().swap_remove(&batch_id);
         // Remove the transmission entries in the certificate from storage.
