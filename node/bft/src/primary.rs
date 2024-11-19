@@ -728,10 +728,10 @@ impl<N: Network> Primary<N> {
         }
 
         // If the peer is ahead, use the batch header to sync up to the peer.
-        let mut transmissions = self.sync_with_batch_header_from_peer::<false>(peer_ip, &batch_header).await?;
+        let mut missing_transmissions = self.sync_with_batch_header_from_peer::<false>(peer_ip, &batch_header).await?;
 
         // Check that the transmission ids match and are not fee transactions.
-        if let Err(err) = cfg_iter_mut!(transmissions).try_for_each(|(transmission_id, transmission)| {
+        if let Err(err) = cfg_iter_mut!(missing_transmissions).try_for_each(|(transmission_id, transmission)| {
             // If the transmission is not well-formed, then return early.
             self.ledger.ensure_transmission_is_well_formed(*transmission_id, transmission)
         }) {
@@ -751,7 +751,7 @@ impl<N: Network> Primary<N> {
         // Ensure the batch header from the peer is valid.
         let (storage, header) = (self.storage.clone(), batch_header.clone());
         let missing_transmissions =
-            spawn_blocking!(storage.check_batch_header(&header, transmissions, Default::default()))?;
+            spawn_blocking!(storage.check_batch_header(&header, missing_transmissions, Default::default()))?;
         // Inserts the missing transmissions into the workers.
         self.insert_missing_transmissions_into_workers(peer_ip, missing_transmissions.into_iter())?;
 
