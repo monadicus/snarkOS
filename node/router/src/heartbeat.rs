@@ -43,6 +43,8 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
     const MAXIMUM_NUMBER_OF_PEERS: usize = 21;
     /// The maximum number of provers to maintain connections with.
     const MAXIMUM_NUMBER_OF_PROVERS: usize = Self::MAXIMUM_NUMBER_OF_PEERS / 4;
+    /// The amount of time an IP address is prohibited from connecting.
+    const IP_BAN_TIME_IN_SECS: u64 = 300;
 
     /// Handles the heartbeat request.
     fn heartbeat(&self) {
@@ -61,6 +63,8 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
         self.handle_trusted_peers();
         // Keep the puzzle request up to date.
         self.handle_puzzle_request();
+        // Unban any addresses whose ban time has expired.
+        self.handle_banned_ips();
     }
 
     /// TODO (howardwu): Consider checking minimum number of validators, to exclude clients and provers.
@@ -238,6 +242,7 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
             for peer_ip in self.router().candidate_peers().into_iter().choose_multiple(rng, num_deficient) {
                 self.router().connect(peer_ip);
             }
+
             if self.router().allow_external_peers() {
                 // Request more peers from the connected peers.
                 for peer_ip in self.router().connected_peers().into_iter().choose_multiple(rng, 3) {
@@ -297,5 +302,10 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
     /// This function updates the puzzle if network has updated.
     fn handle_puzzle_request(&self) {
         // No-op
+    }
+
+    // Remove addresses whose ban time has expired.
+    fn handle_banned_ips(&self) {
+        self.tcp().banned_peers().remove_old_bans(Self::IP_BAN_TIME_IN_SECS);
     }
 }
