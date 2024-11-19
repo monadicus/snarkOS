@@ -141,12 +141,16 @@ impl<N: Network, C: ConsensusStorage<N>> LedgerService<N> for CoreLedgerService<
         let start_height = heights.start;
         // Prepare missing heights to collect.
         let mut missing_heights = BTreeSet::from_iter(heights.clone());
-        // For each height in the range, check if the block is in the cache.
-        for height in heights {
-            if let Some(block) = self.block_cache.read().get(&height) {
-                let index = block.height().saturating_sub(start_height) as usize;
-                blocks.insert(index, block.clone());
-                missing_heights.remove(&height);
+        {
+            // Obtain a read lock on the block cache.
+            let block_cache = self.block_cache.read();
+            // For each height in the range, check if the block is in the cache.
+            for height in heights {
+                if let Some(block) = block_cache.get(&height) {
+                    let index = block.height().saturating_sub(start_height) as usize;
+                    blocks.insert(index, block.clone());
+                    missing_heights.remove(&height);
+                }
             }
         }
         // Check if there are any blocks not found in the cache.
