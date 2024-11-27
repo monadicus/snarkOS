@@ -305,6 +305,18 @@ impl<N: Network> Worker<N> {
             // All other combinations are clearly invalid.
             _ => false,
         };
+        // If the transmission is a deserialized execution, verify it immediately.
+        // This takes heavy transaction verification out of the hot path during block generation.
+        if let (TransmissionID::Transaction(tx_id, _), Transmission::Transaction(tx)) = (transmission_id, &transmission)
+        {
+            if let Data::Object(Transaction::Execute(..)) = tx {
+                let self_ = self.clone();
+                let tx_ = tx.clone();
+                tokio::spawn(async move {
+                    let _ = self_.ledger.check_transaction_basic(tx_id, tx_).await;
+                });
+            }
+        }
         // If the transmission ID and transmission type matches, then insert the transmission into the ready queue.
         if is_well_formed && self.ready.insert(transmission_id, transmission) {
             trace!(
