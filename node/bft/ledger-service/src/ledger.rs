@@ -23,14 +23,15 @@ use snarkvm::{
         puzzle::{Solution, SolutionID},
         store::ConsensusStorage,
     },
-    prelude::{Address, Field, FromBytes, Network, Result, bail},
+    prelude::{Address, Field, FromBytes, Network, Result, bail, cfg_into_iter},
 };
 
 use indexmap::IndexMap;
 use lru::LruCache;
 use parking_lot::{Mutex, RwLock};
+use rayon::prelude::*;
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     fmt,
     io::Read,
     ops::Range,
@@ -135,41 +136,7 @@ impl<N: Network, C: ConsensusStorage<N>> LedgerService<N> for CoreLedgerService<
     /// Returns the blocks in the given block range.
     /// The range is inclusive of the start and exclusive of the end.
     fn get_blocks(&self, heights: Range<u32>) -> Result<Vec<Block<N>>> {
-        // Prepare blocks to collect.
-        let mut blocks = Vec::with_capacity(heights.len());
-        // Determine the lowest height.
-        let start_height = heights.start;
-        // Prepare missing heights to collect.
-        let mut missing_heights = BTreeSet::from_iter(heights.clone());
-        {
-            // Obtain a read lock on the block cache.
-            let block_cache = self.block_cache.read();
-            // For each height in the range, check if the block is in the cache.
-            for height in heights {
-                if let Some(block) = block_cache.get(&height) {
-                    let index = block.height().saturating_sub(start_height) as usize;
-                    blocks.insert(index, block.clone());
-                    missing_heights.remove(&height);
-                }
-            }
-        }
-        // Check if there are any blocks not found in the cache.
-        let missing_heights = match (missing_heights.first(), missing_heights.last()) {
-            // All blocks found in the cache.
-            (None, None) => return Ok(blocks),
-            // Some blocks found in the cache.
-            (Some(&start), Some(&end)) => start..end + 1,
-            // Something went wrong.
-            _ => bail!("Missing heights has an unexpected block range."),
-        };
-
-        // Retrieve the missing blocks from the ledger.
-        for block in self.ledger.get_blocks(missing_heights)? {
-            let index = block.height().saturating_sub(start_height) as usize;
-            blocks.insert(index, block);
-        }
-
-        Ok(blocks)
+        cfg_into_iter!(heights).map(|height| self.get_block(height)).collect()
     }
 
     /// Returns the solution for the given solution ID.
