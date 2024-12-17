@@ -323,9 +323,9 @@ impl<N: Network> Sync<N> {
                         current_height += 1;
                     }
                     Err(e) => {
-                        // Mark the current height as processed in block_sync. 
+                        // Mark the current height as processed in block_sync.
                         self.block_sync.remove_block_response(current_height);
-                        return Err(e);  
+                        return Err(e);
                     }
                 }
             }
@@ -347,7 +347,7 @@ impl<N: Network> Sync<N> {
                     current_height += 1;
                 }
                 Err(e) => {
-                    // Mark the current height as processed in block_sync. 
+                    // Mark the current height as processed in block_sync.
                     self.block_sync.remove_block_response(current_height);
                     return Err(e);
                 }
@@ -372,7 +372,7 @@ impl<N: Network> Sync<N> {
             self_.storage.sync_height_with_block(block.height());
             // Sync the round with the block.
             self_.storage.sync_round_with_block(block.round());
-            // Mark the block height as processed in block_sync. 
+            // Mark the block height as processed in block_sync.
             self_.block_sync.remove_block_response(block.height());
 
             Ok(())
@@ -521,7 +521,7 @@ impl<N: Network> Sync<N> {
                     .await??;
                     // Remove the block height from the latest block responses.
                     latest_block_responses.remove(&block_height);
-                    // Mark the block height as processed in block_sync. 
+                    // Mark the block height as processed in block_sync.
                     self.block_sync.remove_block_response(block_height);
                 }
             } else {

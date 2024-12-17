@@ -331,7 +331,8 @@ impl<N: Network> BlockSync<N> {
         let requests = self.requests.write();
 
         // Determine if the request is complete.
-        let is_request_complete = requests.get(&next_height).map(|(_, _, peer_ips)| peer_ips.is_empty()).unwrap_or(true);
+        let is_request_complete =
+            requests.get(&next_height).map(|(_, _, peer_ips)| peer_ips.is_empty()).unwrap_or(true);
 
         // If the request is not complete, return early.
         if !is_request_complete {
@@ -369,7 +370,7 @@ impl<N: Network> BlockSync<N> {
                 warn!("Block height mismatch: expected {}, found {}", current_height + 1, block.height());
                 break;
             }
-    
+
             // Try to check the next block and advance to it.
             let advanced = match self.canon.check_next_block(&block) {
                 Ok(_) => match self.canon.advance_to_next_block(&block) {
@@ -384,10 +385,10 @@ impl<N: Network> BlockSync<N> {
                     false
                 }
             };
-    
+
             // Remove the block response.
             self.remove_block_response(current_height + 1);
-    
+
             // If advancing failed, exit the loop.
             if !advanced {
                 break;
