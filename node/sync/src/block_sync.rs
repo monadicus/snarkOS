@@ -328,7 +328,7 @@ impl<N: Network> BlockSync<N> {
         // Acquire the requests write lock.
         // Note: This lock must be held across the entire scope, due to asynchronous block responses
         // from multiple peers that may be received concurrently.
-        let requests = self.requests.write();
+        let requests = self.requests.read();
 
         // Determine if the request is complete.
         let is_request_complete =
