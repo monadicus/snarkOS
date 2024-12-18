@@ -376,12 +376,12 @@ impl<N: Network> BlockSync<N> {
                 Ok(_) => match self.canon.advance_to_next_block(&block) {
                     Ok(_) => true,
                     Err(err) => {
-                        warn!("{err}");
+                        warn!("Failed to advance to next block ({}): {err}", block.height());
                         false
                     }
                 },
                 Err(err) => {
-                    warn!("{err}");
+                    warn!("The next block ({}) is invalid - {err}", block.height());
                     false
                 }
             };
