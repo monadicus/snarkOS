@@ -46,9 +46,9 @@ default-features = false
 
 [workspace.dependencies.snarkvm] # If this is updated, the rev in `node/rest/Cargo.toml` must be updated as well.
 #path = "../snarkVM"
-#git = "https://github.com/AleoNet/snarkVM.git"
-#rev = "6322baf"
-version = "=1.1.0"
+git = "https://github.com/AleoNet/snarkVM.git"
+rev = "be48f30"
+#version = "=1.1.0"
 features = [ "circuit", "console", "rocks" ]
 
 [[bin]]
@@ -127,6 +127,10 @@ tikv-jemallocator = "0.5"
 
 [dev-dependencies.rusty-hook]
 version = "0.11.2"
+
+[build-dependencies.built]
+version = "0.7"
+features = [ "git2" ]
 
 [build-dependencies.walkdir]
 version = "2"

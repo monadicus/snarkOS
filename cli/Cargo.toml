@@ -105,6 +105,9 @@ workspace = true
 [dependencies.sys-info]
 version = "0.9"
 
+[dependencies.tempfile]
+version = "3"
+
 [dependencies.time]
 version = "0.3"
 

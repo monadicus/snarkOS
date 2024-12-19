@@ -651,15 +651,7 @@ fn check_permissions(path: &PathBuf) -> Result<(), snarkvm::prelude::Error> {
     {
         use std::os::unix::fs::PermissionsExt;
         ensure!(path.exists(), "The file '{:?}' does not exist", path);
-        let parent = path.parent();
-        if let Some(parent) = parent {
-            let parent_permissions = parent.metadata()?.permissions().mode();
-            ensure!(
-                parent_permissions & 0o777 == 0o700,
-                "The folder {:?} must be readable only by the owner (0700)",
-                parent
-            );
-        }
+        crate::check_parent_permissions(path)?;
         let permissions = path.metadata()?.permissions().mode();
         ensure!(permissions & 0o777 == 0o600, "The file {:?} must be readable only by the owner (0600)", path);
     }
