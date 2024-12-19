@@ -1560,15 +1560,18 @@ impl<N: Network> Primary<N> {
             self.try_increment_to_the_next_round(batch_round).await?;
         }
 
-        // Ensure the primary has all of the previous certificates.
-        let missing_previous_certificates =
-            self.fetch_missing_previous_certificates(peer_ip, batch_header).await.map_err(|e| {
-                anyhow!("Failed to fetch missing previous certificates for round {batch_round} from '{peer_ip}' - {e}")
-            })?;
-
         // Ensure the primary has all of the transmissions.
-        let missing_transmissions = self.fetch_missing_transmissions(peer_ip, batch_header).await.map_err(|e| {
-            anyhow!("Failed to fetch missing transmissions for round {batch_round} from '{peer_ip}' - {e}")
+        let missing_transmissions_handle = self.fetch_missing_transmissions(peer_ip, batch_header);
+
+        // Ensure the primary has all of the previous certificates.
+        let missing_previous_certificates_handle = self.fetch_missing_previous_certificates(peer_ip, batch_header);
+
+        // Wait for the missing transmissions and previous certificates to be fetched.
+        let (missing_transmissions, missing_previous_certificates) = tokio::try_join!(
+            missing_transmissions_handle,
+            missing_previous_certificates_handle,
+        ).map_err(|e| {
+            anyhow!("Failed to fetch missing transmissions and previous certificates for round {batch_round} from '{peer_ip}' - {e}")
         })?;
 
         // Iterate through the missing previous certificates.

@@ -1,6 +1,6 @@
 [package]
 name = "snarkos-node-rest"
-version = "3.0.0"
+version = "3.1.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A REST API server for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -59,17 +59,17 @@ features = [ "preserve_order" ]
 
 [dependencies.snarkos-node-consensus]
 path = "../consensus"
-version = "=3.0.0"
+version = "=3.1.0"
 
 [dependencies.snarkos-node-router]
 path = "../router"
-version = "=3.0.0"
+version = "=3.1.0"
 
 [dependencies.snarkvm-synthesizer]
 #path = "../../../snarkVM/synthesizer"
 git = "https://github.com/AleoNet/snarkVM.git"
-rev = "0b391d2"
-#version = "=1.0.0"
+rev = "be48f30"
+# version = "=1.1.0"
 default-features = false
 optional = true
 
