@@ -322,9 +322,10 @@ impl<N: Network> BlockSync<N> {
         Ok(())
     }
 
-    /// Returns the next block to process, if one is ready.
+    /// Returns the next block for the given `next_height` if the request is complete,
+    /// or `None` otherwise. This does not remove the block from the `responses` map.
     #[inline]
-    pub fn process_next_block(&self, next_height: u32) -> Option<Block<N>> {
+    pub fn peek_next_block(&self, next_height: u32) -> Option<Block<N>> {
         // Acquire the requests write lock.
         // Note: This lock must be held across the entire scope, due to asynchronous block responses
         // from multiple peers that may be received concurrently.
@@ -364,7 +365,7 @@ impl<N: Network> BlockSync<N> {
 
     /// Handles the block responses from the sync pool.
     fn try_advancing_with_block_responses(&self, mut current_height: u32) {
-        while let Some(block) = self.process_next_block(current_height + 1) {
+        while let Some(block) = self.peek_next_block(current_height + 1) {
             // Ensure the block height matches.
             if block.height() != current_height + 1 {
                 warn!("Block height mismatch: expected {}, found {}", current_height + 1, block.height());
@@ -636,7 +637,7 @@ impl<N: Network> BlockSync<N> {
     }
 
     /// Removes the block response for the given height
-    /// This may only be called after `process_next_block`, which checked if the request for the given height was complete.
+    /// This may only be called after `peek_next_block`, which checked if the request for the given height was complete.
     pub fn remove_block_response(&self, height: u32) {
         // Acquire the requests write lock.
         // Note: This lock must be held across the entire scope, due to asynchronous block responses
@@ -653,7 +654,7 @@ impl<N: Network> BlockSync<N> {
     /// Removes the block request for the given peer IP, if it exists.
     #[allow(dead_code)]
     fn remove_block_request_to_peer(&self, peer_ip: &SocketAddr, height: u32) {
-        let mut can_revoke = self.process_next_block(height).is_none();
+        let mut can_revoke = self.peek_next_block(height).is_none();
 
         // Remove the peer IP from the request entry. If the request entry is now empty,
         // and the response entry for this height is also empty, then remove the request entry altogether.

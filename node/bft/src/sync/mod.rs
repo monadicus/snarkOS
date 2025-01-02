@@ -314,7 +314,7 @@ impl<N: Network> Sync<N> {
         // Determine if we can sync the ledger without updating the BFT first.
         if current_height <= max_gc_height {
             // Try to advance the ledger *to tip* without updating the BFT.
-            while let Some(block) = self.block_sync.process_next_block(current_height) {
+            while let Some(block) = self.block_sync.peek_next_block(current_height) {
                 info!("Syncing the ledger to block {}...", block.height());
                 // Sync the ledger with the block without BFT.
                 match self.sync_ledger_with_block_without_bft(block).await {
@@ -338,7 +338,7 @@ impl<N: Network> Sync<N> {
         }
 
         // Try to advance the ledger with sync blocks.
-        while let Some(block) = self.block_sync.process_next_block(current_height) {
+        while let Some(block) = self.block_sync.peek_next_block(current_height) {
             info!("Syncing the BFT to block {}...", block.height());
             // Sync the storage with the block.
             match self.sync_storage_with_block(block).await {
