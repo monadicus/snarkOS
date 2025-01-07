@@ -380,10 +380,13 @@ impl<N: Network, C: ConsensusStorage<N>> LedgerService<N> for CoreLedgerService<
         // Advance to the next block.
         self.ledger.advance_to_next_block(block)?;
         // Add the block to the block cache.
-        self.block_cache.write().insert(block.height(), block.clone());
-        // Prune the block cache if it exceeds the maximum size.
-        if self.block_cache.read().len() > BLOCK_CACHE_SIZE {
-            self.block_cache.write().pop_first();
+        {
+            let mut block_cache = self.block_cache.write();
+            block_cache.insert(block.height(), block.clone());
+            // Prune the block cache if it exceeds the maximum size.
+            if block_cache.len() > BLOCK_CACHE_SIZE {
+                block_cache.pop_first();
+            }
         }
         // Update BFT metrics.
         #[cfg(feature = "metrics")]
