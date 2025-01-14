@@ -195,4 +195,8 @@ impl<N: Network, C: ConsensusStorage<N>> LedgerService<N> for TranslucentLedgerS
     fn advance_to_next_block(&self, block: &Block<N>) -> Result<()> {
         self.inner.advance_to_next_block(block)
     }
+
+    fn compute_cost(&self, transaction_id: N::TransactionID, transaction: Data<Transaction<N>>) -> Result<u64> {
+        self.inner.compute_cost(transaction_id, transaction)
+    }
 }

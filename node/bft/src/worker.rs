@@ -614,6 +614,7 @@ mod tests {
                 transmissions: IndexMap<TransmissionID<N>, Transmission<N>>,
             ) -> Result<Block<N>>;
             fn advance_to_next_block(&self, block: &Block<N>) -> Result<()>;
+            fn compute_cost(&self, transaction_id: N::TransactionID, transaction: Data<Transaction<N>>) -> Result<u64>;
         }
     }
 

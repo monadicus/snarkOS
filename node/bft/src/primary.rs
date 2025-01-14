@@ -580,6 +580,7 @@ impl<N: Network> Primary<N> {
 
         *lock_guard = round;
 
+        // TODO(nkls): check spend limits?
         /* Proceeding to sign & propose the batch. */
         info!("Proposing a batch with {} transmissions for round {round}...", transmissions.len());
 
@@ -768,6 +769,7 @@ impl<N: Network> Primary<N> {
         // Inserts the missing transmissions into the workers.
         self.insert_missing_transmissions_into_workers(peer_ip, missing_transmissions.into_iter())?;
 
+        // TODO(nkls): check spend limits?
         /* Proceeding to sign the batch. */
 
         // Retrieve the batch ID.

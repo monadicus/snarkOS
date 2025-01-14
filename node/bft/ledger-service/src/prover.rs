@@ -186,4 +186,8 @@ impl<N: Network> LedgerService<N> for ProverLedgerService<N> {
     fn advance_to_next_block(&self, block: &Block<N>) -> Result<()> {
         bail!("Cannot advance to next block in prover - {block}")
     }
+
+    fn compute_cost(&self, transaction_id: N::TransactionID, _transaction: Data<Transaction<N>>) -> Result<u64> {
+        bail!("Transaction '{transaction_id}' doesn't exist in prover")
+    }
 }

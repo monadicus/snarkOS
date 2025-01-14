@@ -235,4 +235,9 @@ impl<N: Network> LedgerService<N> for MockLedgerService<N> {
         self.height_to_round_and_hash.lock().insert(block.height(), (block.round(), block.hash()));
         Ok(())
     }
+
+    /// TODO: is this reasonable?
+    fn compute_cost(&self, _transaction_id: N::TransactionID, _transaction: Data<Transaction<N>>) -> Result<u64> {
+        Ok(0)
+    }
 }
