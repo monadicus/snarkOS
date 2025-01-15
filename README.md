@@ -1,4 +1,4 @@
-<p align="center">
+<p align="center"> 
     <img alt="snarkOS" width="1412" src="https://aleo.org/snarkOS.png">
 </p>
 
