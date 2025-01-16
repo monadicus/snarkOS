@@ -39,8 +39,9 @@ const STYLES: Styles = Styles::plain()
     .usage(Style::new().bold().fg_color(HEADER_COLOR))
     .literal(Style::new().bold().fg_color(LITERAL_COLOR));
 
+// Note: the basic clap-supplied version is overridden in the main module.
 #[derive(Debug, Parser)]
-#[clap(name = "snarkOS", author = "The Aleo Team <hello@aleo.org>", styles = STYLES)]
+#[clap(name = "snarkOS", author = "The Aleo Team <hello@aleo.org>", styles = STYLES, version)]
 pub struct CLI {
     /// Specify the verbosity [options: 0, 1, 2, 3]
     #[clap(default_value = "2", short, long)]
