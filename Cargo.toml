@@ -4,7 +4,7 @@ version = "3.1.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A decentralized operating system"
 homepage = "https://aleo.org"
-repository = "https://github.com/AleoNet/snarkOS"
+repository = "https://github.com/ProvableHQ/snarkOS"
 keywords = [
   "aleo",
   "cryptography",
@@ -46,7 +46,7 @@ default-features = false
 
 [workspace.dependencies.snarkvm] # If this is updated, the rev in `node/rest/Cargo.toml` must be updated as well.
 #path = "../snarkVM"
-#git = "https://github.com/AleoNet/snarkVM.git"
+#git = "https://github.com/ProvableHQ/snarkVM.git"
 #rev = "59b109c"
 version = "=1.2.1"
 features = [ "circuit", "console", "rocks" ]
