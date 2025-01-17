@@ -70,7 +70,7 @@ No explicit recommendations are made for proving nodes as proving hardware may b
 
 ### 2.3 Installation
 
-Before beginning, please ensure your machine has `Rust v1.79+` installed. Instructions to [install Rust can be found here.](https://www.rust-lang.org/tools/install)
+Before beginning, please ensure your machine has Rust installed, with at least [this version](rust-toolchain). Instructions to [install Rust can be found here.](https://www.rust-lang.org/tools/install)
 
 Start by cloning this GitHub repository:
 ```
@@ -205,7 +205,7 @@ APrivateKey1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 ### 1. My node is unable to compile.
 
-- Ensure your machine has `Rust v1.66+` installed. Instructions to [install Rust can be found here.](https://www.rust-lang.org/tools/install)
+- Ensure your machine has Rust installed, with at least [this version](rust-toolchain). Instructions to [install Rust can be found here.](https://www.rust-lang.org/tools/install)
 - If large errors appear during compilation, try running `cargo clean`.
 - Ensure `snarkOS` is started using `./run-client.sh` or `./run-prover.sh`.
 
