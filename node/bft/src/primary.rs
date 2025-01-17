@@ -916,9 +916,18 @@ impl<N: Network> Primary<N> {
         peer_ip: SocketAddr,
         certificate: BatchCertificate<N>,
     ) -> Result<()> {
+        // Ensure the batch certificate is from an authorized validator.
+        if !self.gateway.is_authorized_validator_ip(peer_ip) {
+            // Proceed to disconnect the validator.
+            self.gateway.disconnect(peer_ip);
+            bail!("Malicious peer - Received a batch certificate from an unauthorized validator IP ({peer_ip})");
+        }
         // Ensure storage does not already contain the certificate.
         if self.storage.contains_certificate(certificate.id()) {
             return Ok(());
+        // Otherwise, ensure ephemeral storage contains the certificate.
+        } else if !self.storage.contains_unprocessed_certificate(certificate.id()) {
+            self.storage.insert_unprocessed_certificate(certificate.clone())?;
         }
 
         // Retrieve the batch certificate author.
@@ -928,12 +937,6 @@ impl<N: Network> Primary<N> {
         // Retrieve the batch certificate committee ID.
         let committee_id = certificate.committee_id();
 
-        // Ensure the batch certificate is from an authorized validator.
-        if !self.gateway.is_authorized_validator_ip(peer_ip) {
-            // Proceed to disconnect the validator.
-            self.gateway.disconnect(peer_ip);
-            bail!("Malicious peer - Received a batch certificate from an unauthorized validator IP ({peer_ip})");
-        }
         // Ensure the batch certificate is not from the current primary.
         if self.gateway.account().address() == author {
             bail!("Received a batch certificate for myself ({author})");
@@ -947,10 +950,8 @@ impl<N: Network> Primary<N> {
 
         // Retrieve the committee lookback.
         let committee_lookback = self.ledger.get_committee_lookback_for_round(certificate_round)?;
-        // Retrieve the certificates.
-        let certificates = self.storage.get_certificates_for_round(certificate_round);
-        // Construct a set over the authors.
-        let authors = certificates.iter().map(BatchCertificate::author).collect();
+        // Retrieve the certificate authors.
+        let authors = self.storage.get_certificate_authors_for_round(certificate_round);
         // Check if the certificates have reached the quorum threshold.
         let is_quorum = committee_lookback.is_quorum_threshold_reached(&authors);
 
@@ -1027,13 +1028,13 @@ impl<N: Network> Primary<N> {
                             if current_round == 0 {
                                 break;
                             }
-                            // Retrieve the certificates.
-                            let certificates = self_.storage.get_certificates_for_round(current_round);
-                            // Retrieve the primary certificate.
-                            certificate =
-                                certificates.into_iter().find(|certificate| certificate.author() == primary_address);
+                            // Retrieve the primary certificates.
+                            if let Some(primary_certificate) =
+                                self_.storage.get_certificate_for_round_with_author(current_round, primary_address)
+                            {
+                                certificate = Some(primary_certificate);
                             // If the primary certificate was not found, decrement the round.
-                            if certificate.is_none() {
+                            } else {
                                 current_round = current_round.saturating_sub(1);
                             }
                         }
@@ -1210,17 +1211,16 @@ impl<N: Network> Primary<N> {
                 let next_round = self_.current_round().saturating_add(1);
                 // Determine if the quorum threshold is reached for the current round.
                 let is_quorum_threshold_reached = {
-                    // Retrieve the certificates for the next round.
-                    let certificates = self_.storage.get_certificates_for_round(next_round);
+                    // Retrieve the certificate authors for the next round.
+                    let authors = self_.storage.get_certificate_authors_for_round(next_round);
                     // If there are no certificates, then skip this check.
-                    if certificates.is_empty() {
+                    if authors.is_empty() {
                         continue;
                     }
                     let Ok(committee_lookback) = self_.ledger.get_committee_lookback_for_round(next_round) else {
                         warn!("Failed to retrieve the committee lookback for round {next_round}");
                         continue;
                     };
-                    let authors = certificates.iter().map(BatchCertificate::author).collect();
                     committee_lookback.is_quorum_threshold_reached(&authors)
                 };
                 // Attempt to increment to the next round if the quorum threshold is reached.
@@ -1541,8 +1541,7 @@ impl<N: Network> Primary<N> {
 
         // Determine if quorum threshold is reached on the batch round.
         let is_quorum_threshold_reached = {
-            let certificates = self.storage.get_certificates_for_round(batch_round);
-            let authors = certificates.iter().map(BatchCertificate::author).collect();
+            let authors = self.storage.get_certificate_authors_for_round(batch_round);
             let committee_lookback = self.ledger.get_committee_lookback_for_round(batch_round)?;
             committee_lookback.is_quorum_threshold_reached(&authors)
         };
@@ -1671,14 +1670,23 @@ impl<N: Network> Primary<N> {
     ) -> Result<HashSet<BatchCertificate<N>>> {
         // Initialize a list for the missing certificates.
         let mut fetch_certificates = FuturesUnordered::new();
+        // Initialize a set for the missing certificates.
+        let mut missing_certificates = HashSet::default();
         // Iterate through the certificate IDs.
         for certificate_id in certificate_ids {
             // Check if the certificate already exists in the ledger.
             if self.ledger.contains_certificate(certificate_id)? {
                 continue;
             }
-            // If we do not have the certificate, request it.
-            if !self.storage.contains_certificate(*certificate_id) {
+            // Check if the certificate already exists in storage.
+            if self.storage.contains_certificate(*certificate_id) {
+                continue;
+            }
+            // If we have not fully processed the certificate yet, store it.
+            if let Some(certificate) = self.storage.get_unprocessed_certificate(*certificate_id) {
+                missing_certificates.insert(certificate);
+            } else {
+                // If we do not have the certificate, request it.
                 trace!("Primary - Found a new certificate ID for round {round} from '{peer_ip}'");
                 // TODO (howardwu): Limit the number of open requests we send to a peer.
                 // Send an certificate request to the peer.
@@ -1695,8 +1703,6 @@ impl<N: Network> Primary<N> {
             ),
         }
 
-        // Initialize a set for the missing certificates.
-        let mut missing_certificates = HashSet::with_capacity(fetch_certificates.len());
         // Wait for all of the missing certificates to be fetched.
         while let Some(result) = fetch_certificates.next().await {
             // Insert the missing certificate into the set.
@@ -2061,8 +2067,7 @@ mod tests {
         store_certificate_chain(&primary, &accounts, round, &mut rng);
 
         // Get transmissions from previous certificates.
-        let previous_certificate_ids: IndexSet<_> =
-            primary.storage.get_certificates_for_round(prev_round).iter().map(|cert| cert.id()).collect();
+        let previous_certificate_ids: IndexSet<_> = primary.storage.get_certificate_ids_for_round(prev_round);
 
         // Track the number of transmissions in the previous round.
         let mut num_transmissions_in_previous_round = 0;
@@ -2605,8 +2610,7 @@ mod tests {
         store_certificate_chain(&primary, &accounts, round, &mut rng);
 
         // Get transmissions from previous certificates.
-        let previous_certificate_ids: IndexSet<_> =
-            primary.storage.get_certificates_for_round(prev_round).iter().map(|cert| cert.id()).collect();
+        let previous_certificate_ids: IndexSet<_> = primary.storage.get_certificate_ids_for_round(prev_round);
 
         // Generate a solution and a transaction.
         let (solution_commitment, solution) = sample_unconfirmed_solution(&mut rng);
