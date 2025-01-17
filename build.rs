@@ -60,4 +60,6 @@ fn check_file_licenses<P: AsRef<Path>>(path: P) {
 fn main() {
     // Check licenses in the current folder.
     check_file_licenses(".");
+    // Register build-time information.
+    built::write_built_file().expect("Failed to acquire build-time information");
 }
