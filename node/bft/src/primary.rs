@@ -505,7 +505,7 @@ impl<N: Network> Primary<N> {
             let mut worker_transmissions = worker.transmissions().into_iter();
 
             // Check the transactions for inclusion in the batch proposal.
-            'outer: while num_transmissions_included_for_worker < num_transmissions_per_worker {
+            while num_transmissions_included_for_worker < num_transmissions_per_worker {
                 // Determine the number of remaining transmissions for the worker.
                 // let num_remaining_transmissions =
                 //     num_transmissions_per_worker.saturating_sub(num_transmissions_included_for_worker);
@@ -513,7 +513,7 @@ impl<N: Network> Primary<N> {
                 let (id, transmission) = match worker_transmissions.next() {
                     Some(transmission) => transmission,
                     // If the worker is empty, break early.
-                    None => break 'outer,
+                    None => break,
                 };
 
                 // TODO: check cost.
@@ -521,7 +521,7 @@ impl<N: Network> Primary<N> {
                 // Check if the ledger already contains the transmission.
                 if self.ledger.contains_transmission(&id).unwrap_or(true) {
                     trace!("Proposing - Skipping transmission '{}' - Already in ledger", fmt_id(id));
-                    continue 'outer;
+                    continue;
                 }
 
                 // Check if the storage already contain the transmission.
@@ -530,7 +530,7 @@ impl<N: Network> Primary<N> {
                 // if !transmissions.is_empty() && self.storage.contains_transmission(id) {
                 if num_transmissions_included != 0 && self.storage.contains_transmission(id) {
                     trace!("Proposing - Skipping transmission '{}' - Already in storage", fmt_id(id));
-                    continue 'outer;
+                    continue;
                 }
 
                 // Check the transmission is still valid.
@@ -541,13 +541,13 @@ impl<N: Network> Primary<N> {
                             Ok(solution_checksum) if solution_checksum == checksum => (),
                             _ => {
                                 trace!("Proposing - Skipping solution '{}' - Checksum mismatch", fmt_id(solution_id));
-                                continue 'outer;
+                                continue;
                             }
                         }
                         // Check if the solution is still valid.
                         if let Err(e) = self.ledger.check_solution_basic(solution_id, solution).await {
                             trace!("Proposing - Skipping solution '{}' - {e}", fmt_id(solution_id));
-                            continue 'outer;
+                            continue;
                         }
                     }
                     (TransmissionID::Transaction(transaction_id, checksum), Transmission::Transaction(transaction)) => {
@@ -559,14 +559,14 @@ impl<N: Network> Primary<N> {
                                     "Proposing - Skipping transaction '{}' - Checksum mismatch",
                                     fmt_id(transaction_id)
                                 );
-                                continue 'outer;
+                                continue;
                             }
                         }
                         // Check if the transaction is still valid.
                         // TODO: check if clone is cheap, otherwise fix.
                         if let Err(e) = self.ledger.check_transaction_basic(transaction_id, transaction.clone()).await {
                             trace!("Proposing - Skipping transaction '{}' - {e}", fmt_id(transaction_id));
-                            continue 'outer;
+                            continue;
                         }
 
                         // Compute the cost of the transaction.
@@ -574,7 +574,7 @@ impl<N: Network> Primary<N> {
                             Ok(cost) => proposal_cost += cost,
                             Err(e) => {
                                 trace!("Proposing - Skipping transaction '{}' - {e}", fmt_id(transaction_id));
-                                continue 'outer;
+                                continue;
                             }
                         }
                     }
@@ -582,7 +582,7 @@ impl<N: Network> Primary<N> {
                     // as the protocol currently does not support ratifications.
                     (TransmissionID::Ratification, Transmission::Ratification) => continue,
                     // All other combinations are clearly invalid.
-                    _ => continue 'outer,
+                    _ => continue,
                 }
 
                 num_transmissions_included += 1;
