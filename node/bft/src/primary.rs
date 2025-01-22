@@ -499,7 +499,7 @@ impl<N: Network> Primary<N> {
         // Track the total execution costs of the batch proposal as it is being constructed.
         let mut proposal_cost = 0u64;
         // Take the transmissions from the workers.
-        for worker in self.workers.iter() {
+        'outer: for worker in self.workers.iter() {
             // Initialize a tracker for included transmissions for the current worker.
             let mut num_transmissions_included_for_worker = 0;
             let mut worker_transmissions = worker.transmissions().into_iter();
@@ -515,8 +515,6 @@ impl<N: Network> Primary<N> {
                     // If the worker is empty, break early.
                     None => break,
                 };
-
-                // TODO: check cost.
 
                 // Check if the ledger already contains the transmission.
                 if self.ledger.contains_transmission(&id).unwrap_or(true) {
@@ -569,12 +567,15 @@ impl<N: Network> Primary<N> {
                             continue;
                         }
 
-                        // Compute the cost of the transaction.
+                        // Ensure the transaction doesn't bring the proposal above the spend limit.
                         match self.ledger.compute_cost(transaction_id, transaction) {
-                            Ok(cost) => proposal_cost += cost,
-                            Err(e) => {
-                                trace!("Proposing - Skipping transaction '{}' - {e}", fmt_id(transaction_id));
-                                continue;
+                            Ok(cost) if proposal_cost + cost <= N::BATCH_SPEND_LIMIT => proposal_cost += cost,
+                            _ => {
+                                trace!(
+                                    "Proposing - Skipping transaction '{}' - Batch spend limit surpassed",
+                                    fmt_id(transaction_id)
+                                );
+                                break 'outer;
                             }
                         }
                     }
@@ -595,25 +596,11 @@ impl<N: Network> Primary<N> {
             }
         }
 
-        // WIP: calculate the transaction cost
-        // for transmission in transmissions.clone() {
-        //     if let (TransmissionID::Transaction(transaction_id, _), Transmission::Transaction(transaction)) =
-        //         transmission
-        //     {
-        //         let cost = self.ledger.compute_cost(transaction_id, transaction)?;
-        //         println!("TX: {transaction_id}, COST: {cost}");
-        //     }
-
-        //     // compute_cost(transaction)
-        // }
-        println!("COST: {proposal_cost}");
-
         // Determine the current timestamp.
         let current_timestamp = now();
 
         *lock_guard = round;
 
-        // TODO(nkls): check spend limits?
         /* Proceeding to sign & propose the batch. */
         info!("Proposing a batch with {} transmissions for round {round}...", transmissions.len());
 
