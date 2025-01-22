@@ -789,7 +789,35 @@ impl<N: Network> Primary<N> {
         // Inserts the missing transmissions into the workers.
         self.insert_missing_transmissions_into_workers(peer_ip, missing_transmissions.into_iter())?;
 
-        // TODO(nkls): check spend limits?
+        // Ensure the transaction doesn't bring the proposal above the spend limit.
+        let mut proposal_cost = 0u64;
+        for transmission_id in batch_header.transmission_ids() {
+            let worker_id = assign_to_worker(*transmission_id, self.num_workers())?;
+            let Some(worker) = self.workers.get(worker_id as usize) else {
+                debug!("Unable to find worker {worker_id}");
+                return Ok(());
+            };
+
+            let Some(transmission) = worker.get_transmission(*transmission_id) else {
+                debug!("Unable to find transmission '{}' in worker '{worker_id}", fmt_id(transmission_id));
+                return Ok(());
+            };
+
+            // If the transmission is a transaction, compute its execution cost.
+            if let (TransmissionID::Transaction(transaction_id, _), Transmission::Transaction(transaction)) =
+                (transmission_id, transmission)
+            {
+                proposal_cost += self.ledger.compute_cost(*transaction_id, transaction)?
+            }
+        }
+
+        if proposal_cost > N::BATCH_SPEND_LIMIT {
+            debug!(
+                "Batch propose from peer '{peer_ip}' exceeds the batch spend limit — cost in microcredits: '{proposal_cost}'"
+            );
+            return Ok(());
+        }
+
         /* Proceeding to sign the batch. */
 
         // Retrieve the batch ID.
