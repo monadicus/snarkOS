@@ -490,90 +490,123 @@ impl<N: Network> Primary<N> {
 
         // Determined the required number of transmissions per worker.
         let num_transmissions_per_worker = BatchHeader::<N>::MAX_TRANSMISSIONS_PER_BATCH / self.num_workers() as usize;
+
         // Initialize the map of transmissions.
         let mut transmissions: IndexMap<_, _> = Default::default();
+        // Keeps track of the number of transmissions included thus far. The
+        // transmissions index is only updated in batches, this counter is more granular.
+        let mut num_transmissions_included = 0usize;
+        // Track the total execution costs of the batch proposal as it is being constructed.
+        let mut proposal_cost = 0u64;
         // Take the transmissions from the workers.
         for worker in self.workers.iter() {
             // Initialize a tracker for included transmissions for the current worker.
             let mut num_transmissions_included_for_worker = 0;
-            // Keep draining the worker until the desired number of transmissions is reached or the worker is empty.
+            let mut worker_transmissions = worker.transmissions().into_iter();
+
+            // Check the transactions for inclusion in the batch proposal.
             'outer: while num_transmissions_included_for_worker < num_transmissions_per_worker {
                 // Determine the number of remaining transmissions for the worker.
-                let num_remaining_transmissions =
-                    num_transmissions_per_worker.saturating_sub(num_transmissions_included_for_worker);
-                // Drain the worker.
-                let mut worker_transmissions = worker.drain(num_remaining_transmissions).peekable();
-                // If the worker is empty, break early.
-                if worker_transmissions.peek().is_none() {
-                    break 'outer;
+                // let num_remaining_transmissions =
+                //     num_transmissions_per_worker.saturating_sub(num_transmissions_included_for_worker);
+
+                let (id, transmission) = match worker_transmissions.next() {
+                    Some(transmission) => transmission,
+                    // If the worker is empty, break early.
+                    None => break 'outer,
+                };
+
+                // TODO: check cost.
+
+                // Check if the ledger already contains the transmission.
+                if self.ledger.contains_transmission(&id).unwrap_or(true) {
+                    trace!("Proposing - Skipping transmission '{}' - Already in ledger", fmt_id(id));
+                    continue 'outer;
                 }
-                // Iterate through the worker transmissions.
-                'inner: for (id, transmission) in worker_transmissions {
-                    // Check if the ledger already contains the transmission.
-                    if self.ledger.contains_transmission(&id).unwrap_or(true) {
-                        trace!("Proposing - Skipping transmission '{}' - Already in ledger", fmt_id(id));
-                        continue 'inner;
-                    }
-                    // Check if the storage already contain the transmission.
-                    // Note: We do not skip if this is the first transmission in the proposal, to ensure that
-                    // the primary does not propose a batch with no transmissions.
-                    if !transmissions.is_empty() && self.storage.contains_transmission(id) {
-                        trace!("Proposing - Skipping transmission '{}' - Already in storage", fmt_id(id));
-                        continue 'inner;
-                    }
-                    // Check the transmission is still valid.
-                    match (id, transmission.clone()) {
-                        (TransmissionID::Solution(solution_id, checksum), Transmission::Solution(solution)) => {
-                            // Ensure the checksum matches.
-                            match solution.to_checksum::<N>() {
-                                Ok(solution_checksum) if solution_checksum == checksum => (),
-                                _ => {
-                                    trace!(
-                                        "Proposing - Skipping solution '{}' - Checksum mismatch",
-                                        fmt_id(solution_id)
-                                    );
-                                    continue 'inner;
-                                }
-                            }
-                            // Check if the solution is still valid.
-                            if let Err(e) = self.ledger.check_solution_basic(solution_id, solution).await {
-                                trace!("Proposing - Skipping solution '{}' - {e}", fmt_id(solution_id));
-                                continue 'inner;
+
+                // Check if the storage already contain the transmission.
+                // Note: We do not skip if this is the first transmission in the proposal, to ensure that
+                // the primary does not propose a batch with no transmissions.
+                // if !transmissions.is_empty() && self.storage.contains_transmission(id) {
+                if num_transmissions_included != 0 && self.storage.contains_transmission(id) {
+                    trace!("Proposing - Skipping transmission '{}' - Already in storage", fmt_id(id));
+                    continue 'outer;
+                }
+
+                // Check the transmission is still valid.
+                match (id, transmission.clone()) {
+                    (TransmissionID::Solution(solution_id, checksum), Transmission::Solution(solution)) => {
+                        // Ensure the checksum matches.
+                        match solution.to_checksum::<N>() {
+                            Ok(solution_checksum) if solution_checksum == checksum => (),
+                            _ => {
+                                trace!("Proposing - Skipping solution '{}' - Checksum mismatch", fmt_id(solution_id));
+                                continue 'outer;
                             }
                         }
-                        (
-                            TransmissionID::Transaction(transaction_id, checksum),
-                            Transmission::Transaction(transaction),
-                        ) => {
-                            // Ensure the checksum matches.
-                            match transaction.to_checksum::<N>() {
-                                Ok(transaction_checksum) if transaction_checksum == checksum => (),
-                                _ => {
-                                    trace!(
-                                        "Proposing - Skipping transaction '{}' - Checksum mismatch",
-                                        fmt_id(transaction_id)
-                                    );
-                                    continue 'inner;
-                                }
+                        // Check if the solution is still valid.
+                        if let Err(e) = self.ledger.check_solution_basic(solution_id, solution).await {
+                            trace!("Proposing - Skipping solution '{}' - {e}", fmt_id(solution_id));
+                            continue 'outer;
+                        }
+                    }
+                    (TransmissionID::Transaction(transaction_id, checksum), Transmission::Transaction(transaction)) => {
+                        // Ensure the checksum matches.
+                        match transaction.to_checksum::<N>() {
+                            Ok(transaction_checksum) if transaction_checksum == checksum => (),
+                            _ => {
+                                trace!(
+                                    "Proposing - Skipping transaction '{}' - Checksum mismatch",
+                                    fmt_id(transaction_id)
+                                );
+                                continue 'outer;
                             }
-                            // Check if the transaction is still valid.
-                            if let Err(e) = self.ledger.check_transaction_basic(transaction_id, transaction).await {
+                        }
+                        // Check if the transaction is still valid.
+                        // TODO: check if clone is cheap, otherwise fix.
+                        if let Err(e) = self.ledger.check_transaction_basic(transaction_id, transaction.clone()).await {
+                            trace!("Proposing - Skipping transaction '{}' - {e}", fmt_id(transaction_id));
+                            continue 'outer;
+                        }
+
+                        // Compute the cost of the transaction.
+                        match self.ledger.compute_cost(transaction_id, transaction) {
+                            Ok(cost) => proposal_cost += cost,
+                            Err(e) => {
                                 trace!("Proposing - Skipping transaction '{}' - {e}", fmt_id(transaction_id));
-                                continue 'inner;
+                                continue 'outer;
                             }
                         }
-                        // Note: We explicitly forbid including ratifications,
-                        // as the protocol currently does not support ratifications.
-                        (TransmissionID::Ratification, Transmission::Ratification) => continue,
-                        // All other combinations are clearly invalid.
-                        _ => continue 'inner,
                     }
-                    // Insert the transmission into the map.
-                    transmissions.insert(id, transmission);
-                    num_transmissions_included_for_worker += 1;
+                    // Note: We explicitly forbid including ratifications,
+                    // as the protocol currently does not support ratifications.
+                    (TransmissionID::Ratification, Transmission::Ratification) => continue,
+                    // All other combinations are clearly invalid.
+                    _ => continue 'outer,
                 }
+
+                num_transmissions_included += 1;
+                num_transmissions_included_for_worker += 1;
+            }
+
+            // Drain the selected transactions from the worker and insert them into the batch proposal.
+            for (id, transmission) in worker.drain(num_transmissions_included_for_worker) {
+                transmissions.insert(id, transmission);
             }
         }
+
+        // WIP: calculate the transaction cost
+        // for transmission in transmissions.clone() {
+        //     if let (TransmissionID::Transaction(transaction_id, _), Transmission::Transaction(transaction)) =
+        //         transmission
+        //     {
+        //         let cost = self.ledger.compute_cost(transaction_id, transaction)?;
+        //         println!("TX: {transaction_id}, COST: {cost}");
+        //     }
+
+        //     // compute_cost(transaction)
+        // }
+        println!("COST: {proposal_cost}");
 
         // Determine the current timestamp.
         let current_timestamp = now();
