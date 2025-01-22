@@ -506,15 +506,7 @@ impl<N: Network> Primary<N> {
 
             // Check the transactions for inclusion in the batch proposal.
             while num_transmissions_included_for_worker < num_transmissions_per_worker {
-                // Determine the number of remaining transmissions for the worker.
-                // let num_remaining_transmissions =
-                //     num_transmissions_per_worker.saturating_sub(num_transmissions_included_for_worker);
-
-                let (id, transmission) = match worker_transmissions.next() {
-                    Some(transmission) => transmission,
-                    // If the worker is empty, break early.
-                    None => break,
-                };
+                let Some((id, transmission)) = worker_transmissions.next() else { break };
 
                 // Check if the ledger already contains the transmission.
                 if self.ledger.contains_transmission(&id).unwrap_or(true) {
@@ -525,7 +517,6 @@ impl<N: Network> Primary<N> {
                 // Check if the storage already contain the transmission.
                 // Note: We do not skip if this is the first transmission in the proposal, to ensure that
                 // the primary does not propose a batch with no transmissions.
-                // if !transmissions.is_empty() && self.storage.contains_transmission(id) {
                 if num_transmissions_included != 0 && self.storage.contains_transmission(id) {
                     trace!("Proposing - Skipping transmission '{}' - Already in storage", fmt_id(id));
                     continue;
