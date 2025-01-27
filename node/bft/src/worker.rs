@@ -211,9 +211,14 @@ impl<N: Network> Worker<N> {
         Ok((transmission_id, transmission))
     }
 
-    /// Removes up to the specified number of transmissions from the ready queue, and returns them.
-    pub(crate) fn drain(&self, num_transmissions: usize) -> impl Iterator<Item = (TransmissionID<N>, Transmission<N>)> {
-        self.ready.drain(num_transmissions).into_iter()
+    /// Inserts the transmission at the front of the ready queue.
+    pub(crate) fn shift_insert_front(&self, key: TransmissionID<N>, value: Transmission<N>) {
+        self.ready.shift_insert_front(key, value)
+    }
+
+    /// Removes and returns the transmission at the front of the ready queue.
+    pub(crate) fn shift_remove_front(&self) -> Option<(TransmissionID<N>, Transmission<N>)> {
+        self.ready.shift_remove_front()
     }
 
     /// Reinserts the specified transmission into the ready queue.
@@ -672,8 +677,7 @@ mod tests {
         assert!(worker.ready.contains(transmission_id));
         assert_eq!(worker.get_transmission(transmission_id), Some(transmission));
         // Take the transmission from the ready set.
-        let transmission: Vec<_> = worker.drain(1).collect();
-        assert_eq!(transmission.len(), 1);
+        assert!(worker.ready.shift_remove_front().is_some());
         assert!(!worker.ready.contains(transmission_id));
     }
 

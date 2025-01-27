@@ -488,25 +488,30 @@ impl<N: Network> Primary<N> {
             return Ok(());
         }
 
-        // Determined the required number of transmissions per worker.
-        let num_transmissions_per_worker = BatchHeader::<N>::MAX_TRANSMISSIONS_PER_BATCH / self.num_workers() as usize;
-
         // Initialize the map of transmissions.
         let mut transmissions: IndexMap<_, _> = Default::default();
-        // Keeps track of the number of transmissions included thus far. The
-        // transmissions index is only updated in batches, this counter is more granular.
-        let mut num_transmissions_included = 0usize;
+        // Keep track of all the visited transactions so we can discard the
+        // skipped ones as well as the valid ones.
+        // let mut num_visited_transmissions = 0usize;
         // Track the total execution costs of the batch proposal as it is being constructed.
         let mut proposal_cost = 0u64;
-        // Take the transmissions from the workers.
-        'outer: for worker in self.workers.iter() {
-            // Initialize a tracker for included transmissions for the current worker.
-            let mut num_transmissions_included_for_worker = 0;
-            let mut worker_transmissions = worker.transmissions().into_iter();
+        // Note: worker draining and transaction inclusion needs to be thought
+        // through carefully when there is more than one worker. The fairness
+        // provided by one worker (FIFO) is no longer guaranteed with multiple workers.
+        debug_assert_eq!(MAX_WORKERS, 1);
 
-            // Check the transactions for inclusion in the batch proposal.
-            while num_transmissions_included_for_worker < num_transmissions_per_worker {
-                let Some((id, transmission)) = worker_transmissions.next() else { break };
+        'outer: for worker in self.workers().iter() {
+            let mut num_worker_transmissions = 0usize;
+
+            // TODO(nkls): this is O(n), consider improving the underlying data structures.
+            while let Some((id, transmission)) = worker.shift_remove_front() {
+                if transmissions.len() == BatchHeader::<N>::MAX_TRANSMISSIONS_PER_BATCH {
+                    break 'outer;
+                }
+
+                if num_worker_transmissions == Worker::<N>::MAX_TRANSMISSIONS_PER_WORKER {
+                    continue 'outer;
+                }
 
                 // Check if the ledger already contains the transmission.
                 if self.ledger.contains_transmission(&id).unwrap_or(true) {
@@ -517,7 +522,7 @@ impl<N: Network> Primary<N> {
                 // Check if the storage already contain the transmission.
                 // Note: We do not skip if this is the first transmission in the proposal, to ensure that
                 // the primary does not propose a batch with no transmissions.
-                if num_transmissions_included != 0 && self.storage.contains_transmission(id) {
+                if !transmissions.is_empty() && self.storage.contains_transmission(id) {
                     trace!("Proposing - Skipping transmission '{}' - Already in storage", fmt_id(id));
                     continue;
                 }
@@ -566,6 +571,9 @@ impl<N: Network> Primary<N> {
                                     "Proposing - Skipping transaction '{}' - Batch spend limit surpassed",
                                     fmt_id(transaction_id)
                                 );
+
+                                // Reinsert the transmission into the worker, O(n).
+                                worker.shift_insert_front(id, transmission);
                                 break 'outer;
                             }
                         }
@@ -577,13 +585,9 @@ impl<N: Network> Primary<N> {
                     _ => continue,
                 }
 
-                num_transmissions_included += 1;
-                num_transmissions_included_for_worker += 1;
-            }
-
-            // Drain the selected transactions from the worker and insert them into the batch proposal.
-            for (id, transmission) in worker.drain(num_transmissions_included_for_worker) {
+                // If the transmission is valid, insert it into the proposal's transmission list.
                 transmissions.insert(id, transmission);
+                num_worker_transmissions += 1;
             }
         }
 
@@ -2053,6 +2057,35 @@ mod tests {
         for (addr, acct) in accounts.iter().skip(1) {
             primary.gateway.resolver().insert_peer(*addr, *addr, acct.address());
         }
+    }
+
+    #[tokio::test]
+    async fn test_propose_batch_over_spend_limit() {
+        let mut rng = TestRng::default();
+        let (primary, _) = primary_without_handlers(&mut rng).await;
+
+        // Check there is no batch currently proposed.
+        assert!(primary.proposed_batch.read().is_none());
+        // Check the workers are empty.
+        primary.workers().iter().for_each(|worker| assert!(worker.transmissions().is_empty()));
+
+        // Generate a solution and a transaction.
+        let (solution_id, solution) = sample_unconfirmed_solution(&mut rng);
+        primary.workers[0].process_unconfirmed_solution(solution_id, solution).await.unwrap();
+
+        // At 10 credits per execution, 10 transactions should max out a batch, add a few more.
+        for _i in 0..15 {
+            let (transaction_id, transaction) = sample_unconfirmed_transaction(&mut rng);
+            // Store it on one of the workers.
+            primary.workers[0].process_unconfirmed_transaction(transaction_id, transaction).await.unwrap();
+        }
+
+        // Try to propose a batch again. This time, it should succeed.
+        assert!(primary.propose_batch().await.is_ok());
+        // Expect 10/15 transactions to be included in the proposal, along with the solution.
+        assert_eq!(primary.proposed_batch.read().as_ref().unwrap().transmissions().len(), 11);
+        // Check the transactions were correctly drained from the workers (15 + 1 - 11).
+        assert_eq!(primary.workers().iter().map(|worker| worker.transmissions().len()).sum::<usize>(), 5);
     }
 
     #[tokio::test]

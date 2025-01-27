@@ -128,6 +128,16 @@ impl<N: Network> Ready<N> {
         transmissions.drain(range).collect::<IndexMap<_, _>>()
     }
 
+    /// Inserts the transmission at the front of the queue.
+    pub fn shift_insert_front(&self, key: TransmissionID<N>, value: Transmission<N>) {
+        self.transmissions.write().shift_insert(0, key, value);
+    }
+
+    /// Removes and returns the first transmission from the queue.
+    pub fn shift_remove_front(&self) -> Option<(TransmissionID<N>, Transmission<N>)> {
+        self.transmissions.write().shift_remove_index(0)
+    }
+
     /// Clears all solutions from the ready queue.
     pub(crate) fn clear_solutions(&self) {
         // Acquire the write lock.
