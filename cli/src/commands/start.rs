@@ -137,9 +137,11 @@ pub struct Start {
     pub logfile: PathBuf,
 
     /// Enables the metrics exporter
+    #[cfg(feature = "metrics")]
     #[clap(default_value = "false", long = "metrics")]
     pub metrics: bool,
     /// Specify the IP address and port for the metrics exporter
+    #[cfg(feature = "metrics")]
     #[clap(long = "metrics-ip")]
     pub metrics_ip: Option<SocketAddr>,
 
@@ -587,6 +589,7 @@ impl Start {
         crate::helpers::check_validator_machine(node_type);
 
         // Initialize the metrics.
+        #[cfg(feature = "metrics")]
         if self.metrics {
             metrics::initialize_metrics(self.metrics_ip);
         }
