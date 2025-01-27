@@ -121,5 +121,6 @@ pub trait LedgerService<N: Network>: Debug + Send + Sync {
     #[cfg(feature = "ledger-write")]
     fn advance_to_next_block(&self, block: &Block<N>) -> Result<()>;
 
+    /// Computes the execution cost in microcredits for a transaction.
     fn compute_cost(&self, transaction_id: N::TransactionID, transaction: Data<Transaction<N>>) -> Result<u64>;
 }

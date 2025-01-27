@@ -187,6 +187,7 @@ impl<N: Network> LedgerService<N> for ProverLedgerService<N> {
         bail!("Cannot advance to next block in prover - {block}")
     }
 
+    /// Computes the execution cost in microcredits for a transaction.
     fn compute_cost(&self, transaction_id: N::TransactionID, _transaction: Data<Transaction<N>>) -> Result<u64> {
         bail!("Transaction '{transaction_id}' doesn't exist in prover")
     }

@@ -236,8 +236,9 @@ impl<N: Network> LedgerService<N> for MockLedgerService<N> {
         Ok(())
     }
 
-    /// TODO: is this reasonable?
+    /// Computes the execution cost in microcredits for a transaction.
     fn compute_cost(&self, _transaction_id: N::TransactionID, _transaction: Data<Transaction<N>>) -> Result<u64> {
-        Ok(0)
+        // Return 1 credit so this function can be used to test spend limits.
+        Ok(10_000_000)
     }
 }
