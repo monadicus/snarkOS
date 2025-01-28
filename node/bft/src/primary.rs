@@ -490,9 +490,6 @@ impl<N: Network> Primary<N> {
 
         // Initialize the map of transmissions.
         let mut transmissions: IndexMap<_, _> = Default::default();
-        // Keep track of all the visited transactions so we can discard the
-        // skipped ones as well as the valid ones.
-        // let mut num_visited_transmissions = 0usize;
         // Track the total execution costs of the batch proposal as it is being constructed.
         let mut proposal_cost = 0u64;
         // Note: worker draining and transaction inclusion needs to be thought
@@ -530,13 +527,11 @@ impl<N: Network> Primary<N> {
                 // Check the transmission is still valid.
                 match (id, transmission.clone()) {
                     (TransmissionID::Solution(solution_id, checksum), Transmission::Solution(solution)) => {
-                        // Ensure the checksum matches.
-                        match solution.to_checksum::<N>() {
-                            Ok(solution_checksum) if solution_checksum == checksum => (),
-                            _ => {
-                                trace!("Proposing - Skipping solution '{}' - Checksum mismatch", fmt_id(solution_id));
-                                continue;
-                            }
+                        // Ensure the checksum matches. If not, skip the solution.
+                        if !matches!(solution.to_checksum::<N>(), Ok(solution_checksum) if solution_checksum == checksum)
+                        {
+                            trace!("Proposing - Skipping solution '{}' - Checksum mismatch", fmt_id(solution_id));
+                            continue;
                         }
                         // Check if the solution is still valid.
                         if let Err(e) = self.ledger.check_solution_basic(solution_id, solution).await {
@@ -545,16 +540,11 @@ impl<N: Network> Primary<N> {
                         }
                     }
                     (TransmissionID::Transaction(transaction_id, checksum), Transmission::Transaction(transaction)) => {
-                        // Ensure the checksum matches.
-                        match transaction.to_checksum::<N>() {
-                            Ok(transaction_checksum) if transaction_checksum == checksum => (),
-                            _ => {
-                                trace!(
-                                    "Proposing - Skipping transaction '{}' - Checksum mismatch",
-                                    fmt_id(transaction_id)
-                                );
-                                continue;
-                            }
+                        // Ensure the checksum matches. If not, skip the transaction.
+                        if !matches!(transaction.to_checksum::<N>(), Ok(transaction_checksum) if transaction_checksum == checksum )
+                        {
+                            trace!("Proposing - Skipping transaction '{}' - Checksum mismatch", fmt_id(transaction_id));
+                            continue;
                         }
                         // Check if the transaction is still valid.
                         // TODO: check if clone is cheap, otherwise fix.
