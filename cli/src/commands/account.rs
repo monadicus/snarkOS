@@ -30,9 +30,11 @@ use rand::SeedableRng;
 use rand_chacha::ChaChaRng;
 use rayon::prelude::*;
 use std::{
+    fs::File,
     io::{Read, Write},
     path::PathBuf,
 };
+
 use zeroize::Zeroize;
 
 /// Commands to manage Aleo accounts.
@@ -52,6 +54,9 @@ pub enum Account {
         /// Print sensitive information (such as the private key) discreetly in an alternate screen
         #[clap(long)]
         discreet: bool,
+        /// Specify the path to a file where to save the account in addition to printing it
+        #[clap(long = "save-to-file")]
+        save_to_file: Option<String>,
     },
     Sign {
         /// Specify the network of the private key to sign with
@@ -97,10 +102,18 @@ fn aleo_literal_to_fields<N: Network>(input: &str) -> Result<Vec<Field<N>>> {
 impl Account {
     pub fn parse(self) -> Result<String> {
         match self {
-            Self::New { network, seed, vanity, discreet } => {
+            Self::New { network, seed, vanity, discreet, save_to_file } => {
                 // Ensure only the seed or the vanity string is specified.
                 if seed.is_some() && vanity.is_some() {
                     bail!("Cannot specify both the '--seed' and '--vanity' flags");
+                }
+
+                if save_to_file.is_some() && vanity.is_some() {
+                    bail!("Cannot specify both the '--save-to-file' and '--vanity' flags");
+                }
+
+                if save_to_file.is_some() && discreet {
+                    bail!("Cannot specify both the '--save-to-file' and '--discreet' flags");
                 }
 
                 match vanity {
@@ -113,9 +126,9 @@ impl Account {
                     },
                     // Generate a seeded account for the specified network.
                     None => match network {
-                        MainnetV0::ID => Self::new_seeded::<MainnetV0>(seed, discreet),
-                        TestnetV0::ID => Self::new_seeded::<TestnetV0>(seed, discreet),
-                        CanaryV0::ID => Self::new_seeded::<CanaryV0>(seed, discreet),
+                        MainnetV0::ID => Self::new_seeded::<MainnetV0>(seed, discreet, save_to_file),
+                        TestnetV0::ID => Self::new_seeded::<TestnetV0>(seed, discreet, save_to_file),
+                        CanaryV0::ID => Self::new_seeded::<CanaryV0>(seed, discreet, save_to_file),
                         unknown_id => bail!("Unknown network ID ({unknown_id})"),
                     },
                 }
@@ -227,7 +240,7 @@ impl Account {
     }
 
     /// Generates a new Aleo account with an optional seed.
-    fn new_seeded<N: Network>(seed: Option<String>, discreet: bool) -> Result<String> {
+    fn new_seeded<N: Network>(seed: Option<String>, discreet: bool, save_to_file: Option<String>) -> Result<String> {
         // Recover the seed.
         let seed = match seed {
             // Recover the field element deterministically.
@@ -242,6 +255,13 @@ impl Account {
             PrivateKey::try_from(seed).map_err(|_| anyhow!("Failed to convert the seed into a valid private key"))?;
         // Construct the account.
         let account = snarkos_account::Account::<N>::try_from(private_key)?;
+        // Save to file in addition to printing it back to the user
+        if let Some(path) = save_to_file {
+            crate::check_parent_permissions(&path)?;
+            let mut file = File::create_new(path)?;
+            file.write_all(account.private_key().to_string().as_bytes())?;
+            crate::set_user_read_only(&file)?;
+        }
         // Print the new Aleo account.
         if !discreet {
             return Ok(account.to_string());
@@ -331,13 +351,15 @@ fn wait_for_keypress() {
 #[cfg(test)]
 mod tests {
     use crate::commands::Account;
+    use std::{fs, fs::Permissions, io::Write};
+    use tempfile::{NamedTempFile, TempDir};
 
     use colored::Colorize;
 
     #[test]
     fn test_new() {
         for _ in 0..3 {
-            let account = Account::New { network: 0, seed: None, vanity: None, discreet: false };
+            let account = Account::New { network: 0, seed: None, vanity: None, discreet: false, save_to_file: None };
             assert!(account.parse().is_ok());
         }
     }
@@ -363,7 +385,7 @@ mod tests {
         );
 
         let vanity = None;
-        let account = Account::New { network: 0, seed, vanity, discreet: false };
+        let account = Account::New { network: 0, seed, vanity, discreet: false, save_to_file: None };
         let actual = account.parse().unwrap();
         assert_eq!(expected, actual);
     }
@@ -389,9 +411,121 @@ mod tests {
         );
 
         let vanity = None;
-        let account = Account::New { network: 0, seed, vanity, discreet: false };
+        let account = Account::New { network: 0, seed, vanity, discreet: false, save_to_file: None };
         let actual = account.parse().unwrap();
         assert_eq!(expected, actual);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_new_save_to_file() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = TempDir::new().expect("Failed to create temp folder");
+        let dir_path = dir.path();
+        fs::set_permissions(dir_path, Permissions::from_mode(0o700)).expect("Failed to set permissions");
+
+        let mut file = dir.path().to_owned();
+        file.push("my-private-key-file");
+        let file = file.display().to_string();
+
+        let seed = Some(1231275789u64.to_string());
+        let vanity = None;
+        let discreet = false;
+        let save_to_file = Some(file.clone());
+        let account = Account::New { network: 0, seed, vanity, discreet, save_to_file };
+        let actual = account.parse().unwrap();
+
+        let expected = "APrivateKey1zkp2n22c19hNdGF8wuEoQcuiyuWbquY6up4CtG5DYKqPX2X";
+        assert!(actual.contains(expected));
+
+        let content = fs::read_to_string(&file).expect("Failed to read private-key-file");
+        assert_eq!(expected, content);
+
+        // check the permissions - to read-only for the owner
+        let metadata = fs::metadata(file).unwrap();
+        let permissions = metadata.permissions();
+        assert_eq!(permissions.mode() & 0o777, 0o400, "File permissions are not 0o400");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_new_prevent_save_to_file_in_non_protected_folder() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = TempDir::new().expect("Failed to create temp folder");
+        let dir_path = dir.path();
+        fs::set_permissions(dir_path, Permissions::from_mode(0o444)).expect("Failed to set permissions");
+
+        let mut file = dir.path().to_owned();
+        file.push("my-private-key-file");
+        let file = file.display().to_string();
+
+        let seed = None;
+        let vanity = None;
+        let discreet = false;
+        let save_to_file = Some(file);
+        let account = Account::New { network: 0, seed, vanity, discreet, save_to_file };
+        let res = account.parse();
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_new_prevent_save_to_file_in_non_existing_folder() {
+        let dir = TempDir::new().expect("Failed to create temp folder");
+
+        let mut file = dir.path().to_owned();
+        file.push("missing-folder");
+        file.push("my-private-key-file");
+        let file = file.display().to_string();
+
+        let seed = None;
+        let vanity = None;
+        let discreet = false;
+        let save_to_file = Some(file);
+        let account = Account::New { network: 0, seed, vanity, discreet, save_to_file };
+        let res = account.parse();
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_new_prevent_overwrite_existing_file() {
+        let mut file = NamedTempFile::new().expect("Failed to create temp file");
+        write!(file, "don't overwrite me").expect("Failed to write secret to file");
+
+        let seed = None;
+        let vanity = None;
+        let discreet = false;
+        let path = file.path().display().to_string();
+        let account = Account::New { network: 0, seed, vanity, discreet, save_to_file: Some(path) };
+        let res = account.parse();
+        assert!(res.is_err());
+
+        let expected = "don't overwrite me";
+        let content = fs::read_to_string(file).expect("Failed to read private-key-file");
+        assert_eq!(expected, content);
+    }
+
+    #[test]
+    fn test_new_disallow_save_to_file_with_discreet() {
+        let seed = None;
+        let vanity = None;
+        let discreet = true;
+        let save_to_file = Some("/tmp/not-important".to_string());
+        let account = Account::New { network: 0, seed, vanity, discreet, save_to_file };
+        let res = account.parse();
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_new_disallow_save_to_file_with_vanity() {
+        let seed = None;
+        let vanity = Some("foo".to_string());
+        let discreet = false;
+        let save_to_file = Some("/tmp/not-important".to_string());
+        let account = Account::New { network: 0, seed, vanity, discreet, save_to_file };
+        let res = account.parse();
+        assert!(res.is_err());
     }
 
     #[test]
@@ -399,6 +533,44 @@ mod tests {
         let key = "APrivateKey1zkp61PAYmrYEKLtRWeWhUoDpFnGLNuHrCciSqN49T86dw3p".to_string();
         let message = "Hello, world!".to_string();
         let account = Account::Sign { network: 0, private_key: Some(key), private_key_file: None, message, raw: true };
+        assert!(account.parse().is_ok());
+    }
+
+    #[test]
+    fn test_signature_raw_using_private_key_file() {
+        let key = "APrivateKey1zkp61PAYmrYEKLtRWeWhUoDpFnGLNuHrCciSqN49T86dw3p".to_string();
+        let message = "Hello, world!".to_string();
+
+        let mut file = NamedTempFile::new().expect("Failed to create temp file");
+        writeln!(file, "{}", key).expect("Failed to write key to temp file");
+
+        let path = file.path().display().to_string();
+        let account = Account::Sign { network: 0, private_key: None, private_key_file: Some(path), message, raw: true };
+        assert!(account.parse().is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_signature_raw_using_private_key_file_from_account_new() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let message = "Hello, world!".to_string();
+
+        let dir = TempDir::new().expect("Failed to create temp folder");
+        let dir_path = dir.path();
+        fs::set_permissions(dir_path, Permissions::from_mode(0o700)).expect("Failed to set permissions");
+
+        let mut file = dir.path().to_owned();
+        file.push("my-private-key-file");
+        let file = file.display().to_string();
+
+        let seed = None;
+        let vanity = None;
+        let discreet = false;
+        let account = Account::New { network: 0, seed, vanity, discreet, save_to_file: Some(file.clone()) };
+        assert!(account.parse().is_ok());
+
+        let account = Account::Sign { network: 0, private_key: None, private_key_file: Some(file), message, raw: true };
         assert!(account.parse().is_ok());
     }
 

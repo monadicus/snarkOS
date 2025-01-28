@@ -137,9 +137,11 @@ pub struct Start {
     pub logfile: PathBuf,
 
     /// Enables the metrics exporter
+    #[cfg(feature = "metrics")]
     #[clap(default_value = "false", long = "metrics")]
     pub metrics: bool,
     /// Specify the IP address and port for the metrics exporter
+    #[cfg(feature = "metrics")]
     #[clap(long = "metrics-ip")]
     pub metrics_ip: Option<SocketAddr>,
 
@@ -587,6 +589,7 @@ impl Start {
         crate::helpers::check_validator_machine(node_type);
 
         // Initialize the metrics.
+        #[cfg(feature = "metrics")]
         if self.metrics {
             metrics::initialize_metrics(self.metrics_ip);
         }
@@ -651,15 +654,7 @@ fn check_permissions(path: &PathBuf) -> Result<(), snarkvm::prelude::Error> {
     {
         use std::os::unix::fs::PermissionsExt;
         ensure!(path.exists(), "The file '{:?}' does not exist", path);
-        let parent = path.parent();
-        if let Some(parent) = parent {
-            let parent_permissions = parent.metadata()?.permissions().mode();
-            ensure!(
-                parent_permissions & 0o777 == 0o700,
-                "The folder {:?} must be readable only by the owner (0700)",
-                parent
-            );
-        }
+        crate::check_parent_permissions(path)?;
         let permissions = path.metadata()?.permissions().mode();
         ensure!(permissions & 0o777 == 0o600, "The file {:?} must be readable only by the owner (0600)", path);
     }
@@ -680,6 +675,10 @@ fn load_or_compute_genesis<N: Network>(
 
     // Input the network ID.
     preimage.extend(&N::ID.to_le_bytes());
+    // Input the genesis coinbase target.
+    preimage.extend(&to_bytes_le![N::GENESIS_COINBASE_TARGET]?);
+    // Input the genesis proof target.
+    preimage.extend(&to_bytes_le![N::GENESIS_PROOF_TARGET]?);
 
     // Input the genesis private key, committee, and public balances.
     preimage.extend(genesis_private_key.to_bytes_le()?);
@@ -745,6 +744,8 @@ fn load_or_compute_genesis<N: Network>(
     // Initialize the hasher.
     let hasher = snarkvm::console::algorithms::BHP256::<N>::setup("aleo.dev.block")?;
     // Compute the hash.
+    // NOTE: this is a fast-to-compute but *IMPERFECT* identifier for the genesis block.
+    //       to know the actualy genesis block hash, you need to compute the block itself.
     let hash = hasher.hash(&preimage.to_bits_le())?.to_string();
 
     // A closure to load the block.
