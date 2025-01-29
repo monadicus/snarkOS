@@ -344,9 +344,7 @@ impl Start {
             // Add the dev nodes to the trusted peers.
             if trusted_peers.is_empty() {
                 for i in 0..dev {
-                    if i != dev {
-                        trusted_peers.push(SocketAddr::from_str(&format!("127.0.0.1:{}", 4130 + i))?);
-                    }
+                    trusted_peers.push(SocketAddr::from_str(&format!("127.0.0.1:{}", 4130 + i))?);
                 }
             }
             // Add the dev nodes to the trusted validators.
