@@ -727,6 +727,13 @@ impl<N: Network> Primary<N> {
             bail!("Malicious peer - {e} from '{peer_ip}'");
         }
 
+        // Ensure the batch header does not contain any ratifications.
+        if batch_header.contains(TransmissionID::Ratification) {
+            // Proceed to disconnect the validator.
+            self.gateway.disconnect(peer_ip);
+            bail!("Malicious peer - proposed batch contains an unsupported ratification transmissionID",);
+        }
+
         // If the peer is ahead, use the batch header to sync up to the peer.
         let mut transmissions = self.sync_with_batch_header_from_peer::<false>(peer_ip, &batch_header).await?;
 
