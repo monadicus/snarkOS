@@ -331,7 +331,7 @@ impl<N: Network> Storage<N> {
     }
 
     /// Returns the certificates for the given `round`.
-    /// If the round does not exist in storage, `None` is returned.
+    /// If the round does not exist in storage, an empty set is returned.
     pub fn get_certificates_for_round(&self, round: u64) -> IndexSet<BatchCertificate<N>> {
         // The genesis round does not have batch certificates.
         if round == 0 {
@@ -347,7 +347,7 @@ impl<N: Network> Storage<N> {
     }
 
     /// Returns the certificate IDs for the given `round`.
-    /// If the round does not exist in storage, `None` is returned.
+    /// If the round does not exist in storage, an empty set is returned.
     pub fn get_certificate_ids_for_round(&self, round: u64) -> IndexSet<Field<N>> {
         // The genesis round does not have batch certificates.
         if round == 0 {
@@ -362,7 +362,7 @@ impl<N: Network> Storage<N> {
     }
 
     /// Returns the certificate authors for the given `round`.
-    /// If the round does not exist in storage, `None` is returned.
+    /// If the round does not exist in storage, an empty set is returned.
     pub fn get_certificate_authors_for_round(&self, round: u64) -> HashSet<Address<N>> {
         // The genesis round does not have batch certificates.
         if round == 0 {

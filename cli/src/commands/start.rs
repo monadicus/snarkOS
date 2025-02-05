@@ -55,6 +55,7 @@ const RECOMMENDED_MIN_NOFILES_LIMIT: u64 = 2048;
 
 /// The development mode RNG seed.
 const DEVELOPMENT_MODE_RNG_SEED: u64 = 1234567890u64;
+
 /// The development mode number of genesis committee members.
 const DEVELOPMENT_MODE_NUM_GENESIS_COMMITTEE_MEMBERS: u16 = 4;
 
@@ -161,7 +162,7 @@ pub struct Start {
     /// If development mode is enabled, specify the number of genesis validators (default: 4)
     #[clap(long)]
     pub dev_num_validators: Option<u16>,
-    /// If developtment mode is enabled, specify whether node 0 should generate traffic to drive the network
+    /// If development mode is enabled, specify whether node 0 should generate traffic to drive the network
     #[clap(default_value = "false", long = "no-dev-txs")]
     pub no_dev_txs: bool,
     /// If development mode is enabled, specify the custom bonded balances as a JSON object (default: None)
@@ -742,8 +743,8 @@ fn load_or_compute_genesis<N: Network>(
     // Initialize the hasher.
     let hasher = snarkvm::console::algorithms::BHP256::<N>::setup("aleo.dev.block")?;
     // Compute the hash.
-    // NOTE: this is a fast-to-compute but *IMPERFECT* identifier for the genesis block.
-    //       to know the actualy genesis block hash, you need to compute the block itself.
+    // NOTE: this is a fast-to-compute but *IMPERFECT* identifier for the genesis block;
+    //       to know the actual genesis block hash, you need to compute the block itself.
     let hash = hasher.hash(&preimage.to_bits_le())?.to_string();
 
     // A closure to load the block.
