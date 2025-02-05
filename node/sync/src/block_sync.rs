@@ -696,7 +696,7 @@ impl<N: Network> BlockSync<N> {
 
         // Remove timed out block requests.
         request_timestamps.retain(|height, timestamp| {
-            let is_obsolete = *height < current_height;
+            let is_obsolete = *height <= current_height;
             // Determine if the duration since the request timestamp has exceeded the request timeout.
             let is_time_passed = now.duration_since(*timestamp).as_secs() > BLOCK_REQUEST_TIMEOUT_IN_SECS;
             // Determine if the request is incomplete.
@@ -1008,6 +1008,23 @@ mod tests {
     /// Returns the sync pool, with the canonical ledger initialized to the given height.
     fn sample_sync_at_height(height: u32) -> BlockSync<CurrentNetwork> {
         BlockSync::<CurrentNetwork>::new(BlockSyncMode::Router, Arc::new(sample_ledger_service(height)), sample_tcp())
+    }
+
+    /// Returns a duplicate sync pool with a different canonical ledger height.
+    fn duplicate_sync_at_new_height(sync: &BlockSync<CurrentNetwork>, height: u32) -> BlockSync<CurrentNetwork> {
+        BlockSync::<CurrentNetwork> {
+            mode: sync.mode,
+            canon: Arc::new(sample_ledger_service(height)),
+            tcp: sync.tcp.clone(),
+            locators: sync.locators.clone(),
+            common_ancestors: sync.common_ancestors.clone(),
+            requests: sync.requests.clone(),
+            responses: sync.responses.clone(),
+            request_timestamps: sync.request_timestamps.clone(),
+            is_block_synced: sync.is_block_synced.clone(),
+            num_blocks_behind: sync.num_blocks_behind.clone(),
+            advance_with_sync_blocks_lock: Default::default(),
+        }
     }
 
     fn sample_tcp() -> Tcp {
@@ -1445,6 +1462,47 @@ mod tests {
             assert_eq!(sync.get_block_request(height), Some((hash, previous_hash, sync_ips)));
             assert!(sync.get_block_request_timestamp(height).is_some());
         }
+    }
+
+    #[test]
+    fn test_obsolete_block_requests() {
+        let rng = &mut TestRng::default();
+        let sync = sample_sync_at_height(0);
+
+        let locator_height = rng.gen_range(0..50);
+
+        // Add a peer.
+        let locators = sample_block_locators(locator_height);
+        sync.update_peer_locators(sample_peer_ip(1), locators.clone()).unwrap();
+
+        // Construct block requests
+        let (requests, sync_peers) = sync.prepare_block_requests();
+        assert_eq!(requests.len(), locator_height as usize);
+
+        // Add the block requests to the sync module.
+        for (height, (hash, previous_hash, num_sync_ips)) in requests.clone() {
+            // Construct the sync IPs.
+            let sync_ips: IndexSet<_> =
+                sync_peers.keys().choose_multiple(rng, num_sync_ips).into_iter().copied().collect();
+            // Insert the block request.
+            sync.insert_block_request(height, (hash, previous_hash, sync_ips.clone())).unwrap();
+            // Check that the block requests were inserted.
+            assert_eq!(sync.get_block_request(height), Some((hash, previous_hash, sync_ips)));
+            assert!(sync.get_block_request_timestamp(height).is_some());
+        }
+
+        // Duplicate a new sync module with a different height to simulate block advancement.
+        let ledger_height = rng.gen_range(0..locator_height);
+        let new_sync = duplicate_sync_at_new_height(&sync, ledger_height);
+
+        // Check that the number of requests is the same.
+        assert_eq!(new_sync.requests.read().len(), requests.len());
+
+        // Remove timed out block requests.
+        new_sync.remove_timed_out_block_requests();
+
+        // Check that the number of requests is reduced based on the ledger height.
+        assert_eq!(new_sync.requests.read().len(), (locator_height - ledger_height) as usize);
     }
 
     // TODO: duplicate responses, ensure fails.
