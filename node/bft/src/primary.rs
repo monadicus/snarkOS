@@ -1090,23 +1090,21 @@ impl<N: Network> Primary<N> {
         });
 
         // Start the worker ping(s).
-        if self.sync.is_gateway_mode() {
-            let self_ = self.clone();
-            self.spawn(async move {
-                loop {
-                    tokio::time::sleep(Duration::from_millis(WORKER_PING_IN_MS)).await;
-                    // If the primary is not synced, then do not broadcast the worker ping(s).
-                    if !self_.sync.is_synced() {
-                        trace!("Skipping worker ping(s) {}", "(node is syncing)".dimmed());
-                        continue;
-                    }
-                    // Broadcast the worker ping(s).
-                    for worker in self_.workers.iter() {
-                        worker.broadcast_ping();
-                    }
+        let self_ = self.clone();
+        self.spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_millis(WORKER_PING_IN_MS)).await;
+                // If the primary is not synced, then do not broadcast the worker ping(s).
+                if !self_.sync.is_synced() {
+                    trace!("Skipping worker ping(s) {}", "(node is syncing)".dimmed());
+                    continue;
                 }
-            });
-        }
+                // Broadcast the worker ping(s).
+                for worker in self_.workers.iter() {
+                    worker.broadcast_ping();
+                }
+            }
+        });
 
         // Start the batch proposer.
         let self_ = self.clone();
