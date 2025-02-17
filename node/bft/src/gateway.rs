@@ -1016,12 +1016,12 @@ impl<N: Network> Gateway<N> {
                 });
             }
         }
-  }
+    }
 
-   // Remove addresses whose ban time has expired.
-   fn handle_banned_ips(&self) {
-       self.tcp.banned_peers().remove_old_bans(IP_BAN_TIME_IN_SECS);
-   }
+    // Remove addresses whose ban time has expired.
+    fn handle_banned_ips(&self) {
+        self.tcp.banned_peers().remove_old_bans(IP_BAN_TIME_IN_SECS);
+    }
 }
 
 #[async_trait]
