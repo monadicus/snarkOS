@@ -150,7 +150,7 @@ debug-assertions = false
 
 [profile.dev]
 opt-level = 2
-lto = "thin"
+lto = "off"
 incremental = true
 
 [profile.test]
