@@ -301,7 +301,10 @@ impl<N: Network> Sync<N> {
         // Acquire the response lock.
         let _lock = self.response_lock.lock().await;
 
-        // Retrieve the latest block height.
+        // Retrieve the next block height.
+        // This variable is used to index blocks that are added to the ledger;
+        // it is incremented as blocks as added.
+        // So 'current' means 'currently being added'.
         let mut current_height = self.ledger.latest_block_height() + 1;
 
         // Retrieve the maximum block height of the peers.
