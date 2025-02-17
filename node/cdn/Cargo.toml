@@ -1,10 +1,10 @@
 [package]
 name = "snarkos-node-cdn"
-version = "3.1.0"
+version = "3.3.1"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A CDN client for a decentralized operating system"
 homepage = "https://aleo.org"
-repository = "https://github.com/AleoNet/snarkOS"
+repository = "https://github.com/ProvableHQ/snarkOS"
 keywords = [
   "aleo",
   "cryptography",

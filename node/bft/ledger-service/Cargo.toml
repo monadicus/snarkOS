@@ -1,10 +1,10 @@
 [package]
 name = "snarkos-node-bft-ledger-service"
-version = "3.1.0"
+version = "3.3.1"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A ledger service for the memory pool in a decentralized operating system"
 homepage = "https://aleo.org"
-repository = "https://github.com/AleoNet/snarkOS"
+repository = "https://github.com/ProvableHQ/snarkOS"
 keywords = [
   "aleo",
   "cryptography",
@@ -18,7 +18,7 @@ edition = "2021"
 
 [features]
 default = [ ]
-ledger = [ "lru", "parking_lot", "rand", "tokio", "tracing" ]
+ledger = [ "lru", "parking_lot", "rand", "rayon", "tokio", "tracing" ]
 ledger-write = [ ]
 metrics = [ "dep:metrics", "snarkvm/metrics" ]
 mock = [ "parking_lot", "tracing" ]
@@ -41,7 +41,7 @@ optional = true
 [dependencies.metrics]
 package = "snarkos-node-metrics"
 path = "../../metrics"
-version = "=3.1.0"
+version = "=3.3.1"
 optional = true
 
 [dependencies.parking_lot]
@@ -50,6 +50,10 @@ optional = true
 
 [dependencies.rand]
 version = "0.8"
+optional = true
+
+[dependencies.rayon]
+version = "1"
 optional = true
 
 [dependencies.snarkvm]
