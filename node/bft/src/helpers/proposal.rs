@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -22,7 +23,7 @@ use snarkvm::{
         committee::Committee,
         narwhal::{BatchCertificate, BatchHeader, Transmission, TransmissionID},
     },
-    prelude::{bail, ensure, error, FromBytes, IoResult, Itertools, Read, Result, ToBytes, Write},
+    prelude::{FromBytes, IoResult, Itertools, Read, Result, ToBytes, Write, bail, ensure, error},
 };
 
 use indexmap::{IndexMap, IndexSet};
@@ -259,9 +260,9 @@ pub(crate) mod tests {
 #[cfg(test)]
 mod prop_tests {
     use crate::helpers::{
+        Proposal,
         now,
         storage::prop_tests::{AnyTransmission, AnyTransmissionID, CryptoTestRng},
-        Proposal,
     };
     use snarkvm::ledger::{
         committee::prop_tests::{CommitteeContext, ValidatorSet},
@@ -269,7 +270,7 @@ mod prop_tests {
     };
 
     use indexmap::IndexMap;
-    use proptest::sample::{size_range, Selector};
+    use proptest::sample::{Selector, size_range};
     use test_strategy::proptest;
 
     #[proptest]

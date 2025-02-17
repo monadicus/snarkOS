@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -18,25 +19,25 @@ use crate::traits::NodeInterface;
 use snarkos_account::Account;
 use snarkos_node_bft::ledger_service::ProverLedgerService;
 use snarkos_node_router::{
-    messages::{Message, NodeType, UnconfirmedSolution},
     Heartbeat,
     Inbound,
     Outbound,
     Router,
     Routing,
+    messages::{Message, NodeType, UnconfirmedSolution},
 };
 use snarkos_node_sync::{BlockSync, BlockSyncMode};
 use snarkos_node_tcp::{
-    protocols::{Disconnect, Handshake, OnConnect, Reading, Writing},
     P2P,
+    protocols::{Disconnect, Handshake, OnConnect, Reading, Writing},
 };
 use snarkvm::{
     ledger::narwhal::Data,
     prelude::{
+        Network,
         block::{Block, Header},
         puzzle::{Puzzle, Solution},
         store::ConsensusStorage,
-        Network,
     },
     synthesizer::VM,
 };
@@ -46,13 +47,13 @@ use anyhow::Result;
 use colored::Colorize;
 use core::{marker::PhantomData, time::Duration};
 use parking_lot::{Mutex, RwLock};
-use rand::{rngs::OsRng, CryptoRng, Rng};
+use rand::{CryptoRng, Rng, rngs::OsRng};
 use snarkos_node_bft::helpers::fmt_id;
 use std::{
     net::SocketAddr,
     sync::{
-        atomic::{AtomicBool, AtomicU8, Ordering},
         Arc,
+        atomic::{AtomicBool, AtomicU8, Ordering},
     },
 };
 use tokio::task::JoinHandle;
@@ -99,10 +100,10 @@ impl<N: Network, C: ConsensusStorage<N>> Prover<N, C> {
 
         // Initialize the ledger service.
         let ledger_service = Arc::new(ProverLedgerService::new());
-        // Initialize the sync module.
-        let sync = BlockSync::new(BlockSyncMode::Router, ledger_service.clone());
         // Determine if the prover should allow external peers.
         let allow_external_peers = true;
+        // Determine if the prover should rotate external peers.
+        let rotate_external_peers = false;
 
         // Initialize the node router.
         let router = Router::new(
@@ -111,10 +112,15 @@ impl<N: Network, C: ConsensusStorage<N>> Prover<N, C> {
             account,
             trusted_peers,
             Self::MAXIMUM_NUMBER_OF_PEERS as u16,
+            rotate_external_peers,
             allow_external_peers,
             matches!(storage_mode, StorageMode::Development(_)),
         )
         .await?;
+
+        // Initialize the sync module.
+        let sync = BlockSync::new(BlockSyncMode::Router, ledger_service.clone(), router.tcp().clone());
+
         // Compute the maximum number of puzzle instances.
         let max_puzzle_instances = num_cpus::get().saturating_sub(2).clamp(1, 6);
         // Initialize the node.
@@ -152,7 +158,7 @@ impl<N: Network, C: ConsensusStorage<N>> NodeInterface<N> for Prover<N, C> {
 
         // Shut down the puzzle.
         debug!("Shutting down the puzzle...");
-        self.shutdown.store(true, Ordering::Relaxed);
+        self.shutdown.store(true, Ordering::Release);
 
         // Abort the tasks.
         debug!("Shutting down the prover...");
@@ -223,7 +229,7 @@ impl<N: Network, C: ConsensusStorage<N>> Prover<N, C> {
             }
 
             // If the Ctrl-C handler registered the signal, stop the prover.
-            if self.shutdown.load(Ordering::Relaxed) {
+            if self.shutdown.load(Ordering::Acquire) {
                 debug!("Shutting down the puzzle...");
                 break;
             }

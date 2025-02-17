@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -14,24 +15,23 @@
 
 #![allow(clippy::type_complexity)]
 
+use crate::commands::CDN_BASE_URL;
 use snarkvm::{
     console::network::{CanaryV0, MainnetV0, Network, TestnetV0},
-    prelude::{block::Block, Ciphertext, Field, FromBytes, Plaintext, PrivateKey, Record, ViewKey},
+    prelude::{Ciphertext, Field, FromBytes, Plaintext, PrivateKey, Record, ViewKey, block::Block},
 };
 
-use anyhow::{bail, ensure, Result};
+use anyhow::{Result, bail, ensure};
 use clap::Parser;
 use parking_lot::RwLock;
 use std::{
-    io::{stdout, Write},
+    io::{Write, stdout},
     str::FromStr,
     sync::Arc,
 };
 use zeroize::Zeroize;
 
 const MAX_BLOCK_RANGE: u32 = 50;
-// TODO (raychu86): This should be configurable based on network.
-const CDN_ENDPOINT: &str = "https://s3.us-west-1.amazonaws.com/testnet3.blocks/phase3";
 
 /// Scan the snarkOS node for records.
 #[derive(Debug, Parser, Zeroize)]
@@ -148,7 +148,7 @@ impl Scan {
             }
             (Some(start), None, None) => {
                 // Request the latest block height from the endpoint.
-                let endpoint = format!("{}/{network}/latest/height", self.endpoint);
+                let endpoint = format!("{}/{network}/block/height/latest", self.endpoint);
                 let latest_height = u32::from_str(&ureq::get(&endpoint).call()?.into_string()?)?;
 
                 // Print a warning message if the user is attempting to scan the whole chain.
@@ -161,13 +161,23 @@ impl Scan {
             (None, Some(end), None) => Ok((0, end)),
             (None, None, Some(last)) => {
                 // Request the latest block height from the endpoint.
-                let endpoint = format!("{}/{network}/latest/height", self.endpoint);
+                let endpoint = format!("{}/{network}/block/height/latest", self.endpoint);
                 let latest_height = u32::from_str(&ureq::get(&endpoint).call()?.into_string()?)?;
 
                 Ok((latest_height.saturating_sub(last), latest_height))
             }
             (None, None, None) => bail!("Missing data about block range."),
             _ => bail!("`last` flags can't be used with `start` or `end`"),
+        }
+    }
+
+    /// Returns the CDN to prefetch initial blocks from, from the given configurations.
+    fn parse_cdn<N: Network>() -> Result<String> {
+        match N::ID {
+            MainnetV0::ID => Ok(format!("{CDN_BASE_URL}/mainnet/v0")),
+            TestnetV0::ID => Ok(format!("{CDN_BASE_URL}/testnet/v0")),
+            CanaryV0::ID => Ok(format!("{CDN_BASE_URL}/canary/v0")),
+            _ => bail!("Unknown network ID ({})", N::ID),
         }
     }
 
@@ -214,11 +224,13 @@ impl Scan {
         let mut request_start = match is_development_network {
             true => start_height,
             false => {
+                // Parse the CDN endpoint.
+                let cdn_endpoint = Self::parse_cdn::<N>()?;
                 // Scan the CDN first for records.
                 Self::scan_from_cdn(
                     start_height,
                     end_height,
-                    CDN_ENDPOINT.to_string(),
+                    cdn_endpoint,
                     endpoint.to_string(),
                     private_key,
                     *view_key,

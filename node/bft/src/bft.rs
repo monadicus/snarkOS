@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -13,19 +14,19 @@
 // limitations under the License.
 
 use crate::{
+    MAX_LEADER_CERTIFICATE_DELAY_IN_SECS,
+    Primary,
     helpers::{
-        fmt_id,
-        init_bft_channels,
-        now,
         BFTReceiver,
         ConsensusSender,
+        DAG,
         PrimaryReceiver,
         PrimarySender,
         Storage,
-        DAG,
+        fmt_id,
+        init_bft_channels,
+        now,
     },
-    Primary,
-    MAX_LEADER_CERTIFICATE_DELAY_IN_SECS,
 };
 use snarkos_account::Account;
 use snarkos_node_bft_ledger_service::LedgerService;
@@ -37,7 +38,7 @@ use snarkvm::{
         narwhal::{BatchCertificate, Data, Subdag, Transmission, TransmissionID},
         puzzle::{Solution, SolutionID},
     },
-    prelude::{bail, ensure, Field, Network, Result},
+    prelude::{Field, Network, Result, bail, ensure},
 };
 
 use colored::Colorize;
@@ -48,12 +49,12 @@ use std::{
     future::Future,
     net::SocketAddr,
     sync::{
-        atomic::{AtomicI64, Ordering},
         Arc,
+        atomic::{AtomicI64, Ordering},
     },
 };
 use tokio::{
-    sync::{oneshot, Mutex as TMutex, OnceCell},
+    sync::{Mutex as TMutex, OnceCell, oneshot},
     task::JoinHandle,
 };
 
@@ -325,7 +326,7 @@ impl<N: Network> BFT<N> {
         self.is_even_round_ready_for_next_round(current_certificates, committee_lookback, current_round)
     }
 
-    /// Returns 'true' if the quorum threshold `(2f + 1)` is reached for this round under one of the following conditions:
+    /// Returns 'true' if the quorum threshold `(N - f)` is reached for this round under one of the following conditions:
     ///  - If the leader certificate is set for the current even round.
     ///  - The timer for the leader certificate has expired.
     fn is_even_round_ready_for_next_round(
@@ -347,7 +348,7 @@ impl<N: Network> BFT<N> {
                 return true;
             }
         }
-        // If the timer has expired, and we can achieve quorum threshold (2f + 1) without the leader, return 'true'.
+        // If the timer has expired, and we can achieve quorum threshold (N - f) without the leader, return 'true'.
         if self.is_timer_expired() {
             debug!("BFT (timer expired) - Advancing from round {current_round} to the next round (without the leader)");
             return true;
@@ -361,7 +362,7 @@ impl<N: Network> BFT<N> {
         self.leader_certificate_timer.load(Ordering::SeqCst) + MAX_LEADER_CERTIFICATE_DELAY_IN_SECS <= now()
     }
 
-    /// Returns 'true' if the quorum threshold `(2f + 1)` is reached for this round under one of the following conditions:
+    /// Returns 'true' if the quorum threshold `(N - f)` is reached for this round under one of the following conditions:
     ///  - The leader certificate is `None`.
     ///  - The leader certificate is not included up to availability threshold `(f + 1)` (in the previous certificates of the current round).
     ///  - The leader certificate timer has expired.
@@ -597,10 +598,34 @@ impl<N: Network> BFT<N> {
             if !IS_SYNCING {
                 // Initialize a map for the deduped transmissions.
                 let mut transmissions = IndexMap::new();
+                // Initialize a map for the deduped transaction ids.
+                let mut seen_transaction_ids = IndexSet::new();
+                // Initialize a map for the deduped solution ids.
+                let mut seen_solution_ids = IndexSet::new();
                 // Start from the oldest leader certificate.
                 for certificate in commit_subdag.values().flatten() {
                     // Retrieve the transmissions.
                     for transmission_id in certificate.transmission_ids() {
+                        // If the transaction ID or solution ID already exists in the map, skip it.
+                        // Note: This additional check is done to ensure that we do not include duplicate
+                        // transaction IDs or solution IDs that may have a different transmission ID.
+                        match transmission_id {
+                            TransmissionID::Solution(solution_id, _) => {
+                                // If the solution already exists, skip it.
+                                if seen_solution_ids.contains(&solution_id) {
+                                    continue;
+                                }
+                            }
+                            TransmissionID::Transaction(transaction_id, _) => {
+                                // If the transaction already exists, skip it.
+                                if seen_transaction_ids.contains(transaction_id) {
+                                    continue;
+                                }
+                            }
+                            TransmissionID::Ratification => {
+                                bail!("Ratifications are currently not supported in the BFT.")
+                            }
+                        }
                         // If the transmission already exists in the map, skip it.
                         if transmissions.contains_key(transmission_id) {
                             continue;
@@ -613,11 +638,22 @@ impl<N: Network> BFT<N> {
                         // Retrieve the transmission.
                         let Some(transmission) = self.storage().get_transmission(*transmission_id) else {
                             bail!(
-                                "BFT failed to retrieve transmission '{}' from round {}",
+                                "BFT failed to retrieve transmission '{}.{}' from round {}",
                                 fmt_id(transmission_id),
+                                fmt_id(transmission_id.checksum().unwrap_or_default()).dimmed(),
                                 certificate.round()
                             );
                         };
+                        // Insert the transaction ID or solution ID into the map.
+                        match transmission_id {
+                            TransmissionID::Solution(id, _) => {
+                                seen_solution_ids.insert(id);
+                            }
+                            TransmissionID::Transaction(id, _) => {
+                                seen_transaction_ids.insert(id);
+                            }
+                            TransmissionID::Ratification => {}
+                        }
                         // Add the transmission to the set.
                         transmissions.insert(*transmission_id, transmission);
                     }
@@ -856,7 +892,7 @@ impl<N: Network> BFT<N> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{helpers::Storage, BFT, MAX_LEADER_CERTIFICATE_DELAY_IN_SECS};
+    use crate::{BFT, MAX_LEADER_CERTIFICATE_DELAY_IN_SECS, helpers::Storage};
     use snarkos_account::Account;
     use snarkos_node_bft_ledger_service::MockLedgerService;
     use snarkos_node_bft_storage_service::BFTMemoryService;

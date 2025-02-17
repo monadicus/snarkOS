@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -15,10 +16,10 @@
 use crate::StorageService;
 use snarkvm::{
     ledger::narwhal::{BatchHeader, Transmission, TransmissionID},
-    prelude::{bail, Field, Network, Result},
+    prelude::{Field, Network, Result, bail},
 };
 
-use indexmap::{indexset, map::Entry, IndexMap, IndexSet};
+use indexmap::{IndexMap, IndexSet, indexset, map::Entry};
 use parking_lot::RwLock;
 use std::collections::{HashMap, HashSet};
 use tracing::error;

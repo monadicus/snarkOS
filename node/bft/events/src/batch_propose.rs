@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -61,7 +62,7 @@ impl<N: Network> FromBytes for BatchPropose<N> {
 
 #[cfg(test)]
 pub mod prop_tests {
-    use crate::{certificate_response::prop_tests::any_batch_header, BatchPropose};
+    use crate::{BatchPropose, certificate_response::prop_tests::any_batch_header};
     use snarkvm::{
         console::prelude::{FromBytes, ToBytes},
         ledger::committee::prop_tests::CommitteeContext,
@@ -69,7 +70,7 @@ pub mod prop_tests {
     };
 
     use bytes::{Buf, BufMut, BytesMut};
-    use proptest::prelude::{any, BoxedStrategy, Strategy};
+    use proptest::prelude::{BoxedStrategy, Strategy, any};
     use test_strategy::proptest;
 
     type CurrentNetwork = snarkvm::prelude::MainnetV0;

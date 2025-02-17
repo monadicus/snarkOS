@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -26,21 +27,25 @@ use rayon::prelude::*;
 use parking_lot::Mutex;
 use snarkvm::{
     ledger::narwhal::TransmissionID,
-    prelude::{cfg_iter, Block, Network},
+    prelude::{Block, Network, cfg_iter},
 };
 use std::{
     collections::HashMap,
+    net::SocketAddr,
     sync::{
-        atomic::{AtomicUsize, Ordering},
         Arc,
+        atomic::{AtomicUsize, Ordering},
     },
 };
 use time::OffsetDateTime;
 
 /// Initializes the metrics and returns a handle to the task running the metrics exporter.
-pub fn initialize_metrics() {
+pub fn initialize_metrics(ip: Option<SocketAddr>) {
     // Build the Prometheus exporter.
-    metrics_exporter_prometheus::PrometheusBuilder::new().install().expect("can't build the prometheus exporter");
+    let builder = metrics_exporter_prometheus::PrometheusBuilder::new();
+    if let Some(ip) = ip { builder.with_http_listener(ip) } else { builder }
+        .install()
+        .expect("can't build the prometheus exporter");
 
     // Register the snarkVM metrics.
     snarkvm::metrics::register_metrics();
@@ -119,8 +124,8 @@ pub fn add_transmission_latency_metric<N: Network>(
                 Some(*key)
             } else {
                 let transmission_type = match key {
-                    TransmissionID::Solution(solution_id) if solution_ids.contains(solution_id) => Some("solution"),
-                    TransmissionID::Transaction(transaction_id) if transaction_ids.contains(transaction_id) => {
+                    TransmissionID::Solution(solution_id, _) if solution_ids.contains(solution_id) => Some("solution"),
+                    TransmissionID::Transaction(transaction_id, _) if transaction_ids.contains(transaction_id) => {
                         Some("transaction")
                     }
                     _ => None,

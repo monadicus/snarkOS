@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -15,7 +16,10 @@
 mod common;
 use common::*;
 
-use snarkos_node_tcp::{protocols::Handshake, P2P};
+use snarkos_node_tcp::{
+    P2P,
+    protocols::{Handshake, OnConnect},
+};
 
 use core::time::Duration;
 use deadline::deadline;
@@ -87,6 +91,10 @@ async fn test_connect_with_handshake() {
     // Enable handshake protocol.
     node0.enable_handshake().await;
     node1.enable_handshake().await;
+
+    // Enable on_connect protocol.
+    node0.enable_on_connect().await;
+    node1.enable_on_connect().await;
 
     // Start listening.
     node0.tcp().enable_listener().await.unwrap();
@@ -163,6 +171,7 @@ async fn test_validator_connection() {
     let node0 = validator(0, 2, &[], false).await;
     assert_eq!(node0.number_of_connected_peers(), 0);
     node0.enable_handshake().await;
+    node0.enable_on_connect().await;
     node0.tcp().enable_listener().await.unwrap();
 
     // Get the local IP address from the first router.
@@ -172,6 +181,7 @@ async fn test_validator_connection() {
     let node1 = validator(0, 2, &[addr0], false).await;
     assert_eq!(node1.number_of_connected_peers(), 0);
     node1.enable_handshake().await;
+    node1.enable_on_connect().await;
     node1.tcp().enable_listener().await.unwrap();
 
     {

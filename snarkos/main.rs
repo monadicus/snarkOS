@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -15,7 +16,7 @@
 use snarkos_cli::{commands::CLI, helpers::Updater};
 
 use clap::Parser;
-use std::process::exit;
+use std::{env, process::exit};
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 use tikv_jemallocator::Jemalloc;
@@ -24,7 +25,13 @@ use tikv_jemallocator::Jemalloc;
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
+// Obtain information on the build.
+include!(concat!(env!("OUT_DIR"), "/built.rs"));
+
 fn main() -> anyhow::Result<()> {
+    // A hack to avoid having to go through clap to display advanced version information.
+    check_for_version();
+
     // Parse the given arguments.
     let cli = CLI::parse();
     // Run the updater.
@@ -38,4 +45,21 @@ fn main() -> anyhow::Result<()> {
         }
     }
     Ok(())
+}
+
+/// Checks whether the version information was requested and - if so - display it and exit.
+fn check_for_version() {
+    if let Some(first_arg) = env::args().nth(1) {
+        if ["--version", "-V"].contains(&&*first_arg) {
+            let version = PKG_VERSION;
+            let branch = GIT_HEAD_REF.unwrap_or("unknown_branch");
+            let commit = GIT_COMMIT_HASH.unwrap_or("unknown_commit");
+            let mut features = FEATURES_LOWERCASE_STR.to_owned();
+            features.retain(|c| c != ' ');
+
+            println!("snarkos {version} {branch} {commit} features=[{features}]");
+
+            exit(0);
+        }
+    }
 }

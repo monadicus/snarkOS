@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -31,7 +32,6 @@ use snarkvm::{
     console::network::Network,
     package::Package,
     prelude::{
-        block::Transaction,
         Address,
         Ciphertext,
         Identifier,
@@ -44,10 +44,11 @@ use snarkvm::{
         ToBytes,
         Value,
         ViewKey,
+        block::Transaction,
     },
 };
 
-use anyhow::{bail, ensure, Result};
+use anyhow::{Result, bail, ensure};
 use clap::Parser;
 use colored::Colorize;
 use std::{path::PathBuf, str::FromStr};
@@ -131,7 +132,8 @@ impl Developer {
             Ok(response) => response.into_json().map_err(|err| err.into()),
             Err(err) => match err {
                 ureq::Error::Status(_status, response) => {
-                    bail!(response.into_string().unwrap_or("Response too large!".to_owned()))
+                    // Debug formatting displays more useful info, especially if the response body is empty.
+                    bail!("Failed to fetch program {program_id}: {response:?}")
                 }
                 err => bail!(err),
             },

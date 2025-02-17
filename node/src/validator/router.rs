@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -27,7 +28,7 @@ use snarkos_node_router::messages::{
 use snarkos_node_tcp::{Connection, ConnectionSide, Tcp};
 use snarkvm::{
     ledger::narwhal::Data,
-    prelude::{block::Transaction, error, Network},
+    prelude::{Network, block::Transaction, error},
 };
 
 use std::{io, net::SocketAddr, time::Duration};
@@ -63,6 +64,8 @@ where
     async fn on_connect(&self, peer_addr: SocketAddr) {
         // Resolve the peer address to the listener address.
         let Some(peer_ip) = self.router.resolve_to_listener(&peer_addr) else { return };
+        // Promote the peer's status from "connecting" to "connected".
+        self.router().insert_connected_peer(peer_ip);
         // Retrieve the block locators.
         let block_locators = match self.sync.get_block_locators() {
             Ok(block_locators) => Some(block_locators),
@@ -134,8 +137,9 @@ impl<N: Network, C: ConsensusStorage<N>> Validator<N, C> {
     ) {
         // Process the message. Disconnect if the peer violated the protocol.
         if let Err(error) = self.inbound(peer_addr, message).await {
+            error!("Failed to process inbound message from '{peer_addr}' - {error}");
             if let Some(peer_ip) = self.router().resolve_to_listener(&peer_addr) {
-                warn!("Disconnecting from '{peer_ip}' - {error}");
+                warn!("Disconnecting from '{peer_ip}' for protocol violation");
                 Outbound::send(self, peer_ip, Message::Disconnect(DisconnectReason::ProtocolViolation.into()));
                 // Disconnect from this peer.
                 self.router().disconnect(peer_ip);

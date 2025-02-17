@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -19,10 +20,10 @@ use std::{
     net::{IpAddr, SocketAddr},
     ops::Deref,
     sync::{
-        atomic::{AtomicUsize, Ordering::*},
         Arc,
+        atomic::{AtomicUsize, Ordering::*},
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use once_cell::sync::OnceCell;
@@ -37,11 +38,12 @@ use tokio::{
 use tracing::*;
 
 use crate::{
-    connections::{Connection, ConnectionSide, Connections},
-    protocols::{Protocol, Protocols},
+    BannedPeers,
     Config,
     KnownPeers,
     Stats,
+    connections::{Connection, ConnectionSide, Connections},
+    protocols::{Protocol, Protocols},
 };
 
 // A sequential numeric identifier assigned to `Tcp`s that were not provided with a name.
@@ -75,6 +77,8 @@ pub struct InnerTcp {
     connections: Connections,
     /// Collects statistics related to the node's peers.
     known_peers: KnownPeers,
+    /// Contains the set of currently banned peers.
+    banned_peers: BannedPeers,
     /// Collects statistics related to the node itself.
     stats: Stats,
     /// The node's tasks.
@@ -101,7 +105,8 @@ impl Tcp {
             connecting: Default::default(),
             connections: Default::default(),
             known_peers: Default::default(),
-            stats: Default::default(),
+            banned_peers: Default::default(),
+            stats: Stats::new(Instant::now()),
             tasks: Default::default(),
         }));
 
@@ -163,6 +168,12 @@ impl Tcp {
     #[inline]
     pub fn known_peers(&self) -> &KnownPeers {
         &self.known_peers
+    }
+
+    /// Returns a reference to the set of currently banned peers.
+    #[inline]
+    pub fn banned_peers(&self) -> &BannedPeers {
+        &self.banned_peers
     }
 
     /// Returns a reference to the statistics.
@@ -255,7 +266,7 @@ impl Tcp {
 
         if let Err(ref e) = ret {
             self.connecting.lock().remove(&addr);
-            self.known_peers().register_failure(addr);
+            self.known_peers().register_failure(addr.ip());
             error!(parent: self.span(), "Unable to initiate a connection with {addr}: {e}");
         }
 
@@ -280,13 +291,6 @@ impl Tcp {
             // Shut down the associated tasks of the peer.
             for task in conn.tasks.iter().rev() {
                 task.abort();
-            }
-
-            // If the (owning) Tcp was not the initiator of the connection, it doesn't know the listening address
-            // of the associated peer, so the related stats are unreliable; the next connection initiated by the
-            // peer could be bound to an entirely different port number
-            if conn.side() == ConnectionSide::Initiator {
-                self.known_peers().remove(conn.addr());
             }
 
             debug!(parent: self.span(), "Disconnected from {}", conn.addr());
@@ -386,7 +390,7 @@ impl Tcp {
         tokio::spawn(async move {
             if let Err(e) = tcp.adapt_stream(stream, addr, ConnectionSide::Responder).await {
                 tcp.connecting.lock().remove(&addr);
-                tcp.known_peers().register_failure(addr);
+                tcp.known_peers().register_failure(addr.ip());
                 error!(parent: tcp.span(), "Failed to connect with {addr}: {e}");
             }
         });
@@ -426,7 +430,7 @@ impl Tcp {
 
     /// Prepares the freshly acquired connection to handle the protocols the Tcp implements.
     async fn adapt_stream(&self, stream: TcpStream, peer_addr: SocketAddr, own_side: ConnectionSide) -> io::Result<()> {
-        self.known_peers.add(peer_addr);
+        self.known_peers.add(peer_addr.ip());
 
         // Register the port seen by the peer.
         if own_side == ConnectionSide::Initiator {

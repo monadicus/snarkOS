@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -72,12 +73,12 @@ impl<N: Network> Ping<N> {
 
 #[cfg(test)]
 pub mod prop_tests {
-    use crate::{challenge_request::prop_tests::any_node_type, Ping};
-    use snarkos_node_sync_locators::{test_helpers::sample_block_locators, BlockLocators};
+    use crate::{Ping, challenge_request::prop_tests::any_node_type};
+    use snarkos_node_sync_locators::{BlockLocators, test_helpers::sample_block_locators};
     use snarkvm::utilities::{FromBytes, ToBytes};
 
     use bytes::{Buf, BufMut, BytesMut};
-    use proptest::prelude::{any, BoxedStrategy, Strategy};
+    use proptest::prelude::{BoxedStrategy, Strategy, any};
     use test_strategy::proptest;
 
     type CurrentNetwork = snarkvm::prelude::MainnetV0;

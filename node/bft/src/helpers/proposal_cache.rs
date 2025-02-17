@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -17,10 +18,10 @@ use crate::helpers::{Proposal, SignedProposals};
 use snarkvm::{
     console::{account::Address, network::Network, program::SUBDAG_CERTIFICATES_DEPTH},
     ledger::narwhal::BatchCertificate,
-    prelude::{anyhow, bail, error, FromBytes, IoResult, Read, Result, ToBytes, Write},
+    prelude::{FromBytes, IoResult, Read, Result, ToBytes, Write, anyhow, bail, error},
 };
 
-use aleo_std::{aleo_ledger_dir, StorageMode};
+use aleo_std::{StorageMode, aleo_ledger_dir};
 use indexmap::IndexSet;
 use std::{fs, path::PathBuf};
 
@@ -34,8 +35,8 @@ pub fn proposal_cache_path(network: u16, dev: Option<u16>) -> PathBuf {
     path.pop();
     // Append the proposal store's file name.
     match dev {
-        Some(id) => path.push(&format!(".{PROPOSAL_CACHE_FILE_NAME}-{}-{}", network, id)),
-        None => path.push(&format!("{PROPOSAL_CACHE_FILE_NAME}-{}", network)),
+        Some(id) => path.push(format!(".{PROPOSAL_CACHE_FILE_NAME}-{}-{}", network, id)),
+        None => path.push(format!("{PROPOSAL_CACHE_FILE_NAME}-{}", network)),
     }
 
     path

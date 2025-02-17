@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -12,12 +13,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use snarkvm::prelude::{error, has_duplicates, FromBytes, IoResult, Network, Read, ToBytes, Write};
+use snarkvm::prelude::{FromBytes, IoResult, Network, Read, ToBytes, Write, error, has_duplicates};
 
-use anyhow::{bail, ensure, Result};
-use indexmap::{indexmap, IndexMap};
+use anyhow::{Result, bail, ensure};
+use indexmap::{IndexMap, indexmap};
 use serde::{Deserialize, Serialize};
-use std::collections::{btree_map::IntoIter, BTreeMap};
+use std::collections::{BTreeMap, btree_map::IntoIter};
 
 /// The number of recent blocks (near tip).
 pub const NUM_RECENT_BLOCKS: usize = 100; // 100 blocks
