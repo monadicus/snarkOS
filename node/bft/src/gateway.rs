@@ -53,10 +53,7 @@ use snarkos_node_tcp::{
 };
 use snarkvm::{
     console::prelude::*,
-    ledger::{
-        committee::Committee,
-        narwhal::{BatchHeader, Data},
-    },
+    ledger::narwhal::{BatchHeader, Data},
     prelude::{Address, Field},
 };
 
@@ -157,7 +154,7 @@ impl<N: Network> Gateway<N> {
             (Some(ip), _) => ip,
         };
         // Initialize the TCP stack.
-        let tcp = Tcp::new(Config::new(ip, Committee::<N>::MAX_COMMITTEE_SIZE));
+        let tcp = Tcp::new(Config::new(ip, N::MAX_CERTIFICATES.last().unwrap().1));
         // Return the gateway.
         Ok(Self {
             account,
@@ -219,7 +216,7 @@ impl<N: Network> Gateway<N> {
     fn max_committee_size(&self) -> usize {
         self.ledger
             .current_committee()
-            .map_or_else(|_e| Committee::<N>::MAX_COMMITTEE_SIZE as usize, |committee| committee.num_members())
+            .map_or_else(|_e| N::LATEST_MAX_CERTIFICATES().unwrap() as usize, |committee| committee.num_members())
     }
 
     /// The maximum number of events to cache.
@@ -1077,7 +1074,7 @@ impl<N: Network> Reading for Gateway<N> {
     /// The maximum queue depth of incoming messages for a single peer.
     const MESSAGE_QUEUE_DEPTH: usize = 2
         * BatchHeader::<N>::MAX_GC_ROUNDS
-        * Committee::<N>::MAX_COMMITTEE_SIZE as usize
+        * N::LATEST_MAX_CERTIFICATES().unwrap() as usize
         * BatchHeader::<N>::MAX_TRANSMISSIONS_PER_BATCH;
 
     /// Creates a [`Decoder`] used to interpret messages from the network.
@@ -1112,7 +1109,7 @@ impl<N: Network> Writing for Gateway<N> {
     /// The maximum queue depth of outgoing messages for a single peer.
     const MESSAGE_QUEUE_DEPTH: usize = 2
         * BatchHeader::<N>::MAX_GC_ROUNDS
-        * Committee::<N>::MAX_COMMITTEE_SIZE as usize
+        * N::LATEST_MAX_CERTIFICATES().unwrap() as usize
         * BatchHeader::<N>::MAX_TRANSMISSIONS_PER_BATCH;
 
     /// Creates an [`Encoder`] used to write the outbound messages to the target stream.
@@ -1460,13 +1457,12 @@ mod prop_tests {
     use snarkvm::{
         ledger::{
             committee::{
-                Committee,
                 prop_tests::{CommitteeContext, ValidatorSet},
                 test_helpers::sample_committee_for_round_and_members,
             },
             narwhal::{BatchHeader, batch_certificate::test_helpers::sample_batch_certificate_for_round},
         },
-        prelude::{MainnetV0, PrivateKey},
+        prelude::{MainnetV0, Network, PrivateKey},
         utilities::TestRng,
     };
 
@@ -1579,7 +1575,7 @@ mod prop_tests {
         assert_eq!(tcp_config.desired_listening_port, Some(MEMORY_POOL_PORT + dev.port().unwrap()));
 
         let tcp_config = gateway.tcp().config();
-        assert_eq!(tcp_config.max_connections, Committee::<CurrentNetwork>::MAX_COMMITTEE_SIZE);
+        assert_eq!(tcp_config.max_connections, CurrentNetwork::LATEST_MAX_CERTIFICATES().unwrap());
         assert_eq!(gateway.account().address(), account.address());
     }
 
@@ -1601,7 +1597,7 @@ mod prop_tests {
         }
 
         let tcp_config = gateway.tcp().config();
-        assert_eq!(tcp_config.max_connections, Committee::<CurrentNetwork>::MAX_COMMITTEE_SIZE);
+        assert_eq!(tcp_config.max_connections, CurrentNetwork::LATEST_MAX_CERTIFICATES().unwrap());
         assert_eq!(gateway.account().address(), account.address());
     }
 

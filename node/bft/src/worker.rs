@@ -607,12 +607,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_max_redundant_requests() {
-        const NUM_NODES: u16 = Committee::<CurrentNetwork>::MAX_COMMITTEE_SIZE;
+        let num_nodes: u16 = CurrentNetwork::LATEST_MAX_CERTIFICATES().unwrap();
 
         let rng = &mut TestRng::default();
         // Sample a committee.
         let committee =
-            snarkvm::ledger::committee::test_helpers::sample_committee_for_round_and_size(0, NUM_NODES, rng);
+            snarkvm::ledger::committee::test_helpers::sample_committee_for_round_and_size(0, num_nodes, rng);
         let committee_clone = committee.clone();
         // Setup the mock ledger.
         let mut mock_ledger = MockLedger::default();

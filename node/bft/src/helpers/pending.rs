@@ -15,7 +15,7 @@
 
 use crate::MAX_FETCH_TIMEOUT_IN_MS;
 use snarkos_node_bft_ledger_service::LedgerService;
-use snarkvm::{console::network::Network, ledger::committee::Committee};
+use snarkvm::console::network::{consensus_config_value, Network};
 
 use parking_lot::RwLock;
 use std::{
@@ -38,7 +38,10 @@ pub fn max_redundant_requests<N: Network>(ledger: Arc<dyn LedgerService<N>>, rou
         .get_committee_lookback_for_round(round)
         .map(|committee| committee.num_members())
         .ok()
-        .unwrap_or(Committee::<N>::MAX_COMMITTEE_SIZE as usize);
+        .unwrap_or_else(|| {
+            let max_committee_size = consensus_config_value!(N, MAX_CERTIFICATES, ledger.latest_block_height()).unwrap();
+            max_committee_size as usize
+     });
 
     // Note: It is adequate to set this value to the availability threshold,
     // as with high probability one will respond honestly (in the best and worst case
