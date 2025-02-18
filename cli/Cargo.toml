@@ -18,6 +18,13 @@ edition = "2021"
 
 [features]
 metrics = [ "dep:metrics", "snarkos-node/metrics" ]
+cuda = [
+  "snarkvm/cuda",
+  "snarkos-account/cuda",
+  "snarkos-node/cuda",
+  "snarkos-node-cdn/cuda",
+  "snarkos-node-rest/cuda"
+]
 test_targets = [ "snarkvm/test_targets" ]
 
 [dependencies.aleo-std]
