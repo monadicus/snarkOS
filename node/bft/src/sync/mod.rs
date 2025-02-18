@@ -296,7 +296,7 @@ impl<N: Network> Sync<N> {
         Ok(())
     }
 
-    /// Syncs the storage with the given blocks.
+    /// Syncs the storage with blocks already received from peers.
     pub async fn sync_storage_with_blocks(&self) -> Result<()> {
         // Acquire the response lock.
         let _lock = self.response_lock.lock().await;
