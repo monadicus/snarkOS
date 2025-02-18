@@ -15,7 +15,7 @@
 
 use crate::MAX_FETCH_TIMEOUT_IN_MS;
 use snarkos_node_bft_ledger_service::LedgerService;
-use snarkvm::console::network::{consensus_config_value, Network};
+use snarkvm::console::network::{Network, consensus_config_value};
 
 use parking_lot::RwLock;
 use std::{
@@ -34,14 +34,14 @@ pub(crate) const CALLBACK_EXPIRATION_IN_SECS: i64 = MAX_FETCH_TIMEOUT_IN_MS.div_
 /// Returns the maximum number of redundant requests for the number of validators in the specified round.
 pub fn max_redundant_requests<N: Network>(ledger: Arc<dyn LedgerService<N>>, round: u64) -> usize {
     // Determine the number of validators in the committee lookback for the given round.
-    let num_validators = ledger
-        .get_committee_lookback_for_round(round)
-        .map(|committee| committee.num_members())
-        .ok()
-        .unwrap_or_else(|| {
-            let max_committee_size = consensus_config_value!(N, MAX_CERTIFICATES, ledger.latest_block_height()).unwrap();
-            max_committee_size as usize
-     });
+    let num_validators =
+        ledger.get_committee_lookback_for_round(round).map(|committee| committee.num_members()).ok().unwrap_or_else(
+            || {
+                let max_committee_size =
+                    consensus_config_value!(N, MAX_CERTIFICATES, ledger.latest_block_height()).unwrap();
+                max_committee_size as usize
+            },
+        );
 
     // Note: It is adequate to set this value to the availability threshold,
     // as with high probability one will respond honestly (in the best and worst case

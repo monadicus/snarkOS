@@ -20,7 +20,7 @@ use crate::common::{
 };
 use snarkos_node_bft::helpers::max_redundant_requests;
 use snarkvm::{
-    ledger::{committee::Committee, narwhal::TransmissionID},
+    ledger::narwhal::TransmissionID,
     prelude::{Network, TestRng},
 };
 
@@ -29,12 +29,12 @@ use std::net::SocketAddr;
 #[tokio::test]
 #[rustfmt::skip]
 async fn test_resend_transmission_request() {
-    const NUM_NODES: u16 = Committee::<CurrentNetwork>::MAX_COMMITTEE_SIZE;
+    let num_nodes: u16 = CurrentNetwork::LATEST_MAX_CERTIFICATES().unwrap();
 
     // Initialize the RNG.
     let mut rng = TestRng::default();
     // Initialize the accounts and the committee.
-    let (accounts, committee) = new_test_committee(NUM_NODES, &mut rng);
+    let (accounts, committee) = new_test_committee(num_nodes, &mut rng);
     // Sample a ledger.
     let ledger = sample_ledger(&accounts, &committee, &mut rng);
     // Sample a worker.
@@ -111,12 +111,12 @@ async fn test_resend_transmission_request() {
 #[tokio::test]
 #[rustfmt::skip]
 async fn test_flood_transmission_requests() {
-    const NUM_NODES: u16 = Committee::<CurrentNetwork>::MAX_COMMITTEE_SIZE;
+    let num_nodes: u16 = CurrentNetwork::LATEST_MAX_CERTIFICATES().unwrap();
 
     // Initialize the RNG.
     let mut rng = TestRng::default();
     // Initialize the accounts and the committee.
-    let (accounts, committee) = new_test_committee(NUM_NODES, &mut rng);
+    let (accounts, committee) = new_test_committee(num_nodes, &mut rng);
     // Sample a ledger.
     let ledger = sample_ledger(&accounts, &committee, &mut rng);
     // Sample a worker.

@@ -1072,10 +1072,7 @@ impl<N: Network> Reading for Gateway<N> {
     type Message = Event<N>;
 
     /// The maximum queue depth of incoming messages for a single peer.
-    const MESSAGE_QUEUE_DEPTH: usize = 2
-        * BatchHeader::<N>::MAX_GC_ROUNDS
-        * N::LATEST_MAX_CERTIFICATES().unwrap() as usize
-        * BatchHeader::<N>::MAX_TRANSMISSIONS_PER_BATCH;
+    const MESSAGE_QUEUE_DEPTH: usize = 256_000;
 
     /// Creates a [`Decoder`] used to interpret messages from the network.
     /// The `side` param indicates the connection side **from the node's perspective**.
@@ -1107,10 +1104,7 @@ impl<N: Network> Writing for Gateway<N> {
     type Message = Event<N>;
 
     /// The maximum queue depth of outgoing messages for a single peer.
-    const MESSAGE_QUEUE_DEPTH: usize = 2
-        * BatchHeader::<N>::MAX_GC_ROUNDS
-        * N::LATEST_MAX_CERTIFICATES().unwrap() as usize
-        * BatchHeader::<N>::MAX_TRANSMISSIONS_PER_BATCH;
+    const MESSAGE_QUEUE_DEPTH: usize = 256_000;
 
     /// Creates an [`Encoder`] used to write the outbound messages to the target stream.
     /// The `side` parameter indicates the connection side **from the node's perspective**.
@@ -1254,7 +1248,7 @@ impl<N: Network> Gateway<N> {
         peer_ip: Option<SocketAddr>,
         restrictions_id: Field<N>,
         stream: &'a mut TcpStream,
-    ) -> io::Result<(SocketAddr, Framed<&mut TcpStream, EventCodec<N>>)> {
+    ) -> io::Result<(SocketAddr, Framed<&'a mut TcpStream, EventCodec<N>>)> {
         // This value is immediately guaranteed to be present, so it can be unwrapped.
         let peer_ip = peer_ip.unwrap();
 
@@ -1319,7 +1313,7 @@ impl<N: Network> Gateway<N> {
         peer_ip: &mut Option<SocketAddr>,
         restrictions_id: Field<N>,
         stream: &'a mut TcpStream,
-    ) -> io::Result<(SocketAddr, Framed<&mut TcpStream, EventCodec<N>>)> {
+    ) -> io::Result<(SocketAddr, Framed<&'a mut TcpStream, EventCodec<N>>)> {
         // Construct the stream.
         let mut framed = Framed::new(stream, EventCodec::<N>::handshake());
 
@@ -1453,7 +1447,10 @@ mod prop_tests {
     use snarkos_account::Account;
     use snarkos_node_bft_ledger_service::MockLedgerService;
     use snarkos_node_bft_storage_service::BFTMemoryService;
-    use snarkos_node_tcp::P2P;
+    use snarkos_node_tcp::{
+        P2P,
+        protocols::{Reading, Writing},
+    };
     use snarkvm::{
         ledger::{
             committee::{
@@ -1691,5 +1688,16 @@ mod prop_tests {
                 assert!(!is_authorized);
             }
         }
+    }
+
+    #[test]
+    fn ensure_sufficient_rw_queue_depth() {
+        let desired_rw_queue_depth = 2
+            * BatchHeader::<MainnetV0>::MAX_GC_ROUNDS
+            * MainnetV0::LATEST_MAX_CERTIFICATES().unwrap() as usize
+            * BatchHeader::<MainnetV0>::MAX_TRANSMISSIONS_PER_BATCH;
+
+        assert!(<Gateway<MainnetV0> as Reading>::MESSAGE_QUEUE_DEPTH >= desired_rw_queue_depth);
+        assert!(<Gateway<MainnetV0> as Writing>::MESSAGE_QUEUE_DEPTH >= desired_rw_queue_depth);
     }
 }

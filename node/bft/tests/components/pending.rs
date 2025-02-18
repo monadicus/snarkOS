@@ -15,16 +15,16 @@
 
 use crate::common::{CurrentNetwork, primary::new_test_committee, utils::sample_ledger};
 use snarkos_node_bft::helpers::max_redundant_requests;
-use snarkvm::{ledger::committee::Committee, prelude::TestRng};
+use snarkvm::prelude::{Network, TestRng};
 
 #[test]
 fn test_max_redundant_requests() {
-    const NUM_NODES: u16 = Committee::<CurrentNetwork>::MAX_COMMITTEE_SIZE;
+    let num_nodes: u16 = CurrentNetwork::LATEST_MAX_CERTIFICATES().unwrap();
 
     // Initialize the RNG.
     let mut rng = TestRng::default();
     // Initialize the accounts and the committee.
-    let (accounts, committee) = new_test_committee(NUM_NODES, &mut rng);
+    let (accounts, committee) = new_test_committee(num_nodes, &mut rng);
     // Sample a ledger.
     let ledger = sample_ledger(&accounts, &committee, &mut rng);
     // Ensure the maximum number of redundant requests is correct and consistent across iterations.
