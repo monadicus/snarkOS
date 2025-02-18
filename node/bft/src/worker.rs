@@ -446,7 +446,7 @@ impl<N: Network> Worker<N> {
         // Determine if we've already sent a request to the peer.
         let contains_peer_with_sent_request = self.pending.contains_peer_with_sent_request(transmission_id, peer_ip);
         // Determine the maximum number of redundant requests.
-        let num_redundant_requests = max_redundant_requests(self.ledger.clone(), self.storage.current_round());
+        let num_redundant_requests = max_redundant_requests(self.ledger.clone(), self.storage.current_round())?;
         // Determine if we should send a transmission request to the peer.
         // We send at most `num_redundant_requests` requests and each peer can only receive one request at a time.
         let should_send_request = num_sent_requests < num_redundant_requests && !contains_peer_with_sent_request;
@@ -623,7 +623,7 @@ mod tests {
         let ledger: Arc<dyn LedgerService<CurrentNetwork>> = Arc::new(mock_ledger);
 
         // Ensure the maximum number of redundant requests is correct and consistent across iterations.
-        assert_eq!(max_redundant_requests(ledger, 0), 6, "Update me if the formula changes");
+        assert_eq!(max_redundant_requests(ledger, 0).unwrap(), 6, "Update me if the formula changes");
     }
 
     #[tokio::test]
@@ -881,7 +881,8 @@ mod tests {
         let transmission_id = TransmissionID::Transaction(transaction_id, checksum);
 
         // Determine the number of redundant requests are sent.
-        let num_redundant_requests = max_redundant_requests(worker.ledger.clone(), worker.storage.current_round());
+        let num_redundant_requests =
+            max_redundant_requests(worker.ledger.clone(), worker.storage.current_round()).unwrap();
         let num_flood_requests = num_redundant_requests * 10;
         let mut peer_ips =
             (0..num_flood_requests).map(|i| SocketAddr::from(([127, 0, 0, 1], 1234 + i as u16))).collect_vec();

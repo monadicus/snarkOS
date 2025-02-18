@@ -607,7 +607,7 @@ impl<N: Network> Sync<N> {
         // Determine if we've already sent a request to the peer.
         let contains_peer_with_sent_request = self.pending.contains_peer_with_sent_request(certificate_id, peer_ip);
         // Determine the maximum number of redundant requests.
-        let num_redundant_requests = max_redundant_requests(self.ledger.clone(), self.storage.current_round());
+        let num_redundant_requests = max_redundant_requests(self.ledger.clone(), self.storage.current_round())?;
         // Determine if we should send a certificate request to the peer.
         // We send at most `num_redundant_requests` requests and each peer can only receive one request at a time.
         let should_send_request = num_sent_requests < num_redundant_requests && !contains_peer_with_sent_request;

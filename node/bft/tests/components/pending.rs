@@ -28,5 +28,5 @@ fn test_max_redundant_requests() {
     // Sample a ledger.
     let ledger = sample_ledger(&accounts, &committee, &mut rng);
     // Ensure the maximum number of redundant requests is correct and consistent across iterations.
-    assert_eq!(max_redundant_requests(ledger, 0), 6, "Update me if the formula changes");
+    assert_eq!(max_redundant_requests(ledger, 0).unwrap(), 6, "Update me if the formula changes");
 }

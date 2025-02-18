@@ -41,7 +41,7 @@ async fn test_resend_transmission_request() {
     let worker = sample_worker(0, accounts[0].clone(), ledger.clone());
 
     // Determine the maximum number of redundant requests.
-    let max_redundancy = max_redundant_requests(ledger.clone(), 0);
+    let max_redundancy = max_redundant_requests(ledger.clone(), 0).unwrap();
     assert_eq!(max_redundancy, 6, "Update me if the formula changes");
 
     // Prepare peer ips.
@@ -123,7 +123,7 @@ async fn test_flood_transmission_requests() {
     let worker = sample_worker(0, accounts[0].clone(), ledger.clone());
 
     // Determine the maximum number of redundant requests.
-    let max_redundancy = max_redundant_requests(ledger.clone(), 0);
+    let max_redundancy = max_redundant_requests(ledger.clone(), 0).unwrap();
     assert_eq!(max_redundancy, 6, "Update me if the formula changes");
 
     // Prepare peer ips.

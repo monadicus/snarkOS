@@ -154,7 +154,7 @@ impl<N: Network> Gateway<N> {
             (Some(ip), _) => ip,
         };
         // Initialize the TCP stack.
-        let tcp = Tcp::new(Config::new(ip, N::MAX_CERTIFICATES.last().unwrap().1));
+        let tcp = Tcp::new(Config::new(ip, N::LATEST_MAX_CERTIFICATES()?));
         // Return the gateway.
         Ok(Self {
             account,
