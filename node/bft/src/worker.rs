@@ -607,7 +607,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_max_redundant_requests() {
-        let num_nodes: u16 = CurrentNetwork::LATEST_MAX_CERTIFICATES().unwrap();
+        let num_nodes: u16 = CurrentNetwork::MAX_CERTIFICATES.first().unwrap().1;
 
         let rng = &mut TestRng::default();
         // Sample a committee.
@@ -623,7 +623,7 @@ mod tests {
         let ledger: Arc<dyn LedgerService<CurrentNetwork>> = Arc::new(mock_ledger);
 
         // Ensure the maximum number of redundant requests is correct and consistent across iterations.
-        assert_eq!(max_redundant_requests(ledger, 0), 34, "Update me if the formula changes");
+        assert_eq!(max_redundant_requests(ledger, 0), 6, "Update me if the formula changes");
     }
 
     #[tokio::test]
