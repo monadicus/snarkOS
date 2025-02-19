@@ -1690,6 +1690,10 @@ mod prop_tests {
         }
     }
 
+    // This test is used to ensure that the Reading and Writing network queues are sufficient to
+    // process the maximum expected load at any givent moment. Due to the number of certificates
+    // not being const, those values are currently hardcoded, and the test below will alert us
+    // if they need to be increased.
     #[test]
     fn ensure_sufficient_rw_queue_depth() {
         let desired_rw_queue_depth = 2
@@ -1697,6 +1701,7 @@ mod prop_tests {
             * MainnetV0::LATEST_MAX_CERTIFICATES().unwrap() as usize
             * BatchHeader::<MainnetV0>::MAX_TRANSMISSIONS_PER_BATCH;
 
+        // The queue depths may be larger than the calculated maximum needed capacity.
         assert!(<Gateway<MainnetV0> as Reading>::MESSAGE_QUEUE_DEPTH >= desired_rw_queue_depth);
         assert!(<Gateway<MainnetV0> as Writing>::MESSAGE_QUEUE_DEPTH >= desired_rw_queue_depth);
     }
