@@ -20,7 +20,7 @@ use crate::common::{
 };
 use snarkos_node_bft::helpers::max_redundant_requests;
 use snarkvm::{
-    ledger::{committee::Committee, narwhal::TransmissionID},
+    ledger::narwhal::TransmissionID,
     prelude::{Network, TestRng},
 };
 
@@ -29,20 +29,20 @@ use std::net::SocketAddr;
 #[tokio::test]
 #[rustfmt::skip]
 async fn test_resend_transmission_request() {
-    const NUM_NODES: u16 = Committee::<CurrentNetwork>::MAX_COMMITTEE_SIZE;
+    let num_nodes: u16 = CurrentNetwork::MAX_CERTIFICATES.first().unwrap().1;
 
     // Initialize the RNG.
     let mut rng = TestRng::default();
     // Initialize the accounts and the committee.
-    let (accounts, committee) = new_test_committee(NUM_NODES, &mut rng);
+    let (accounts, committee) = new_test_committee(num_nodes, &mut rng);
     // Sample a ledger.
     let ledger = sample_ledger(&accounts, &committee, &mut rng);
     // Sample a worker.
     let worker = sample_worker(0, accounts[0].clone(), ledger.clone());
 
     // Determine the maximum number of redundant requests.
-    let max_redundancy = max_redundant_requests(ledger.clone(), 0);
-    assert_eq!(max_redundancy, 34, "Update me if the formula changes");
+    let max_redundancy = max_redundant_requests(ledger.clone(), 0).unwrap();
+    assert_eq!(max_redundancy, 6, "Update me if the formula changes");
 
     // Prepare peer ips.
     let num_test_requests = 11;
@@ -111,20 +111,20 @@ async fn test_resend_transmission_request() {
 #[tokio::test]
 #[rustfmt::skip]
 async fn test_flood_transmission_requests() {
-    const NUM_NODES: u16 = Committee::<CurrentNetwork>::MAX_COMMITTEE_SIZE;
+    let num_nodes: u16 = CurrentNetwork::MAX_CERTIFICATES.first().unwrap().1;
 
     // Initialize the RNG.
     let mut rng = TestRng::default();
     // Initialize the accounts and the committee.
-    let (accounts, committee) = new_test_committee(NUM_NODES, &mut rng);
+    let (accounts, committee) = new_test_committee(num_nodes, &mut rng);
     // Sample a ledger.
     let ledger = sample_ledger(&accounts, &committee, &mut rng);
     // Sample a worker.
     let worker = sample_worker(0, accounts[0].clone(), ledger.clone());
 
     // Determine the maximum number of redundant requests.
-    let max_redundancy = max_redundant_requests(ledger.clone(), 0);
-    assert_eq!(max_redundancy, 34, "Update me if the formula changes");
+    let max_redundancy = max_redundant_requests(ledger.clone(), 0).unwrap();
+    assert_eq!(max_redundancy, 6, "Update me if the formula changes");
 
     // Prepare peer ips.
     let mut peer_ips = (0..max_redundancy + 1).map(|i| SocketAddr::from(([127, 0, 0, 1], 1234 + i as u16))).collect::<Vec<_>>();
@@ -157,7 +157,7 @@ async fn test_flood_transmission_requests() {
     assert_eq!(pending.num_sent_requests(transmission_id), max_redundancy, "Incorrect number of sent requests for transmission");
 
     // Ensure any further redundant requests are not sent when sending to the same peer.
-    for i in 1..=20 {
+    for i in 1..=6 {
         let worker_ = worker.clone();
         let peer_ip = initial_peer_ip;
         tokio::spawn(async move { worker_.get_or_fetch_transmission(peer_ip, transmission_id).await });
@@ -176,7 +176,7 @@ async fn test_flood_transmission_requests() {
     }
 
     // Ensure any further redundant requests are not sent when sending to new peers.
-    for i in 1..=20 {
+    for i in 1..=6 {
         let worker_ = worker.clone();
         let peer_ip = remaining_peer_ips.pop().unwrap();
         tokio::spawn(async move { worker_.get_or_fetch_transmission(peer_ip, transmission_id).await });
@@ -189,7 +189,7 @@ async fn test_flood_transmission_requests() {
         assert!(pending.contains_peer(transmission_id, peer_ip), "Missing a peer IP for transmission in the pending queue");
         assert_eq!(pending.get_peers(transmission_id), Some(all_peer_ips.clone().into_iter().collect()), "Missing a peer IP for transmission in the pending queue");
         // Ensure the number of callbacks is correct.
-        assert_eq!(pending.num_callbacks(transmission_id), max_redundancy + 20 + i, "Incorrect number of callbacks for transmission");
+        assert_eq!(pending.num_callbacks(transmission_id), max_redundancy + 6 + i, "Incorrect number of callbacks for transmission");
         // Ensure the number of sent requests is correct.
         assert_eq!(pending.num_sent_requests(transmission_id), max_redundancy, "Incorrect number of sent requests for transmission");
     }
