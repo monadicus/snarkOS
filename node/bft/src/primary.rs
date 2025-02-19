@@ -1701,9 +1701,9 @@ impl<N: Network> Primary<N> {
             }
         }
 
-        // If there are no missing certificates, return early.
+        // If there are no certificates to fetch, return early with the existing unprocessed certificates.
         match fetch_certificates.is_empty() {
-            true => return Ok(Default::default()),
+            true => return Ok(missing_certificates),
             false => trace!(
                 "Fetching {} missing certificates for round {round} from '{peer_ip}'...",
                 fetch_certificates.len(),
