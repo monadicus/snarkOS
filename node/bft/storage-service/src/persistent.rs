@@ -16,6 +16,7 @@
 use crate::StorageService;
 use snarkvm::{
     ledger::{
+        committee::Committee,
         narwhal::{BatchHeader, Transmission, TransmissionID},
         store::{
             cow_to_cloned,
@@ -60,7 +61,7 @@ pub struct BFTPersistentStorage<N: Network> {
 impl<N: Network> BFTPersistentStorage<N> {
     /// Initializes a new BFT persistent storage service.
     pub fn open(storage_mode: StorageMode) -> Result<Self> {
-        let max_committee_size = N::LATEST_MAX_CERTIFICATES().unwrap();
+        let max_committee_size = Committee::<N>::max_committee_size().unwrap();
         let capacity =
             NonZeroUsize::new((max_committee_size as usize) * (BatchHeader::<N>::MAX_TRANSMISSIONS_PER_BATCH) * 2)
                 .ok_or_else(|| anyhow!("Could not construct NonZeroUsize"))?;
@@ -80,7 +81,7 @@ impl<N: Network> BFTPersistentStorage<N> {
     /// Initializes a new BFT persistent storage service for testing.
     #[cfg(any(test, feature = "test"))]
     pub fn open_testing(temp_dir: std::path::PathBuf, dev: Option<u16>) -> Result<Self> {
-        let max_committee_size = N::MAX_CERTIFICATES.last().unwrap().1;
+        let max_committee_size = Committee::<N>::max_committee_size().unwrap();
         let capacity =
             NonZeroUsize::new((max_committee_size as usize) * (BatchHeader::<N>::MAX_TRANSMISSIONS_PER_BATCH) * 2)
                 .ok_or_else(|| anyhow!("Could not construct NonZeroUsize"))?;

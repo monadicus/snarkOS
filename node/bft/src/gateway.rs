@@ -53,7 +53,10 @@ use snarkos_node_tcp::{
 };
 use snarkvm::{
     console::prelude::*,
-    ledger::narwhal::{BatchHeader, Data},
+    ledger::{
+        committee::Committee,
+        narwhal::{BatchHeader, Data},
+    },
     prelude::{Address, Field},
 };
 
@@ -154,7 +157,7 @@ impl<N: Network> Gateway<N> {
             (Some(ip), _) => ip,
         };
         // Initialize the TCP stack.
-        let tcp = Tcp::new(Config::new(ip, N::LATEST_MAX_CERTIFICATES()?));
+        let tcp = Tcp::new(Config::new(ip, Committee::<N>::max_committee_size()?));
         // Return the gateway.
         Ok(Self {
             account,
@@ -214,9 +217,10 @@ impl<N: Network> Gateway<N> {
 impl<N: Network> Gateway<N> {
     /// The current maximum committee size.
     fn max_committee_size(&self) -> usize {
-        self.ledger
-            .current_committee()
-            .map_or_else(|_e| N::LATEST_MAX_CERTIFICATES().unwrap() as usize, |committee| committee.num_members())
+        self.ledger.current_committee().map_or_else(
+            |_e| Committee::<N>::max_committee_size().unwrap() as usize,
+            |committee| committee.num_members(),
+        )
     }
 
     /// The maximum number of events to cache.
@@ -1454,6 +1458,7 @@ mod prop_tests {
     use snarkvm::{
         ledger::{
             committee::{
+                Committee,
                 prop_tests::{CommitteeContext, ValidatorSet},
                 test_helpers::sample_committee_for_round_and_members,
             },
@@ -1572,7 +1577,7 @@ mod prop_tests {
         assert_eq!(tcp_config.desired_listening_port, Some(MEMORY_POOL_PORT + dev.port().unwrap()));
 
         let tcp_config = gateway.tcp().config();
-        assert_eq!(tcp_config.max_connections, CurrentNetwork::LATEST_MAX_CERTIFICATES().unwrap());
+        assert_eq!(tcp_config.max_connections, Committee::<CurrentNetwork>::max_committee_size().unwrap());
         assert_eq!(gateway.account().address(), account.address());
     }
 
@@ -1594,7 +1599,7 @@ mod prop_tests {
         }
 
         let tcp_config = gateway.tcp().config();
-        assert_eq!(tcp_config.max_connections, CurrentNetwork::LATEST_MAX_CERTIFICATES().unwrap());
+        assert_eq!(tcp_config.max_connections, Committee::<CurrentNetwork>::max_committee_size().unwrap());
         assert_eq!(gateway.account().address(), account.address());
     }
 
