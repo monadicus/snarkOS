@@ -53,6 +53,7 @@ pub const CHECKPOINT_INTERVAL: u32 = 10_000; // 10,000 block intervals
 ///   starting with 0 and not exceeding `N`, i.e. it has entries for blocks
 ///   `0`, `CHECKPOINT_INTERVAL`, `2 * CHECKPOINT_INTERVAL`, ..., `k * CHECKPOINT_INTERVAL`,
 ///   where `k` is the maximum integer such that `k * CHECKPOINT_INTERVAL <= N`.
+///
 /// The `recents` and `checkpoints` maps may have overlapping entries,
 /// e.g. if `N-1` is a multiple of `CHECKPOINT_INTERVAL`;
 /// but if `CHECKPOINT_INTERVAL` is much larger than `NUM_RECENT_BLOCKS`,
