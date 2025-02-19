@@ -393,7 +393,7 @@ impl<N: Network, C: ConsensusStorage<N>> LedgerService<N> for CoreLedgerService<
         };
 
         // Collect the Optional Stack corresponding to the transaction if its an Execution.
-        let stack = if let Transaction::Execute(_, ref execution, _) = transaction {
+        let stack = if let Transaction::Execute(_, _, ref execution, _) = transaction {
             // Get the root transition from the execution.
             let root_transition = execution.peek()?;
             // Get the stack from the process.
