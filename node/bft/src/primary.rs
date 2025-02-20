@@ -728,6 +728,13 @@ impl<N: Network> Primary<N> {
             bail!("Malicious peer - {e} from '{peer_ip}'");
         }
 
+        // Ensure the batch header does not contain any ratifications.
+        if batch_header.contains(TransmissionID::Ratification) {
+            // Proceed to disconnect the validator.
+            self.gateway.disconnect(peer_ip);
+            bail!("Malicious peer - proposed batch contains an unsupported ratification transmissionID",);
+        }
+
         // If the peer is ahead, use the batch header to sync up to the peer.
         let mut missing_transmissions = self.sync_with_batch_header_from_peer::<false>(peer_ip, &batch_header).await?;
 
@@ -999,62 +1006,60 @@ impl<N: Network> Primary<N> {
         } = primary_receiver;
 
         // Start the primary ping.
-        if self.sync.is_gateway_mode() {
-            let self_ = self.clone();
-            self.spawn(async move {
-                loop {
-                    // Sleep briefly.
-                    tokio::time::sleep(Duration::from_millis(PRIMARY_PING_IN_MS)).await;
+        let self_ = self.clone();
+        self.spawn(async move {
+            loop {
+                // Sleep briefly.
+                tokio::time::sleep(Duration::from_millis(PRIMARY_PING_IN_MS)).await;
 
-                    // Retrieve the block locators.
-                    let self__ = self_.clone();
-                    let block_locators = match spawn_blocking!(self__.sync.get_block_locators()) {
-                        Ok(block_locators) => block_locators,
-                        Err(e) => {
-                            warn!("Failed to retrieve block locators - {e}");
-                            continue;
+                // Retrieve the block locators.
+                let self__ = self_.clone();
+                let block_locators = match spawn_blocking!(self__.sync.get_block_locators()) {
+                    Ok(block_locators) => block_locators,
+                    Err(e) => {
+                        warn!("Failed to retrieve block locators - {e}");
+                        continue;
+                    }
+                };
+
+                // Retrieve the latest certificate of the primary.
+                let primary_certificate = {
+                    // Retrieve the primary address.
+                    let primary_address = self_.gateway.account().address();
+
+                    // Iterate backwards from the latest round to find the primary certificate.
+                    let mut certificate = None;
+                    let mut current_round = self_.current_round();
+                    while certificate.is_none() {
+                        // If the current round is 0, then break the while loop.
+                        if current_round == 0 {
+                            break;
                         }
-                    };
-
-                    // Retrieve the latest certificate of the primary.
-                    let primary_certificate = {
-                        // Retrieve the primary address.
-                        let primary_address = self_.gateway.account().address();
-
-                        // Iterate backwards from the latest round to find the primary certificate.
-                        let mut certificate = None;
-                        let mut current_round = self_.current_round();
-                        while certificate.is_none() {
-                            // If the current round is 0, then break the while loop.
-                            if current_round == 0 {
-                                break;
-                            }
-                            // Retrieve the primary certificates.
-                            if let Some(primary_certificate) =
-                                self_.storage.get_certificate_for_round_with_author(current_round, primary_address)
-                            {
-                                certificate = Some(primary_certificate);
-                            // If the primary certificate was not found, decrement the round.
-                            } else {
-                                current_round = current_round.saturating_sub(1);
-                            }
+                        // Retrieve the primary certificates.
+                        if let Some(primary_certificate) =
+                            self_.storage.get_certificate_for_round_with_author(current_round, primary_address)
+                        {
+                            certificate = Some(primary_certificate);
+                        // If the primary certificate was not found, decrement the round.
+                        } else {
+                            current_round = current_round.saturating_sub(1);
                         }
+                    }
 
-                        // Determine if the primary certificate was found.
-                        match certificate {
-                            Some(certificate) => certificate,
-                            // Skip this iteration of the loop (do not send a primary ping).
-                            None => continue,
-                        }
-                    };
+                    // Determine if the primary certificate was found.
+                    match certificate {
+                        Some(certificate) => certificate,
+                        // Skip this iteration of the loop (do not send a primary ping).
+                        None => continue,
+                    }
+                };
 
-                    // Construct the primary ping.
-                    let primary_ping = PrimaryPing::from((<Event<N>>::VERSION, block_locators, primary_certificate));
-                    // Broadcast the event.
-                    self_.gateway.broadcast(Event::PrimaryPing(primary_ping));
-                }
-            });
-        }
+                // Construct the primary ping.
+                let primary_ping = PrimaryPing::from((<Event<N>>::VERSION, block_locators, primary_certificate));
+                // Broadcast the event.
+                self_.gateway.broadcast(Event::PrimaryPing(primary_ping));
+            }
+        });
 
         // Start the primary ping handler.
         let self_ = self.clone();
@@ -1086,23 +1091,21 @@ impl<N: Network> Primary<N> {
         });
 
         // Start the worker ping(s).
-        if self.sync.is_gateway_mode() {
-            let self_ = self.clone();
-            self.spawn(async move {
-                loop {
-                    tokio::time::sleep(Duration::from_millis(WORKER_PING_IN_MS)).await;
-                    // If the primary is not synced, then do not broadcast the worker ping(s).
-                    if !self_.sync.is_synced() {
-                        trace!("Skipping worker ping(s) {}", "(node is syncing)".dimmed());
-                        continue;
-                    }
-                    // Broadcast the worker ping(s).
-                    for worker in self_.workers.iter() {
-                        worker.broadcast_ping();
-                    }
+        let self_ = self.clone();
+        self.spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_millis(WORKER_PING_IN_MS)).await;
+                // If the primary is not synced, then do not broadcast the worker ping(s).
+                if !self_.sync.is_synced() {
+                    trace!("Skipping worker ping(s) {}", "(node is syncing)".dimmed());
+                    continue;
                 }
-            });
-        }
+                // Broadcast the worker ping(s).
+                for worker in self_.workers.iter() {
+                    worker.broadcast_ping();
+                }
+            }
+        });
 
         // Start the batch proposer.
         let self_ = self.clone();

@@ -296,12 +296,15 @@ impl<N: Network> Sync<N> {
         Ok(())
     }
 
-    /// Syncs the storage with the given blocks.
+    /// Syncs the storage with blocks already received from peers.
     pub async fn sync_storage_with_blocks(&self) -> Result<()> {
         // Acquire the response lock.
         let _lock = self.response_lock.lock().await;
 
-        // Retrieve the latest block height.
+        // Retrieve the next block height.
+        // This variable is used to index blocks that are added to the ledger;
+        // it is incremented as blocks as added.
+        // So 'current' means 'currently being added'.
         let mut current_height = self.ledger.latest_block_height() + 1;
 
         // Retrieve the maximum block height of the peers.
@@ -604,7 +607,7 @@ impl<N: Network> Sync<N> {
         // Determine if we've already sent a request to the peer.
         let contains_peer_with_sent_request = self.pending.contains_peer_with_sent_request(certificate_id, peer_ip);
         // Determine the maximum number of redundant requests.
-        let num_redundant_requests = max_redundant_requests(self.ledger.clone(), self.storage.current_round());
+        let num_redundant_requests = max_redundant_requests(self.ledger.clone(), self.storage.current_round())?;
         // Determine if we should send a certificate request to the peer.
         // We send at most `num_redundant_requests` requests and each peer can only receive one request at a time.
         let should_send_request = num_sent_requests < num_redundant_requests && !contains_peer_with_sent_request;
