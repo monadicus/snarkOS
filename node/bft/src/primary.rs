@@ -1817,32 +1817,35 @@ mod tests {
 
     type CurrentNetwork = snarkvm::prelude::MainnetV0;
 
-    // Returns a primary and a list of accounts in the configured committee.
-    async fn primary_without_handlers(
-        rng: &mut TestRng,
-        height: u32,
-    ) -> (Primary<CurrentNetwork>, Vec<(SocketAddr, Account<CurrentNetwork>)>) {
+    fn sample_committee(rng: &mut TestRng) -> (Vec<(SocketAddr, Account<CurrentNetwork>)>, Committee<CurrentNetwork>) {
         // Create a committee containing the primary's account.
-        let (accounts, committee) = {
-            const COMMITTEE_SIZE: usize = 4;
-            let mut accounts = Vec::with_capacity(COMMITTEE_SIZE);
-            let mut members = IndexMap::new();
+        const COMMITTEE_SIZE: usize = 4;
+        let mut accounts = Vec::with_capacity(COMMITTEE_SIZE);
+        let mut members = IndexMap::new();
 
-            for i in 0..COMMITTEE_SIZE {
-                let socket_addr = format!("127.0.0.1:{}", 5000 + i).parse().unwrap();
-                let account = Account::new(rng).unwrap();
-                members.insert(account.address(), (MIN_VALIDATOR_STAKE, true, rng.gen_range(0..100)));
-                accounts.push((socket_addr, account));
-            }
+        for i in 0..COMMITTEE_SIZE {
+            let socket_addr = format!("127.0.0.1:{}", 5000 + i).parse().unwrap();
+            let account = Account::new(rng).unwrap();
 
-            (accounts, Committee::<CurrentNetwork>::new(1, members).unwrap())
-        };
+            members.insert(account.address(), (MIN_VALIDATOR_STAKE, true, rng.gen_range(0..100)));
+            accounts.push((socket_addr, account));
+        }
 
-        let account = accounts.first().unwrap().1.clone();
+        (accounts, Committee::<CurrentNetwork>::new(1, members).unwrap())
+    }
+
+    // Returns a primary and a list of accounts in the configured committee.
+    fn primary_with_committee(
+        account_index: usize,
+        accounts: &[(SocketAddr, Account<CurrentNetwork>)],
+        committee: Committee<CurrentNetwork>,
+        height: u32,
+    ) -> Primary<CurrentNetwork> {
         let ledger = Arc::new(MockLedgerService::new_at_height(committee, height));
         let storage = Storage::new(ledger.clone(), Arc::new(BFTMemoryService::new()), 10);
 
         // Initialize the primary.
+        let account = accounts[account_index].1.clone();
         let mut primary = Primary::new(account, storage, ledger, None, &[], None).unwrap();
 
         // Construct a worker instance.
@@ -1854,9 +1857,23 @@ mod tests {
             primary.proposed_batch.clone(),
         )
         .unwrap()]);
-        for a in accounts.iter() {
+        for a in accounts.iter().skip(account_index) {
             primary.gateway.insert_connected_peer(a.0, a.0, a.1.address());
         }
+
+        primary
+    }
+
+    fn primary_without_handlers(
+        rng: &mut TestRng,
+    ) -> (Primary<CurrentNetwork>, Vec<(SocketAddr, Account<CurrentNetwork>)>) {
+        let (accounts, committee) = sample_committee(rng);
+        let primary = primary_with_committee(
+            0, // index of primary's account
+            &accounts,
+            committee,
+            CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V1).unwrap(),
+        );
 
         (primary, accounts)
     }
@@ -1898,25 +1915,30 @@ mod tests {
         round: u64,
         previous_certificate_ids: IndexSet<Field<CurrentNetwork>>,
         timestamp: i64,
+        num_transactions: u64,
         rng: &mut TestRng,
     ) -> Proposal<CurrentNetwork> {
-        let (solution_id, solution) = sample_unconfirmed_solution(rng);
-        let (transaction_id, transaction) = sample_unconfirmed_transaction(rng);
-        let solution_checksum = solution.to_checksum::<CurrentNetwork>().unwrap();
-        let transaction_checksum = transaction.to_checksum::<CurrentNetwork>().unwrap();
+        let mut transmission_ids = IndexSet::new();
+        let mut transmissions = IndexMap::new();
 
+        // Prepare the solution and insert into the sets.
+        let (solution_id, solution) = sample_unconfirmed_solution(rng);
+        let solution_checksum = solution.to_checksum::<CurrentNetwork>().unwrap();
         let solution_transmission_id = (solution_id, solution_checksum).into();
-        let transaction_transmission_id = (&transaction_id, &transaction_checksum).into();
+        transmission_ids.insert(solution_transmission_id);
+        transmissions.insert(solution_transmission_id, Transmission::Solution(solution));
+
+        // Prepare the transactions and insert into the sets.
+        for _ in 0..num_transactions {
+            let (transaction_id, transaction) = sample_unconfirmed_transaction(rng);
+            let transaction_checksum = transaction.to_checksum::<CurrentNetwork>().unwrap();
+            let transaction_transmission_id = (&transaction_id, &transaction_checksum).into();
+            transmission_ids.insert(transaction_transmission_id);
+            transmissions.insert(transaction_transmission_id, Transmission::Transaction(transaction));
+        }
 
         // Retrieve the private key.
         let private_key = author.private_key();
-        // Prepare the transmission IDs.
-        let transmission_ids = [solution_transmission_id, transaction_transmission_id].into();
-        let transmissions = [
-            (solution_transmission_id, Transmission::Solution(solution)),
-            (transaction_transmission_id, Transmission::Transaction(transaction)),
-        ]
-        .into();
         // Sign the batch header.
         let batch_header = BatchHeader::new(
             private_key,
@@ -2058,8 +2080,7 @@ mod tests {
     #[tokio::test]
     async fn test_propose_batch() {
         let mut rng = TestRng::default();
-        let (primary, _) =
-            primary_without_handlers(&mut rng, CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V1).unwrap()).await;
+        let (primary, _) = primary_without_handlers(&mut rng);
 
         // Check there is no batch currently proposed.
         assert!(primary.proposed_batch.read().is_none());
@@ -2080,8 +2101,7 @@ mod tests {
     #[tokio::test]
     async fn test_propose_batch_with_no_transmissions() {
         let mut rng = TestRng::default();
-        let (primary, _) =
-            primary_without_handlers(&mut rng, CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V1).unwrap()).await;
+        let (primary, _) = primary_without_handlers(&mut rng);
 
         // Check there is no batch currently proposed.
         assert!(primary.proposed_batch.read().is_none());
@@ -2095,8 +2115,7 @@ mod tests {
     async fn test_propose_batch_in_round() {
         let round = 3;
         let mut rng = TestRng::default();
-        let (primary, accounts) =
-            primary_without_handlers(&mut rng, CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V1).unwrap()).await;
+        let (primary, accounts) = primary_without_handlers(&mut rng);
 
         // Fill primary storage.
         store_certificate_chain(&primary, &accounts, round, &mut rng);
@@ -2122,8 +2141,7 @@ mod tests {
         let round = 3;
         let prev_round = round - 1;
         let mut rng = TestRng::default();
-        let (primary, accounts) =
-            primary_without_handlers(&mut rng, CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V1).unwrap()).await;
+        let (primary, accounts) = primary_without_handlers(&mut rng);
         let peer_account = &accounts[1];
         let peer_ip = peer_account.0;
 
@@ -2193,8 +2211,7 @@ mod tests {
     #[tokio::test]
     async fn test_batch_propose_from_peer() {
         let mut rng = TestRng::default();
-        let (primary, accounts) =
-            primary_without_handlers(&mut rng, CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V1).unwrap()).await;
+        let (primary, accounts) = primary_without_handlers(&mut rng);
 
         // Create a valid proposal with an author that isn't the primary.
         let round = 1;
@@ -2207,6 +2224,7 @@ mod tests {
             round,
             Default::default(),
             timestamp,
+            1,
             &mut rng,
         );
 
@@ -2229,8 +2247,7 @@ mod tests {
     #[tokio::test]
     async fn test_batch_propose_from_peer_when_not_synced() {
         let mut rng = TestRng::default();
-        let (primary, accounts) =
-            primary_without_handlers(&mut rng, CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V1).unwrap()).await;
+        let (primary, accounts) = primary_without_handlers(&mut rng);
 
         // Create a valid proposal with an author that isn't the primary.
         let round = 1;
@@ -2243,6 +2260,7 @@ mod tests {
             round,
             Default::default(),
             timestamp,
+            1,
             &mut rng,
         );
 
@@ -2264,8 +2282,7 @@ mod tests {
     async fn test_batch_propose_from_peer_in_round() {
         let round = 2;
         let mut rng = TestRng::default();
-        let (primary, accounts) =
-            primary_without_handlers(&mut rng, CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V1).unwrap()).await;
+        let (primary, accounts) = primary_without_handlers(&mut rng);
 
         // Generate certificates.
         let previous_certificates = store_certificate_chain(&primary, &accounts, round, &mut rng);
@@ -2280,6 +2297,7 @@ mod tests {
             round,
             previous_certificates,
             timestamp,
+            1,
             &mut rng,
         );
 
@@ -2300,8 +2318,7 @@ mod tests {
     #[tokio::test]
     async fn test_batch_propose_from_peer_wrong_round() {
         let mut rng = TestRng::default();
-        let (primary, accounts) =
-            primary_without_handlers(&mut rng, CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V1).unwrap()).await;
+        let (primary, accounts) = primary_without_handlers(&mut rng);
 
         // Create a valid proposal with an author that isn't the primary.
         let round = 1;
@@ -2314,6 +2331,7 @@ mod tests {
             round,
             Default::default(),
             timestamp,
+            1,
             &mut rng,
         );
 
@@ -2343,8 +2361,7 @@ mod tests {
     async fn test_batch_propose_from_peer_in_round_wrong_round() {
         let round = 4;
         let mut rng = TestRng::default();
-        let (primary, accounts) =
-            primary_without_handlers(&mut rng, CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V1).unwrap()).await;
+        let (primary, accounts) = primary_without_handlers(&mut rng);
 
         // Generate certificates.
         let previous_certificates = store_certificate_chain(&primary, &accounts, round, &mut rng);
@@ -2359,6 +2376,7 @@ mod tests {
             round,
             previous_certificates,
             timestamp,
+            1,
             &mut rng,
         );
 
@@ -2388,8 +2406,7 @@ mod tests {
     async fn test_batch_propose_from_peer_with_invalid_timestamp() {
         let round = 2;
         let mut rng = TestRng::default();
-        let (primary, accounts) =
-            primary_without_handlers(&mut rng, CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V1).unwrap()).await;
+        let (primary, accounts) = primary_without_handlers(&mut rng);
 
         // Generate certificates.
         let previous_certificates = store_certificate_chain(&primary, &accounts, round, &mut rng);
@@ -2404,6 +2421,7 @@ mod tests {
             round,
             previous_certificates,
             invalid_timestamp,
+            1,
             &mut rng,
         );
 
@@ -2427,8 +2445,7 @@ mod tests {
     async fn test_batch_propose_from_peer_with_past_timestamp() {
         let round = 2;
         let mut rng = TestRng::default();
-        let (primary, accounts) =
-            primary_without_handlers(&mut rng, CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V1).unwrap()).await;
+        let (primary, accounts) = primary_without_handlers(&mut rng);
 
         // Generate certificates.
         let previous_certificates = store_certificate_chain(&primary, &accounts, round, &mut rng);
@@ -2443,6 +2460,7 @@ mod tests {
             round,
             previous_certificates,
             past_timestamp,
+            1,
             &mut rng,
         );
 
@@ -2466,8 +2484,7 @@ mod tests {
     async fn test_propose_batch_with_storage_round_behind_proposal_lock() {
         let round = 3;
         let mut rng = TestRng::default();
-        let (primary, _) =
-            primary_without_handlers(&mut rng, CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V1).unwrap()).await;
+        let (primary, _) = primary_without_handlers(&mut rng);
 
         // Check there is no batch currently proposed.
         assert!(primary.proposed_batch.read().is_none());
@@ -2500,8 +2517,7 @@ mod tests {
     async fn test_propose_batch_with_storage_round_behind_proposal() {
         let round = 5;
         let mut rng = TestRng::default();
-        let (primary, accounts) =
-            primary_without_handlers(&mut rng, CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V1).unwrap()).await;
+        let (primary, accounts) = primary_without_handlers(&mut rng);
 
         // Generate previous certificates.
         let previous_certificates = store_certificate_chain(&primary, &accounts, round, &mut rng);
@@ -2514,6 +2530,7 @@ mod tests {
             round + 1,
             previous_certificates,
             timestamp,
+            1,
             &mut rng,
         );
 
@@ -2570,8 +2587,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_batch_signature_from_peer() {
         let mut rng = TestRng::default();
-        let (primary, accounts) =
-            primary_without_handlers(&mut rng, CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V1).unwrap()).await;
+        let (primary, accounts) = primary_without_handlers(&mut rng);
         map_account_addresses(&primary, &accounts);
 
         // Create a valid proposal.
@@ -2583,6 +2599,7 @@ mod tests {
             round,
             Default::default(),
             timestamp,
+            1,
             &mut rng,
         );
 
@@ -2607,8 +2624,7 @@ mod tests {
     async fn test_batch_signature_from_peer_in_round() {
         let round = 5;
         let mut rng = TestRng::default();
-        let (primary, accounts) =
-            primary_without_handlers(&mut rng, CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V1).unwrap()).await;
+        let (primary, accounts) = primary_without_handlers(&mut rng);
         map_account_addresses(&primary, &accounts);
 
         // Generate certificates.
@@ -2622,6 +2638,7 @@ mod tests {
             round,
             previous_certificates,
             timestamp,
+            1,
             &mut rng,
         );
 
@@ -2645,8 +2662,7 @@ mod tests {
     #[tokio::test]
     async fn test_batch_signature_from_peer_no_quorum() {
         let mut rng = TestRng::default();
-        let (primary, accounts) =
-            primary_without_handlers(&mut rng, CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V1).unwrap()).await;
+        let (primary, accounts) = primary_without_handlers(&mut rng);
         map_account_addresses(&primary, &accounts);
 
         // Create a valid proposal.
@@ -2658,6 +2674,7 @@ mod tests {
             round,
             Default::default(),
             timestamp,
+            1,
             &mut rng,
         );
 
@@ -2681,8 +2698,7 @@ mod tests {
     async fn test_batch_signature_from_peer_in_round_no_quorum() {
         let round = 7;
         let mut rng = TestRng::default();
-        let (primary, accounts) =
-            primary_without_handlers(&mut rng, CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V1).unwrap()).await;
+        let (primary, accounts) = primary_without_handlers(&mut rng);
         map_account_addresses(&primary, &accounts);
 
         // Generate certificates.
@@ -2696,6 +2712,7 @@ mod tests {
             round,
             previous_certificates,
             timestamp,
+            1,
             &mut rng,
         );
 
@@ -2720,8 +2737,7 @@ mod tests {
         let round = 3;
         let prev_round = round - 1;
         let mut rng = TestRng::default();
-        let (primary, accounts) =
-            primary_without_handlers(&mut rng, CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V1).unwrap()).await;
+        let (primary, accounts) = primary_without_handlers(&mut rng);
         let peer_account = &accounts[1];
         let peer_ip = peer_account.0;
 
