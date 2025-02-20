@@ -2209,6 +2209,56 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_propose_batch_over_spend_limit() {
+        let mut rng = TestRng::default();
+        // Create two primaries to test spend limit activation on V4.
+        let (accounts, committee) = sample_committee(&mut rng);
+        let primary_v3 = primary_with_committee(
+            0,
+            &accounts,
+            committee.clone(),
+            CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V3).unwrap(),
+        );
+        let primary_v4 = primary_with_committee(
+            1,
+            &accounts,
+            committee,
+            CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V4).unwrap(),
+        );
+
+        // Check there is no batch currently proposed.
+        assert!(primary_v3.proposed_batch.read().is_none());
+        assert!(primary_v4.proposed_batch.read().is_none());
+        // Check the workers are empty.
+        primary_v3.workers().iter().for_each(|worker| assert!(worker.transmissions().is_empty()));
+        primary_v4.workers().iter().for_each(|worker| assert!(worker.transmissions().is_empty()));
+
+        // Generate a solution and a transaction.
+        let (solution_id, solution) = sample_unconfirmed_solution(&mut rng);
+        primary_v3.workers[0].process_unconfirmed_solution(solution_id, solution.clone()).await.unwrap();
+        primary_v4.workers[0].process_unconfirmed_solution(solution_id, solution).await.unwrap();
+
+        // At 10 credits per execution, 10 transactions should max out a batch, add a few more.
+        for _i in 0..15 {
+            let (transaction_id, transaction) = sample_unconfirmed_transaction(&mut rng);
+            // Store it on one of the workers.
+            primary_v3.workers[0].process_unconfirmed_transaction(transaction_id, transaction.clone()).await.unwrap();
+            primary_v4.workers[0].process_unconfirmed_transaction(transaction_id, transaction).await.unwrap();
+        }
+
+        // Try to propose a batch again. This time, it should succeed.
+        assert!(primary_v3.propose_batch().await.is_ok());
+        assert!(primary_v4.propose_batch().await.is_ok());
+        // Expect 10/15 transactions to be included in the proposal, along with
+        // the solution, for v3 consensus all 15 should be included.
+        assert_eq!(primary_v3.proposed_batch.read().as_ref().unwrap().transmissions().len(), 16);
+        assert_eq!(primary_v4.proposed_batch.read().as_ref().unwrap().transmissions().len(), 11);
+        // Check the transactions were correctly drained from the workers (15 + 1 - 11).
+        assert_eq!(primary_v3.workers().iter().map(|worker| worker.transmissions().len()).sum::<usize>(), 0);
+        assert_eq!(primary_v4.workers().iter().map(|worker| worker.transmissions().len()).sum::<usize>(), 5);
+    }
+
+    #[tokio::test]
     async fn test_batch_propose_from_peer() {
         let mut rng = TestRng::default();
         let (primary, accounts) = primary_without_handlers(&mut rng);
@@ -2481,6 +2531,70 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_batch_propose_from_peer_over_spend_limit() {
+        let mut rng = TestRng::default();
+
+        // Create two primaries to test spend limit activation on V4.
+        let (accounts, committee) = sample_committee(&mut rng);
+        let primary_v3 = primary_with_committee(
+            0,
+            &accounts,
+            committee.clone(),
+            CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V3).unwrap(),
+        );
+        let primary_v4 = primary_with_committee(
+            1,
+            &accounts,
+            committee.clone(),
+            CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V4).unwrap(),
+        );
+
+        // Create a valid proposal with an author that isn't the primary.
+        let round = 1;
+        let peer_account = &accounts[1];
+        let peer_ip = peer_account.0;
+        let timestamp = now() + MIN_BATCH_DELAY_IN_SECS as i64;
+        let proposal = create_test_proposal(
+            &peer_account.1,
+            committee,
+            round,
+            Default::default(),
+            timestamp,
+            // At 10 credits per execution, this should bring the batch above
+            // the spend limit.
+            11,
+            &mut rng,
+        );
+
+        // Make sure the primary is aware of the transmissions in the proposal.
+        for (transmission_id, transmission) in proposal.transmissions() {
+            primary_v3.workers[0].process_transmission_from_peer(peer_ip, *transmission_id, transmission.clone());
+            primary_v4.workers[0].process_transmission_from_peer(peer_ip, *transmission_id, transmission.clone());
+        }
+
+        // The author must be known to resolver to pass propose checks.
+        primary_v3.gateway.resolver().insert_peer(peer_ip, peer_ip, peer_account.1.address());
+        primary_v4.gateway.resolver().insert_peer(peer_ip, peer_ip, peer_account.1.address());
+        // The primary must be considered synced.
+        primary_v3.sync.block_sync().try_block_sync(&primary_v3.gateway.clone()).await;
+        primary_v4.sync.block_sync().try_block_sync(&primary_v4.gateway.clone()).await;
+
+        // Check the spend limit is enforced from V4 onwards.
+        assert!(
+            primary_v3
+                .process_batch_propose_from_peer(peer_ip, (*proposal.batch_header()).clone().into())
+                .await
+                .is_ok()
+        );
+        assert!(
+            primary_v4
+                .process_batch_propose_from_peer(peer_ip, (*proposal.batch_header()).clone().into())
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
     async fn test_propose_batch_with_storage_round_behind_proposal_lock() {
         let round = 3;
         let mut rng = TestRng::default();
@@ -2541,47 +2655,6 @@ mod tests {
         assert!(primary.propose_batch().await.is_ok());
         assert!(primary.proposed_batch.read().is_some());
         assert!(primary.proposed_batch.read().as_ref().unwrap().round() > primary.current_round());
-    }
-
-    #[tokio::test]
-    async fn test_propose_batch_over_spend_limit() {
-        let mut rng = TestRng::default();
-        // Instantiate two primaries to test spend limit activation on V4.
-        let (primary_v3, _) =
-            primary_without_handlers(&mut rng, CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V3).unwrap()).await;
-        let (primary_v4, _) =
-            primary_without_handlers(&mut rng, CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V4).unwrap()).await;
-
-        // Check there is no batch currently proposed.
-        assert!(primary_v3.proposed_batch.read().is_none());
-        assert!(primary_v4.proposed_batch.read().is_none());
-        // Check the workers are empty.
-        primary_v3.workers().iter().for_each(|worker| assert!(worker.transmissions().is_empty()));
-        primary_v4.workers().iter().for_each(|worker| assert!(worker.transmissions().is_empty()));
-
-        // Generate a solution and a transaction.
-        let (solution_id, solution) = sample_unconfirmed_solution(&mut rng);
-        primary_v3.workers[0].process_unconfirmed_solution(solution_id, solution.clone()).await.unwrap();
-        primary_v4.workers[0].process_unconfirmed_solution(solution_id, solution).await.unwrap();
-
-        // At 10 credits per execution, 10 transactions should max out a batch, add a few more.
-        for _i in 0..15 {
-            let (transaction_id, transaction) = sample_unconfirmed_transaction(&mut rng);
-            // Store it on one of the workers.
-            primary_v3.workers[0].process_unconfirmed_transaction(transaction_id, transaction.clone()).await.unwrap();
-            primary_v4.workers[0].process_unconfirmed_transaction(transaction_id, transaction).await.unwrap();
-        }
-
-        // Try to propose a batch again. This time, it should succeed.
-        assert!(primary_v3.propose_batch().await.is_ok());
-        assert!(primary_v4.propose_batch().await.is_ok());
-        // Expect 10/15 transactions to be included in the proposal, along with
-        // the solution, for v3 consensus all 15 should be included.
-        assert_eq!(primary_v3.proposed_batch.read().as_ref().unwrap().transmissions().len(), 16);
-        assert_eq!(primary_v4.proposed_batch.read().as_ref().unwrap().transmissions().len(), 11);
-        // Check the transactions were correctly drained from the workers (15 + 1 - 11).
-        assert_eq!(primary_v3.workers().iter().map(|worker| worker.transmissions().len()).sum::<usize>(), 0);
-        assert_eq!(primary_v4.workers().iter().map(|worker| worker.transmissions().len()).sum::<usize>(), 5);
     }
 
     #[tokio::test(flavor = "multi_thread")]
