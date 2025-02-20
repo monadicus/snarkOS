@@ -802,10 +802,9 @@ impl<N: Network> Primary<N> {
             }
 
             if proposal_cost > N::BATCH_SPEND_LIMIT {
-                debug!(
-                    "Batch propose from peer '{peer_ip}' exceeds the batch spend limit — cost in microcredits: '{proposal_cost}'"
+                bail!(
+                    "Malicious peer - batch proposal from '{peer_ip}' exceeds the spend limit: '{proposal_cost}' microcredits"
                 );
-                return Ok(());
             }
         }
 
