@@ -407,7 +407,7 @@ impl<N: Network> Primary<N> {
 
         // Ensure that the primary does not create a new proposal too quickly.
         if let Err(e) = self.check_proposal_timestamp(previous_round, self.gateway.account().address(), now()) {
-            debug!("Primary is safely skipping a batch proposal - {}", format!("{e}").dimmed());
+            debug!("Primary is safely skipping a batch proposal for round {round} - {}", format!("{e}").dimmed());
             return Ok(());
         }
 
@@ -452,7 +452,7 @@ impl<N: Network> Primary<N> {
             // If quorum threshold is not reached, return early.
             if !committee_lookback.is_quorum_threshold_reached(&connected_validators) {
                 debug!(
-                    "Primary is safely skipping a batch proposal {}",
+                    "Primary is safely skipping a batch proposal for round {round} {}",
                     "(please connect to more validators)".dimmed()
                 );
                 trace!("Primary is connected to {} validators", connected_validators.len() - 1);
@@ -482,7 +482,7 @@ impl<N: Network> Primary<N> {
         // If the batch is not ready to be proposed, return early.
         if !is_ready {
             debug!(
-                "Primary is safely skipping a batch proposal {}",
+                "Primary is safely skipping a batch proposal for round {round} {}",
                 format!("(previous round {previous_round} has not reached quorum)").dimmed()
             );
             return Ok(());
@@ -684,7 +684,10 @@ impl<N: Network> Primary<N> {
         {
             // If the signed round is ahead of the peer's batch round, then the validator is malicious.
             if signed_round > batch_header.round() {
-                bail!("Peer ({batch_author}) proposed a batch for a previous round ({})", batch_header.round());
+                bail!(
+                    "Peer ({batch_author}) proposed a batch for a previous round ({}), latest signed round: {signed_round}",
+                    batch_header.round()
+                );
             }
 
             // If the round matches and the batch ID differs, then the validator is malicious.
@@ -731,7 +734,9 @@ impl<N: Network> Primary<N> {
         if batch_header.contains(TransmissionID::Ratification) {
             // Proceed to disconnect the validator.
             self.gateway.disconnect(peer_ip);
-            bail!("Malicious peer - proposed batch contains an unsupported ratification transmissionID",);
+            bail!(
+                "Malicious peer - proposed batch contains an unsupported ratification transmissionID from '{peer_ip}'",
+            );
         }
 
         // If the peer is ahead, use the batch header to sync up to the peer.
@@ -742,7 +747,7 @@ impl<N: Network> Primary<N> {
             // If the transmission is not well-formed, then return early.
             self.ledger.ensure_transmission_is_well_formed(*transmission_id, transmission)
         }) {
-            debug!("Batch propose from '{peer_ip}' contains an invalid transmission - {err}",);
+            debug!("Batch propose at round {batch_round} from '{peer_ip}' contains an invalid transmission - {err}",);
             return Ok(());
         }
 
@@ -1081,8 +1086,10 @@ impl<N: Network> Primary<N> {
                             return;
                         };
                         // Process the primary certificate.
+                        let id = fmt_id(primary_certificate.id());
+                        let round = primary_certificate.round();
                         if let Err(e) = self_.process_batch_certificate_from_peer(peer_ip, primary_certificate).await {
-                            warn!("Cannot process a primary certificate in a 'PrimaryPing' from '{peer_ip}' - {e}");
+                            warn!("Cannot process a primary certificate '{id}' at round {round} in a 'PrimaryPing' from '{peer_ip}' - {e}");
                         }
                     });
                 }
@@ -1112,15 +1119,19 @@ impl<N: Network> Primary<N> {
             loop {
                 // Sleep briefly, but longer than if there were no batch.
                 tokio::time::sleep(Duration::from_millis(MAX_BATCH_DELAY_IN_MS)).await;
+                let current_round = self_.current_round();
                 // If the primary is not synced, then do not propose a batch.
                 if !self_.sync.is_synced() {
-                    debug!("Skipping batch proposal {}", "(node is syncing)".dimmed());
+                    debug!("Skipping batch proposal for round {current_round} {}", "(node is syncing)".dimmed());
                     continue;
                 }
                 // A best-effort attempt to skip the scheduled batch proposal if
                 // round progression already triggered one.
                 if self_.propose_lock.try_lock().is_err() {
-                    trace!("Skipping batch proposal {}", "(node is already proposing)".dimmed());
+                    trace!(
+                        "Skipping batch proposal for round {current_round} {}",
+                        "(node is already proposing)".dimmed()
+                    );
                     continue;
                 };
                 // If there is no proposed batch, attempt to propose a batch.
@@ -1145,8 +1156,9 @@ impl<N: Network> Primary<N> {
                 let self_ = self_.clone();
                 tokio::spawn(async move {
                     // Process the batch proposal.
+                    let round = batch_propose.round;
                     if let Err(e) = self_.process_batch_propose_from_peer(peer_ip, batch_propose).await {
-                        warn!("Cannot sign a batch from '{peer_ip}' - {e}");
+                        warn!("Cannot sign a batch at round {round} from '{peer_ip}' - {e}");
                     }
                 });
             }
@@ -1166,8 +1178,9 @@ impl<N: Network> Primary<N> {
                 // is a critical path, and we should only store the minimum required number of signatures.
                 // In addition, spawning a task can cause concurrent processing of signatures (even with a lock),
                 // which means the RwLock for the proposed batch must become a 'tokio::sync' to be safe.
+                let id = fmt_id(batch_signature.batch_id);
                 if let Err(e) = self_.process_batch_signature_from_peer(peer_ip, batch_signature).await {
-                    warn!("Cannot store a signature from '{peer_ip}' - {e}");
+                    warn!("Cannot store a signature for batch '{id}' from '{peer_ip}' - {e}");
                 }
             }
         });
@@ -1190,8 +1203,10 @@ impl<N: Network> Primary<N> {
                         return;
                     };
                     // Process the batch certificate.
+                    let id = fmt_id(batch_certificate.id());
+                    let round = batch_certificate.round();
                     if let Err(e) = self_.process_batch_certificate_from_peer(peer_ip, batch_certificate).await {
-                        warn!("Cannot store a certificate from '{peer_ip}' - {e}");
+                        warn!("Cannot store a certificate '{id}' for round {round} from '{peer_ip}' - {e}");
                     }
                 });
             }
