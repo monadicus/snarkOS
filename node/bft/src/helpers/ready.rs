@@ -163,7 +163,14 @@ impl<N: Network> Ready<N> {
     pub fn remove_front(&mut self) -> Option<(TransmissionID<N>, Transmission<N>)> {
         if let Some((transmission_id, transmission)) = self.transmissions.pop_front() {
             self.transmission_ids.remove(&transmission_id);
-            self.offset += 1;
+
+            if self.transmission_ids.is_empty() {
+                debug_assert!(self.transmissions.is_empty());
+                self.offset = 0;
+            } else {
+                self.offset += 1;
+            }
+
             Some((transmission_id, transmission))
         } else {
             None
