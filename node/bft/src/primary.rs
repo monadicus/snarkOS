@@ -500,8 +500,7 @@ impl<N: Network> Primary<N> {
         'outer: for worker in self.workers().iter() {
             let mut num_worker_transmissions = 0usize;
 
-            // TODO(nkls): this is O(n), consider improving the underlying data structures.
-            while let Some((id, transmission)) = worker.shift_remove_front() {
+            while let Some((id, transmission)) = worker.remove_front() {
                 if transmissions.len() == BatchHeader::<N>::MAX_TRANSMISSIONS_PER_BATCH {
                     break 'outer;
                 }
@@ -564,8 +563,8 @@ impl<N: Network> Primary<N> {
                                         fmt_id(transaction_id)
                                     );
 
-                                    // Reinsert the transmission into the worker, O(n).
-                                    worker.shift_insert_front(id, transmission);
+                                    // Reinsert the transmission into the worker.
+                                    worker.insert_front(id, transmission);
                                     break 'outer;
                                 }
                             }

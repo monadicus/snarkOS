@@ -212,12 +212,12 @@ impl<N: Network> Worker<N> {
     }
 
     /// Inserts the transmission at the front of the ready queue.
-    pub(crate) fn shift_insert_front(&self, key: TransmissionID<N>, value: Transmission<N>) {
+    pub(crate) fn insert_front(&self, key: TransmissionID<N>, value: Transmission<N>) {
         self.ready.write().insert_front(key, value);
     }
 
     /// Removes and returns the transmission at the front of the ready queue.
-    pub(crate) fn shift_remove_front(&self) -> Option<(TransmissionID<N>, Transmission<N>)> {
+    pub(crate) fn remove_front(&self) -> Option<(TransmissionID<N>, Transmission<N>)> {
         self.ready.write().remove_front()
     }
 
