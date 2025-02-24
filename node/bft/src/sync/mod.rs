@@ -628,6 +628,7 @@ impl<N: Network> Sync<N> {
             );
         }
         // Wait for the certificate to be fetched.
+        // TODO (raychu86): Consider making the timeout dynamic based on network traffic and/or the number of validators.
         match tokio::time::timeout(Duration::from_millis(MAX_FETCH_TIMEOUT_IN_MS), callback_receiver).await {
             // If the certificate was fetched, return it.
             Ok(result) => Ok(result?),
