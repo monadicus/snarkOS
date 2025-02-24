@@ -161,7 +161,7 @@ impl<N: Network> LedgerService<N> for ProverLedgerService<N> {
     async fn check_transaction_basic(
         &self,
         _transaction_id: N::TransactionID,
-        _transaction: Data<Transaction<N>>,
+        _transaction: Transaction<N>,
     ) -> Result<()> {
         Ok(())
     }
@@ -188,7 +188,7 @@ impl<N: Network> LedgerService<N> for ProverLedgerService<N> {
     }
 
     /// Computes the execution cost in microcredits for a transaction.
-    fn compute_cost(&self, transaction_id: N::TransactionID, _transaction: Data<Transaction<N>>) -> Result<u64> {
+    fn compute_cost(&self, transaction_id: N::TransactionID, _transaction: Transaction<N>) -> Result<u64> {
         bail!("Transaction '{transaction_id}' doesn't exist in prover")
     }
 }

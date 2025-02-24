@@ -313,9 +313,10 @@ impl<N: Network> Worker<N> {
         };
         // If the transmission is a deserialized execution, verify it immediately.
         // This takes heavy transaction verification out of the hot path during block generation.
-        if let (TransmissionID::Transaction(tx_id, _), Transmission::Transaction(tx)) = (transmission_id, &transmission)
+        if let (TransmissionID::Transaction(tx_id, _), Transmission::Transaction(Data::Object(tx))) =
+            (transmission_id, &transmission)
         {
-            if let Data::Object(Transaction::Execute(..)) = tx {
+            if tx.is_execute() {
                 let self_ = self.clone();
                 let tx_ = tx.clone();
                 tokio::spawn(async move {
@@ -385,6 +386,14 @@ impl<N: Network> Worker<N> {
         if self.contains_transmission(transmission_id) {
             bail!("Transaction '{}.{}' already exists.", fmt_id(transaction_id), fmt_id(checksum).dimmed());
         }
+        // Deserialize the transaction. If the transaction exceeds the maximum size, then return an error.
+        let transaction = spawn_blocking!({
+            match transaction {
+                Data::Object(transaction) => Ok(transaction),
+                Data::Buffer(bytes) => Ok(Transaction::<N>::read_le(&mut bytes.take(N::MAX_TRANSACTION_SIZE as u64))?),
+            }
+        })?;
+
         // Check that the transaction is well-formed and unique.
         self.ledger.check_transaction_basic(transaction_id, transaction).await?;
         // Adds the transaction to the ready queue.
@@ -550,6 +559,7 @@ mod tests {
         ledger::{
             block::Block,
             committee::Committee,
+            ledger_test_helpers::sample_execution_transaction_with_fee,
             narwhal::{BatchCertificate, Subdag, Transmission, TransmissionID},
         },
         prelude::Address,
@@ -611,7 +621,7 @@ mod tests {
             async fn check_transaction_basic(
                 &self,
                 transaction_id: N::TransactionID,
-                transaction: Data<Transaction<N>>,
+                transaction: Transaction<N>,
             ) -> Result<()>;
             fn check_next_block(&self, block: &Block<N>) -> Result<()>;
             fn prepare_advance_to_next_quorum_block(
@@ -620,7 +630,7 @@ mod tests {
                 transmissions: IndexMap<TransmissionID<N>, Transmission<N>>,
             ) -> Result<Block<N>>;
             fn advance_to_next_block(&self, block: &Block<N>) -> Result<()>;
-            fn compute_cost(&self, transaction_id: N::TransactionID, transaction: Data<Transaction<N>>) -> Result<u64>;
+            fn compute_cost(&self, transaction_id: N::TransactionID, transaction: Transaction<N>) -> Result<u64>;
         }
     }
 
@@ -798,7 +808,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_process_transaction_ok() {
-        let mut rng = &mut TestRng::default();
+        let rng = &mut TestRng::default();
         // Sample a committee.
         let committee = snarkvm::ledger::committee::test_helpers::sample_committee(rng);
         let committee_clone = committee.clone();
@@ -819,15 +829,16 @@ mod tests {
 
         // Create the Worker.
         let worker = Worker::new(0, Arc::new(gateway), storage, ledger, Default::default()).unwrap();
-        let transaction_id: <CurrentNetwork as Network>::TransactionID = Field::<CurrentNetwork>::rand(&mut rng).into();
-        let transaction = Data::Buffer(Bytes::from((0..512).map(|_| rng.gen::<u8>()).collect::<Vec<_>>()));
-        let checksum = transaction.to_checksum::<CurrentNetwork>().unwrap();
+        let transaction = sample_execution_transaction_with_fee(false, rng);
+        let transaction_id = transaction.id();
+        let transaction_data = Data::Object(transaction);
+        let checksum = transaction_data.to_checksum::<CurrentNetwork>().unwrap();
         let transmission_id = TransmissionID::Transaction(transaction_id, checksum);
         let worker_ = worker.clone();
         let peer_ip = SocketAddr::from(([127, 0, 0, 1], 1234));
         let _ = worker_.send_transmission_request(peer_ip, transmission_id).await;
         assert!(worker.pending.contains(transmission_id));
-        let result = worker.process_unconfirmed_transaction(transaction_id, transaction).await;
+        let result = dbg!(worker.process_unconfirmed_transaction(transaction_id, transaction_data).await);
         assert!(result.is_ok());
         assert!(!worker.pending.contains(transmission_id));
         assert!(worker.ready.read().contains(transmission_id));
@@ -872,7 +883,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_flood_transmission_requests() {
-        let mut rng = &mut TestRng::default();
+        let rng = &mut TestRng::default();
         // Sample a committee.
         let committee = snarkvm::ledger::committee::test_helpers::sample_committee(rng);
         let committee_clone = committee.clone();
@@ -893,9 +904,10 @@ mod tests {
 
         // Create the Worker.
         let worker = Worker::new(0, Arc::new(gateway), storage, ledger, Default::default()).unwrap();
-        let transaction_id: <CurrentNetwork as Network>::TransactionID = Field::<CurrentNetwork>::rand(&mut rng).into();
-        let transaction = Data::Buffer(Bytes::from((0..512).map(|_| rng.gen::<u8>()).collect::<Vec<_>>()));
-        let checksum = transaction.to_checksum::<CurrentNetwork>().unwrap();
+        let transaction = sample_execution_transaction_with_fee(false, rng);
+        let transaction_id = transaction.id();
+        let transaction_data = Data::Object(transaction);
+        let checksum = transaction_data.to_checksum::<CurrentNetwork>().unwrap();
         let transmission_id = TransmissionID::Transaction(transaction_id, checksum);
 
         // Determine the number of redundant requests are sent.
@@ -942,7 +954,7 @@ mod tests {
         assert_eq!(worker.pending.num_callbacks(transmission_id), num_flood_requests);
 
         // Check that fulfilling a transmission request clears the pending queue.
-        let result = worker.process_unconfirmed_transaction(transaction_id, transaction).await;
+        let result = worker.process_unconfirmed_transaction(transaction_id, transaction_data).await;
         assert!(result.is_ok());
         assert_eq!(worker.pending.num_sent_requests(transmission_id), 0);
         assert_eq!(worker.pending.num_callbacks(transmission_id), 0);

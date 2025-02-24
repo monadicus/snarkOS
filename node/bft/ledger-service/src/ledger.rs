@@ -310,15 +310,8 @@ impl<N: Network, C: ConsensusStorage<N>> LedgerService<N> for CoreLedgerService<
     async fn check_transaction_basic(
         &self,
         transaction_id: N::TransactionID,
-        transaction: Data<Transaction<N>>,
+        transaction: Transaction<N>,
     ) -> Result<()> {
-        // Deserialize the transaction. If the transaction exceeds the maximum size, then return an error.
-        let transaction = spawn_blocking!({
-            match transaction {
-                Data::Object(transaction) => Ok(transaction),
-                Data::Buffer(bytes) => Ok(Transaction::<N>::read_le(&mut bytes.take(N::MAX_TRANSACTION_SIZE as u64))?),
-            }
-        })?;
         // Ensure the transaction ID matches in the transaction.
         if transaction_id != transaction.id() {
             bail!("Invalid transaction - expected {transaction_id}, found {}", transaction.id());
@@ -382,15 +375,9 @@ impl<N: Network, C: ConsensusStorage<N>> LedgerService<N> for CoreLedgerService<
         Ok(())
     }
 
-    fn compute_cost(&self, _transaction_id: N::TransactionID, transaction: Data<Transaction<N>>) -> Result<u64> {
+    fn compute_cost(&self, _transaction_id: N::TransactionID, transaction: Transaction<N>) -> Result<u64> {
         // TODO: move to VM or ledger?
         let process = self.ledger.vm().process();
-
-        // Deserialize the transaction. If the transaction exceeds the maximum size, then return an error.
-        let transaction = match transaction {
-            Data::Object(transaction) => transaction,
-            Data::Buffer(bytes) => Transaction::<N>::read_le(&mut bytes.take(N::MAX_TRANSACTION_SIZE as u64))?,
-        };
 
         // Collect the Optional Stack corresponding to the transaction if its an Execution.
         let stack = if let Transaction::Execute(_, _, ref execution, _) = transaction {

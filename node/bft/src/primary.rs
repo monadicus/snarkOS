@@ -545,6 +545,17 @@ impl<N: Network> Primary<N> {
                             trace!("Proposing - Skipping transaction '{}' - Checksum mismatch", fmt_id(transaction_id));
                             continue;
                         }
+
+                        // Deserialize the transaction. If the transaction exceeds the maximum size, then return an error.
+                        let transaction = spawn_blocking!({
+                            match transaction {
+                                Data::Object(transaction) => Ok(transaction),
+                                Data::Buffer(bytes) => {
+                                    Ok(Transaction::<N>::read_le(&mut bytes.take(N::MAX_TRANSACTION_SIZE as u64))?)
+                                }
+                            }
+                        })?;
+
                         // Check if the transaction is still valid.
                         // TODO: check if clone is cheap, otherwise fix.
                         if let Err(e) = self.ledger.check_transaction_basic(transaction_id, transaction.clone()).await {
@@ -796,6 +807,16 @@ impl<N: Network> Primary<N> {
                 if let (TransmissionID::Transaction(transaction_id, _), Transmission::Transaction(transaction)) =
                     (transmission_id, transmission)
                 {
+                    // Deserialize the transaction. If the transaction exceeds the maximum size, then return an error.
+                    let transaction = spawn_blocking!({
+                        match transaction {
+                            Data::Object(transaction) => Ok(transaction),
+                            Data::Buffer(bytes) => {
+                                Ok(Transaction::<N>::read_le(&mut bytes.take(N::MAX_TRANSACTION_SIZE as u64))?)
+                            }
+                        }
+                    })?;
+
                     proposal_cost += self.ledger.compute_cost(*transaction_id, transaction)?
                 }
             }
@@ -848,6 +869,7 @@ impl<N: Network> Primary<N> {
                 debug!("Signed a batch for round {batch_round} from '{peer_ip}'");
             }
         });
+
         Ok(())
     }
 
@@ -1806,7 +1828,10 @@ mod tests {
     use snarkos_node_bft_ledger_service::MockLedgerService;
     use snarkos_node_bft_storage_service::BFTMemoryService;
     use snarkvm::{
-        ledger::committee::{Committee, MIN_VALIDATOR_STAKE},
+        ledger::{
+            committee::{Committee, MIN_VALIDATOR_STAKE},
+            ledger_test_helpers::sample_execution_transaction_with_fee,
+        },
         prelude::{Address, Signature},
     };
 
@@ -1891,20 +1916,14 @@ mod tests {
         (solution_id, solution)
     }
 
-    // Creates a mock transaction.
+    // Samples a test transaction.
     fn sample_unconfirmed_transaction(
         rng: &mut TestRng,
     ) -> (<CurrentNetwork as Network>::TransactionID, Data<Transaction<CurrentNetwork>>) {
-        // Sample a random fake transaction ID.
-        let id = Field::<CurrentNetwork>::rand(rng).into();
-        // Vary the size of the transactions.
-        let size = rng.gen_range(1024..10 * 1024);
-        // Sample random fake transaction bytes.
-        let mut vec = vec![0u8; size];
-        rng.fill_bytes(&mut vec);
-        let transaction = Data::Buffer(Bytes::from(vec));
-        // Return the ID and transaction.
-        (id, transaction)
+        let transaction = sample_execution_transaction_with_fee(false, rng);
+        let id = transaction.id();
+
+        (id, Data::Object(transaction))
     }
 
     // Creates a batch proposal with one solution and one transaction.
@@ -2463,7 +2482,7 @@ mod tests {
         // Create a valid proposal with an author that isn't the primary.
         let peer_account = &accounts[1];
         let peer_ip = peer_account.0;
-        let invalid_timestamp = now(); // Use a timestamp that is too early.
+        let invalid_timestamp = now() - 5; // Use a timestamp that is too early.
         let proposal = create_test_proposal(
             &peer_account.1,
             primary.ledger.current_committee().unwrap(),
@@ -2502,7 +2521,7 @@ mod tests {
         // Create a valid proposal with an author that isn't the primary.
         let peer_account = &accounts[1];
         let peer_ip = peer_account.0;
-        let past_timestamp = now() - 5; // Use a timestamp that is in the past.
+        let past_timestamp = now() - 10; // Use a timestamp that is in the past.
         let proposal = create_test_proposal(
             &peer_account.1,
             primary.ledger.current_committee().unwrap(),
