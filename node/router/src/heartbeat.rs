@@ -13,8 +13,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use core::cmp::Ordering;
+
 use crate::{
     Outbound,
+    Peer,
     Router,
     messages::{DisconnectReason, Message, PeerRequest},
 };
@@ -104,6 +107,45 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
         }
     }
 
+    /// Returns a sorted list of removable connected peers
+    /// where the first entry has the lowest priority and
+    /// the last one the highest.
+    ///
+    /// Rules:
+    ///     - Trusted peers and bootstrap nodes are not removable
+    ///     - Peers that we are currently syncing with are not removable
+    ///     - Validators are considered higher priority than clients
+    ///     - Connections that have not been seen in a while are considered lower priority
+    fn get_removable_peers(&self) -> Vec<Peer<N>> {
+        // The trusted peers (specified at runtime)
+        let trusted = self.router().trusted_peers();
+        // The hardcoded bootstrap nodes
+        let bootstrap = self.router().bootstrap_peers();
+
+        // All peers that can be removed
+        let mut removable: Vec<_> = self
+            .router()
+            .get_connected_peers()
+            .into_iter()
+            .filter(|peer| !trusted.contains(&peer.ip())&& !bootstrap.contains(&peer.ip()))
+            .filter(|peer| !self.router().cache.contains_inbound_block_request(&peer.ip())) // Skip if the peer is syncing.
+            .filter(|peer| self.is_block_synced() || self.router().cache.num_outbound_block_requests(&peer.ip()) == 0) // Skip if you are syncing from this peer.
+            .collect();
+
+        // Sort by priority
+        removable.sort_by(|peer1, peer2| {
+            if peer1.is_client() && !peer2.is_client() {
+                Ordering::Greater
+            } else if !peer1.is_client() && peer2.is_client() {
+                Ordering::Less
+            } else {
+                peer2.last_seen().cmp(&peer1.last_seen())
+            }
+        });
+
+        removable
+    }
+
     /// This function removes the oldest connected peer, to keep the connections fresh.
     /// This function only triggers if the router is above the minimum number of connected peers.
     fn remove_oldest_connected_peer(&self) {
@@ -117,24 +159,8 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
             return;
         }
 
-        // Retrieve the trusted peers.
-        let trusted = self.router().trusted_peers();
-        // Retrieve the bootstrap peers.
-        let bootstrap = self.router().bootstrap_peers();
-
-        // Find the oldest connected peer, that is neither trusted nor a bootstrap peer.
-        let oldest_peer = self
-            .router()
-            .get_connected_peers()
-            .iter()
-            .filter(|peer| !trusted.contains(&peer.ip()) && !bootstrap.contains(&peer.ip()))
-            .filter(|peer| !self.router().cache.contains_inbound_block_request(&peer.ip())) // Skip if the peer is syncing.
-            .filter(|peer| self.is_block_synced() || self.router().cache.num_outbound_block_requests(&peer.ip()) == 0) // Skip if you are syncing from this peer.
-            .min_by_key(|peer| peer.last_seen())
-            .map(|peer| peer.ip());
-
         // Disconnect from the oldest connected peer, if one exists.
-        if let Some(oldest) = oldest_peer {
+        if let Some(oldest) = self.get_removable_peers().pop().map(|p| p.ip()) {
             info!("Disconnecting from '{oldest}' (periodic refresh of peers)");
             let _ = self.send(oldest, Message::Disconnect(DisconnectReason::PeerRefresh.into()));
             // Disconnect from this peer.
@@ -189,30 +215,12 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
                 .filter(|peer_ip| !trusted.contains(peer_ip) && !bootstrap.contains(peer_ip))
                 .choose_multiple(rng, num_surplus_provers);
 
-            // TODO (howardwu): As a validator, prioritize disconnecting from clients.
-            //  Remove RNG, pick the `n` oldest nodes.
             // Determine the clients and validators to disconnect from.
-            let peer_ips_to_disconnect = self
-                .router()
-                .get_connected_peers()
-                .into_iter()
-                .filter_map(|peer| {
-                    let peer_ip = peer.ip();
-                    if !peer.is_prover() && // Skip if the peer is a prover.
-                       !trusted.contains(&peer_ip) && // Skip if the peer is trusted.
-                       !bootstrap.contains(&peer_ip) && // Skip if the peer is a bootstrap peer.
-                       // Skip if you are syncing from this peer.
-                       (self.is_block_synced() || (!self.is_block_synced() && self.router().cache.num_outbound_block_requests(&peer.ip()) == 0))
-                    {
-                        Some(peer_ip)
-                    } else {
-                        None
-                    }
-                })
-                .choose_multiple(rng, num_surplus_clients_validators);
+            let peer_ips_to_disconnect =
+                self.get_removable_peers().into_iter().map(|p| p.ip()).take(num_surplus_clients_validators);
 
             // Proceed to send disconnect requests to these peers.
-            for peer_ip in peer_ips_to_disconnect.into_iter().chain(prover_ips_to_disconnect) {
+            for peer_ip in peer_ips_to_disconnect.chain(prover_ips_to_disconnect) {
                 // TODO (howardwu): Remove this after specializing this function.
                 if self.router().node_type().is_prover() {
                     if let Some(peer) = self.router().get_connected_peer(&peer_ip) {
@@ -290,11 +298,11 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
     /// This function attempts to connect to any disconnected trusted peers.
     fn handle_trusted_peers(&self) {
         // Ensure that the trusted nodes are connected.
-        for peer_ip in self.router().trusted_peers() {
+        for peer_addr in self.router().trusted_peers() {
             // If the peer is not connected, attempt to connect to it.
-            if !self.router().is_connected(peer_ip) {
-                // Attempt to connect to the trusted peer.
-                self.router().connect(*peer_ip);
+            if !self.router().is_connected(peer_addr) {
+                debug!("Attempting to (re-)connect to trusted peer `{peer_addr}`");
+                self.router().connect(*peer_addr);
             }
         }
     }
