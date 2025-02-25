@@ -89,6 +89,7 @@ impl<N: Network> BlockLocators<N> {
 
     /// Initializes a new instance of the block locators, without checking the validity of the block locators.
     /// This is only used for testing; note that it is non-public.
+    #[allow(dead_code)]
     fn new_unchecked(recents: IndexMap<u32, N::BlockHash>, checkpoints: IndexMap<u32, N::BlockHash>) -> Self {
         Self { recents, checkpoints }
     }
