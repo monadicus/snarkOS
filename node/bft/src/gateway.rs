@@ -510,7 +510,7 @@ impl<N: Network> Gateway<N> {
 
     /// Removes the connected peer and adds them to the candidate peers.
     fn remove_connected_peer(&self, peer_ip: SocketAddr) {
-        // If a sync sender was provided, remove the peer from the sync module.
+        // Remove the peer from the sync module. Except for some tests, there is always a sync sender.
         if let Some(sync_sender) = self.sync_sender.get() {
             let tx_block_sync_remove_peer_ = sync_sender.tx_block_sync_remove_peer.clone();
             tokio::spawn(async move {
@@ -654,7 +654,7 @@ impl<N: Network> Gateway<N> {
                 Ok(())
             }
             Event::BlockResponse(block_response) => {
-                // If a sync sender was provided, then process the block response.
+                // Process the block response. Except for some tests, there is always a sync sender.
                 if let Some(sync_sender) = self.sync_sender.get() {
                     // Retrieve the block response.
                     let BlockResponse { request, blocks } = block_response;
@@ -688,7 +688,8 @@ impl<N: Network> Gateway<N> {
                 Ok(())
             }
             Event::CertificateRequest(certificate_request) => {
-                // If a sync sender was provided, send the certificate request to the sync module.
+                // Send the certificate request to the sync module.
+                // Except for some tests, there is always a sync sender.
                 if let Some(sync_sender) = self.sync_sender.get() {
                     // Send the certificate request to the sync module.
                     let _ = sync_sender.tx_certificate_request.send((peer_ip, certificate_request)).await;
@@ -696,7 +697,8 @@ impl<N: Network> Gateway<N> {
                 Ok(())
             }
             Event::CertificateResponse(certificate_response) => {
-                // If a sync sender was provided, send the certificate response to the sync module.
+                // Send the certificate response to the sync module.
+                // Except for some tests, there is always a sync sender.
                 if let Some(sync_sender) = self.sync_sender.get() {
                     // Send the certificate response to the sync module.
                     let _ = sync_sender.tx_certificate_response.send((peer_ip, certificate_response)).await;
@@ -718,7 +720,7 @@ impl<N: Network> Gateway<N> {
                     bail!("Dropping '{peer_ip}' on event version {version} (outdated)");
                 }
 
-                // If a sync sender was provided, update the peer locators.
+                // Update the peer locators. Except for some tests, there is always a sync sender.
                 if let Some(sync_sender) = self.sync_sender.get() {
                     // Check the block locators are valid, and update the validators in the sync module.
                     if let Err(error) = sync_sender.update_peer_locators(peer_ip, block_locators).await {
@@ -927,21 +929,41 @@ impl<N: Network> Gateway<N> {
     /// Logs the connected validators.
     fn log_connected_validators(&self) {
         // Log the connected validators.
-        let validators = self.connected_peers().read().clone();
+        let connected_validators = self.connected_peers().read().clone();
         // Resolve the total number of connectable validators.
         let validators_total = self.ledger.current_committee().map_or(0, |c| c.num_members().saturating_sub(1));
         // Format the total validators message.
         let total_validators = format!("(of {validators_total} bonded validators)").dimmed();
         // Construct the connections message.
-        let connections_msg = match validators.len() {
+        let connections_msg = match connected_validators.len() {
             0 => "No connected validators".to_string(),
             num_connected => format!("Connected to {num_connected} validators {total_validators}"),
         };
+        // Collect the connected validator addresses.
+        let mut connected_validator_addresses = IndexSet::with_capacity(connected_validators.len());
+        connected_validator_addresses.insert(self.account.address());
         // Log the connected validators.
         info!("{connections_msg}");
-        for peer_ip in validators {
-            let address = self.resolver.get_address(peer_ip).map_or("Unknown".to_string(), |a| a.to_string());
+        for peer_ip in &connected_validators {
+            let address = self.resolver.get_address(*peer_ip).map_or("Unknown".to_string(), |a| {
+                connected_validator_addresses.insert(a);
+                a.to_string()
+            });
             debug!("{}", format!("  {peer_ip} - {address}").dimmed());
+        }
+
+        // Log the validators that are not connected.
+        let num_not_connected = validators_total.saturating_sub(connected_validators.len());
+        if num_not_connected > 0 {
+            info!("Not connected to {num_not_connected} validators {total_validators}");
+            // Collect the committee members.
+            let committee_members: IndexSet<_> =
+                self.ledger.current_committee().map(|c| c.members().keys().copied().collect()).unwrap_or_default();
+
+            // Log the validators that are not connected.
+            for address in committee_members.difference(&connected_validator_addresses) {
+                debug!("{}", format!("  Not connected to {address}").dimmed());
+            }
         }
     }
 

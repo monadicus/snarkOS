@@ -106,7 +106,7 @@ impl<N: Network> Sync<N> {
         self.handles.lock().push(tokio::spawn(async move {
             // Sleep briefly to allow an initial primary ping to come in prior to entering the loop.
             // Ideally, a node does not consider itself synced when it has not received
-            // any block locators from peer. However, in the initial bootup of validators,
+            // any block locators from peers. However, in the initial bootup of validators,
             // this needs to happen, so we use this additional sleep as a grace period.
             tokio::time::sleep(Duration::from_millis(PRIMARY_PING_IN_MS)).await;
             loop {
@@ -155,6 +155,11 @@ impl<N: Network> Sync<N> {
         } = sync_receiver;
 
         // Process the block sync request to advance with sync blocks.
+        // Each iteration of this loop is triggered by an incoming [`BlockResponse`],
+        // which is initially handled by [`Gateway::inbound()`],
+        // which calls [`SyncSender::advance_with_sync_blocks()`],
+        // which calls [`tx_block_sync_advance_with_sync_blocks.send()`],
+        // which causes the `rx_block_sync_advance_with_sync_blocks.recv()` call below to return.
         let self_ = self.clone();
         self.spawn(async move {
             while let Some((peer_ip, blocks, callback)) = rx_block_sync_advance_with_sync_blocks.recv().await {
@@ -185,7 +190,12 @@ impl<N: Network> Sync<N> {
             }
         });
 
-        // Process the block sync request to update peer locators.
+        // Process each block sync request to update peer locators.
+        // Each iteration of this loop is triggered by an incoming [`PrimaryPing`],
+        // which is initially handled by [`Gateway::inbound()`],
+        // which calls [`SyncSender::update_peer_locators()`],
+        // which calls [`tx_block_sync_update_peer_locators.send()`],
+        // which causes the `rx_block_sync_update_peer_locators.recv()` call below to return.
         let self_ = self.clone();
         self.spawn(async move {
             while let Some((peer_ip, locators, callback)) = rx_block_sync_update_peer_locators.recv().await {
@@ -199,7 +209,11 @@ impl<N: Network> Sync<N> {
             }
         });
 
-        // Process the certificate request.
+        // Process each certificate request.
+        // Each iteration of this loop is triggered by an incoming [`CertificateRequest`],
+        // which is initially handled by [`Gateway::inbound()`],
+        // which calls [`tx_certificate_request.send()`],
+        // which causes the `rx_certificate_request.recv()` call below to return.
         let self_ = self.clone();
         self.spawn(async move {
             while let Some((peer_ip, certificate_request)) = rx_certificate_request.recv().await {
@@ -207,7 +221,11 @@ impl<N: Network> Sync<N> {
             }
         });
 
-        // Process the certificate response.
+        // Process each certificate response.
+        // Each iteration of this loop is triggered by an incoming [`CertificateResponse`],
+        // which is initially handled by [`Gateway::inbound()`],
+        // which calls [`tx_certificate_response.send()`],
+        // which causes the `rx_certificate_response.recv()` call below to return.
         let self_ = self.clone();
         self.spawn(async move {
             while let Some((peer_ip, certificate_response)) = rx_certificate_response.recv().await {
@@ -228,9 +246,13 @@ impl<N: Network> Sync<N> {
 
         // Retrieve the block height.
         let block_height = latest_block.height();
-        // Determine the number of maximum number of blocks that would have been garbage collected.
+        // Determine the maximum number of blocks corresponding to rounds
+        // that would not have been garbage collected, i.e. that would be kept in storage.
+        // Since at most one block is created every two rounds,
+        // this is half of the maximum number of rounds kept in storage.
         let max_gc_blocks = u32::try_from(self.storage.max_gc_rounds())?.saturating_div(2);
-        // Determine the earliest height, conservatively set to the block height minus the max GC rounds.
+        // Determine the earliest height of blocks corresponding to rounds kept in storage,
+        // conservatively set to the block height minus the maximum number of blocks calculated above.
         // By virtue of the BFT protocol, we can guarantee that all GC range blocks will be loaded.
         let gc_height = block_height.saturating_sub(max_gc_blocks);
         // Retrieve the blocks.
@@ -251,7 +273,10 @@ impl<N: Network> Sync<N> {
         self.storage.garbage_collect_certificates(latest_block.round());
         // Iterate over the blocks.
         for block in &blocks {
-            // If the block authority is a subdag, then sync the batch certificates with the block.
+            // If the block authority is a sub-DAG, then sync the batch certificates with the block.
+            // Note that the block authority is always a sub-DAG in production;
+            // beacon signatures are only used for testing,
+            // and as placeholder (irrelevant) block authority in the genesis block.
             if let Authority::Quorum(subdag) = block.authority() {
                 // Reconstruct the unconfirmed transactions.
                 let unconfirmed_transactions = cfg_iter!(block.transactions())
@@ -309,9 +334,14 @@ impl<N: Network> Sync<N> {
 
         // Retrieve the maximum block height of the peers.
         let tip = self.block_sync.find_sync_peers().map(|(x, _)| x.into_values().max().unwrap_or(0)).unwrap_or(0);
-        // Determine the number of maximum number of blocks that would have been garbage collected.
+        // Determine the maximum number of blocks corresponding to rounds
+        // that would not have been garbage collected, i.e. that would be kept in storage.
+        // Since at most one block is created every two rounds,
+        // this is half of the maximum number of rounds kept in storage.
         let max_gc_blocks = u32::try_from(self.storage.max_gc_rounds())?.saturating_div(2);
-        // Determine the maximum height that the peer would have garbage collected.
+        // Determine the earliest height of blocks corresponding to rounds kept in storage,
+        // conservatively set to the block height minus the maximum number of blocks calculated above.
+        // By virtue of the BFT protocol, we can guarantee that all GC range blocks will be loaded.
         let max_gc_height = tip.saturating_sub(max_gc_blocks);
 
         // Determine if we can sync the ledger without updating the BFT first.
@@ -383,7 +413,7 @@ impl<N: Network> Sync<N> {
         .await?
     }
 
-    /// Syncs the storage with the given blocks.
+    /// Syncs the storage with the given block.
     pub async fn sync_storage_with_block(&self, block: Block<N>) -> Result<()> {
         // Acquire the sync lock.
         let _lock = self.sync_lock.lock().await;
@@ -395,7 +425,10 @@ impl<N: Network> Sync<N> {
             return Ok(());
         }
 
-        // If the block authority is a subdag, then sync the batch certificates with the block.
+        // If the block authority is a sub-DAG, then sync the batch certificates with the block.
+        // Note that the block authority is always a sub-DAG in production;
+        // beacon signatures are only used for testing,
+        // and as placeholder (irrelevant) block authority in the genesis block.
         if let Authority::Quorum(subdag) = block.authority() {
             // Reconstruct the unconfirmed transactions.
             let unconfirmed_transactions = cfg_iter!(block.transactions())
@@ -628,6 +661,7 @@ impl<N: Network> Sync<N> {
             );
         }
         // Wait for the certificate to be fetched.
+        // TODO (raychu86): Consider making the timeout dynamic based on network traffic and/or the number of validators.
         match tokio::time::timeout(Duration::from_millis(MAX_FETCH_TIMEOUT_IN_MS), callback_receiver).await {
             // If the certificate was fetched, return it.
             Ok(result) => Ok(result?),
