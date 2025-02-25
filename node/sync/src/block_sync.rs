@@ -623,6 +623,8 @@ impl<N: Network> BlockSync<N> {
                 bail!("The sync pool did not request block {height} from '{peer_ip}'")
             }
             Ok(())
+        } else if self.ledger.contains_block_height(height) {
+            bail!("The sync request was removed because we already advanced")
         } else {
             bail!("The sync pool did not request block {height}")
         }
