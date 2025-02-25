@@ -510,7 +510,7 @@ impl<N: Network> Gateway<N> {
 
     /// Removes the connected peer and adds them to the candidate peers.
     fn remove_connected_peer(&self, peer_ip: SocketAddr) {
-        // If a sync sender was provided, remove the peer from the sync module.
+        // Remove the peer from the sync module. Except for some tests, there is always a sync sender.
         if let Some(sync_sender) = self.sync_sender.get() {
             let tx_block_sync_remove_peer_ = sync_sender.tx_block_sync_remove_peer.clone();
             tokio::spawn(async move {
@@ -654,7 +654,7 @@ impl<N: Network> Gateway<N> {
                 Ok(())
             }
             Event::BlockResponse(block_response) => {
-                // If a sync sender was provided, then process the block response.
+                // Process the block response. Except for some tests, there is always a sync sender.
                 if let Some(sync_sender) = self.sync_sender.get() {
                     // Retrieve the block response.
                     let BlockResponse { request, blocks } = block_response;
@@ -688,7 +688,8 @@ impl<N: Network> Gateway<N> {
                 Ok(())
             }
             Event::CertificateRequest(certificate_request) => {
-                // If a sync sender was provided, send the certificate request to the sync module.
+                // Send the certificate request to the sync module.
+                // Except for some tests, there is always a sync sender.
                 if let Some(sync_sender) = self.sync_sender.get() {
                     // Send the certificate request to the sync module.
                     let _ = sync_sender.tx_certificate_request.send((peer_ip, certificate_request)).await;
@@ -696,7 +697,8 @@ impl<N: Network> Gateway<N> {
                 Ok(())
             }
             Event::CertificateResponse(certificate_response) => {
-                // If a sync sender was provided, send the certificate response to the sync module.
+                // Send the certificate response to the sync module.
+                // Except for some tests, there is always a sync sender.
                 if let Some(sync_sender) = self.sync_sender.get() {
                     // Send the certificate response to the sync module.
                     let _ = sync_sender.tx_certificate_response.send((peer_ip, certificate_response)).await;
@@ -718,7 +720,7 @@ impl<N: Network> Gateway<N> {
                     bail!("Dropping '{peer_ip}' on event version {version} (outdated)");
                 }
 
-                // If a sync sender was provided, update the peer locators.
+                // Update the peer locators. Except for some tests, there is always a sync sender.
                 if let Some(sync_sender) = self.sync_sender.get() {
                     // Check the block locators are valid, and update the validators in the sync module.
                     if let Err(error) = sync_sender.update_peer_locators(peer_ip, block_locators).await {
