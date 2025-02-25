@@ -133,6 +133,7 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
             .collect();
 
         // Sort by priority
+        // 'greater' means earlier in the list and, thus, lower priority
         removable.sort_by(|peer1, peer2| {
             if peer1.is_client() && !peer2.is_client() {
                 Ordering::Greater
@@ -146,8 +147,8 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
         removable
     }
 
-    /// This function removes the oldest connected peer, to keep the connections fresh.
-    /// This function only triggers if the router is above the minimum number of connected peers.
+    /// This function removes the peer that we have not heard from the longest, to keep the connections fresh.
+    /// It only triggers if the router is above the minimum number of connected peers.
     fn remove_oldest_connected_peer(&self) {
         // Skip if the router is at or below the minimum number of connected peers.
         if self.router().number_of_connected_peers() <= Self::MINIMUM_NUMBER_OF_PEERS {
