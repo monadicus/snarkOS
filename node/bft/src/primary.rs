@@ -727,6 +727,13 @@ impl<N: Network> Primary<N> {
             bail!("Malicious peer - {e} from '{peer_ip}'");
         }
 
+        // Ensure the batch header does not contain any ratifications.
+        if batch_header.contains(TransmissionID::Ratification) {
+            // Proceed to disconnect the validator.
+            self.gateway.disconnect(peer_ip);
+            bail!("Malicious peer - proposed batch contains an unsupported ratification transmissionID",);
+        }
+
         // If the peer is ahead, use the batch header to sync up to the peer.
         let mut missing_transmissions = self.sync_with_batch_header_from_peer::<false>(peer_ip, &batch_header).await?;
 
@@ -1694,9 +1701,9 @@ impl<N: Network> Primary<N> {
             }
         }
 
-        // If there are no missing certificates, return early.
+        // If there are no certificates to fetch, return early with the existing unprocessed certificates.
         match fetch_certificates.is_empty() {
-            true => return Ok(Default::default()),
+            true => return Ok(missing_certificates),
             false => trace!(
                 "Fetching {} missing certificates for round {round} from '{peer_ip}'...",
                 fetch_certificates.len(),
