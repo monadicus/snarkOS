@@ -147,7 +147,8 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
         removable
     }
 
-    /// This function removes the peer that we have not heard from the longest, to keep the connections fresh.
+    /// This function removes the peer that we have not heard from the longest,
+    /// to keep the connections fresh.
     /// It only triggers if the router is above the minimum number of connected peers.
     fn remove_oldest_connected_peer(&self) {
         // Skip if the router is at or below the minimum number of connected peers.
@@ -169,7 +170,6 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
         }
     }
 
-    /// TODO (howardwu): If the node is a validator, keep the validator.
     /// This function keeps the number of connected peers within the allowed range.
     fn handle_connected_peers(&self) {
         // Initialize an RNG.
