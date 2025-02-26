@@ -193,7 +193,7 @@ impl<N: Network> Ready<N> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use snarkvm::ledger::narwhal::Data;
+    use snarkvm::{ledger::narwhal::Data, prelude::Field};
 
     use ::bytes::Bytes;
 
@@ -303,5 +303,98 @@ mod tests {
 
         // Check the number of transmissions.
         assert_eq!(ready.num_transmissions(), 1);
+    }
+
+    #[test]
+    fn test_insert_front() {
+        let rng = &mut TestRng::default();
+        let data = |rng: &mut TestRng| Data::Buffer(Bytes::from((0..512).map(|_| rng.gen::<u8>()).collect::<Vec<_>>()));
+
+        // Initialize the ready queue.
+        let mut ready = Ready::<CurrentNetwork>::new();
+
+        // Initialize the solution IDs.
+        let solution_id_1 = TransmissionID::Solution(
+            rng.gen::<u64>().into(),
+            rng.gen::<<CurrentNetwork as Network>::TransmissionChecksum>(),
+        );
+        let solution_id_2 = TransmissionID::Solution(
+            rng.gen::<u64>().into(),
+            rng.gen::<<CurrentNetwork as Network>::TransmissionChecksum>(),
+        );
+
+        // Initialize the solutions.
+        let solution_1 = Transmission::Solution(data(rng));
+        let solution_2 = Transmission::Solution(data(rng));
+
+        // Insert the two solutions at the front, check the offset.
+        assert!(ready.insert_front(solution_id_1, solution_1.clone()));
+        assert_eq!(ready.offset, -1);
+        assert!(ready.insert_front(solution_id_2, solution_2.clone()));
+        assert_eq!(ready.offset, -2);
+
+        // Check retrieval.
+        assert_eq!(ready.get(solution_id_1), Some(solution_1.clone()));
+        assert_eq!(ready.get(solution_id_2), Some(solution_2.clone()));
+
+        // Remove from the front, offset should have increased by 1.
+        let removed_solution = ready.remove_front().unwrap();
+        assert_eq!(removed_solution, (solution_id_2, solution_2));
+        assert_eq!(ready.offset, -1);
+
+        // Remove another transmission from the front, the offset should be back to 0.
+        let removed_solution = ready.remove_front().unwrap();
+        assert_eq!(removed_solution, (solution_id_1, solution_1));
+        assert_eq!(ready.offset, 0);
+    }
+
+    #[test]
+    fn test_clear_solutions() {
+        let rng = &mut TestRng::default();
+        let solution_data =
+            |rng: &mut TestRng| Data::Buffer(Bytes::from((0..512).map(|_| rng.gen::<u8>()).collect::<Vec<_>>()));
+        let transaction_data =
+            |rng: &mut TestRng| Data::Buffer(Bytes::from((0..512).map(|_| rng.gen::<u8>()).collect::<Vec<_>>()));
+
+        // Initialize the ready queue.
+        let mut ready = Ready::<CurrentNetwork>::new();
+
+        // Initialize the solution IDs.
+        let solution_id_1 = TransmissionID::Solution(
+            rng.gen::<u64>().into(),
+            rng.gen::<<CurrentNetwork as Network>::TransmissionChecksum>(),
+        );
+        let solution_id_2 = TransmissionID::Solution(
+            rng.gen::<u64>().into(),
+            rng.gen::<<CurrentNetwork as Network>::TransmissionChecksum>(),
+        );
+        let transaction_id = TransmissionID::Transaction(
+            <CurrentNetwork as Network>::TransactionID::from(Field::rand(rng)),
+            <CurrentNetwork as Network>::TransmissionChecksum::from(rng.gen::<u128>()),
+        );
+
+        // Initialize the transmissions.
+        let solution_1 = Transmission::Solution(solution_data(rng));
+        let solution_2 = Transmission::Solution(solution_data(rng));
+        let transaction = Transmission::Transaction(transaction_data(rng));
+
+        // Insert the solution, check the offset should be decremented.
+        assert!(ready.insert_front(solution_id_1, solution_1.clone()));
+        assert_eq!(ready.offset, -1);
+
+        // Insert the transaction and the second solution, the offset should remain unchanged.
+        assert!(ready.insert(transaction_id, transaction.clone()));
+        assert_eq!(ready.offset, -1);
+        assert!(ready.insert(solution_id_2, solution_2.clone()));
+        assert_eq!(ready.offset, -1);
+
+        // Clear all solution transmissions.
+        ready.clear_solutions();
+        // Only the transaction should remain.
+        assert_eq!(ready.num_transmissions(), 1);
+        // The offset should now be reset to 0.
+        assert_eq!(ready.offset, 0);
+        // The remaining transmission is the transaction.
+        assert_eq!(ready.get(transaction_id), Some(transaction));
     }
 }
