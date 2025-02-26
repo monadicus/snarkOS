@@ -376,21 +376,6 @@ impl<N: Network, C: ConsensusStorage<N>> LedgerService<N> for CoreLedgerService<
     }
 
     fn compute_cost(&self, _transaction_id: N::TransactionID, transaction: Transaction<N>) -> Result<u64> {
-        // TODO: move to VM or ledger?
-        let process = self.ledger.vm().process();
-
-        // Collect the Optional Stack corresponding to the transaction if its an Execution.
-        let stack = if let Transaction::Execute(_, _, ref execution, _) = transaction {
-            // Get the root transition from the execution.
-            let root_transition = execution.peek()?;
-            // Get the stack from the process.
-            Some(process.read().get_stack(root_transition.program_id())?.clone())
-        } else {
-            None
-        };
-
-        use snarkvm::prelude::compute_cost;
-
-        compute_cost(&transaction, stack)
+        self.ledger.vm().compute_cost(&transaction)
     }
 }
