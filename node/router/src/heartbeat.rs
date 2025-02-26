@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use core::cmp::Ordering;
+use core::cmp::Reverse;
 
 use crate::{
     Outbound,
@@ -132,17 +132,9 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
             .filter(|peer| self.is_block_synced() || self.router().cache.num_outbound_block_requests(&peer.ip()) == 0) // Skip if you are syncing from this peer.
             .collect();
 
-        // Sort by priority
-        // 'greater' means earlier in the list and, thus, lower priority
-        removable.sort_by(|peer1, peer2| {
-            if peer1.is_client() && !peer2.is_client() {
-                Ordering::Greater
-            } else if !peer1.is_client() && peer2.is_client() {
-                Ordering::Less
-            } else {
-                peer2.last_seen().cmp(&peer1.last_seen())
-            }
-        });
+        // Sort by priority, where lowest priority will be at the beginning
+        // of the vector.
+        removable.sort_by_key(|peer| (peer.is_client(), Reverse(peer.last_seen())));
 
         removable
     }
