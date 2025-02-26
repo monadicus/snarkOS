@@ -13,10 +13,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use core::cmp::Reverse;
-
 use crate::{
     Outbound,
+    Peer,
     Router,
     messages::{DisconnectReason, Message, PeerRequest},
 };
@@ -112,9 +111,9 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
     /// Rules:
     ///     - Trusted peers and bootstrap nodes are not removable
     ///     - Peers that we are currently syncing with are not removable
-    ///     - Validators are considered higher priority than clients
+    ///     - Validators are considered higher priority than provers or clients
     ///     - Connections that have not been seen in a while are considered lower priority
-    fn get_removable_peers(&self) -> Vec<std::net::SocketAddr> {
+    fn get_removable_peers(&self) -> Vec<Peer<N>> {
         // The trusted peers (specified at runtime)
         let trusted = self.router().trusted_peers();
         // The hardcoded bootstrap nodes
@@ -124,8 +123,10 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
 
         // Sort by priority, where lowest priority will be at the beginning
         // of the vector.
+        // Note, that this gives equal priority to clients and provers, which
+        // we might want to change in the future
         let mut peers = self.router().get_connected_peers();
-        peers.sort_by_key(|peer| (peer.is_client(), Reverse(peer.last_seen())));
+        peers.sort_by_key(|peer| (peer.is_validator(), peer.last_seen()));
 
         // Deterimine which of the peers can be removed
         peers
@@ -136,7 +137,6 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
                   && !self.router().cache.contains_inbound_block_request(&peer.ip()) // This peer is currently syncing from us
                   && (is_block_synced || self.router().cache.num_outbound_block_requests(&peer.ip()) == 0) // We are currently syncing from this peer
             })
-            .map(|peer| peer.ip())
             .collect()
     }
 
@@ -155,7 +155,7 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
         }
 
         // Disconnect from the oldest connected peer, if one exists.
-        if let Some(oldest) = self.get_removable_peers().pop() {
+        if let Some(oldest) = self.get_removable_peers().pop().map(|peer| peer.ip()) {
             info!("Disconnecting from '{oldest}' (periodic refresh of peers)");
             let _ = self.send(oldest, Message::Disconnect(DisconnectReason::PeerRefresh.into()));
             // Disconnect from this peer.
@@ -202,31 +202,36 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
             let bootstrap = self.router().bootstrap_peers();
 
             // Determine the provers to disconnect from.
-            let prover_ips_to_disconnect = self
+            let provers_to_disconnect = self
                 .router()
                 .connected_provers()
                 .into_iter()
-                .filter(|peer_ip| !trusted.contains(peer_ip) && !bootstrap.contains(peer_ip))
+                .filter(|peer_addr| !trusted.contains(peer_addr) && !bootstrap.contains(peer_addr))
                 .choose_multiple(rng, num_surplus_provers);
 
             // Determine the clients and validators to disconnect from.
-            let peer_ips_to_disconnect = self.get_removable_peers().into_iter().take(num_surplus_clients_validators);
+            let peers_to_disconnect = self
+                .get_removable_peers()
+                .into_iter()
+                .filter(|peer| !peer.is_prover()) // remove provers as those are handled seperately
+                .map(|p| p.ip())
+                .take(num_surplus_clients_validators);
 
             // Proceed to send disconnect requests to these peers.
-            for peer_ip in peer_ips_to_disconnect.chain(prover_ips_to_disconnect) {
+            for peer_addr in peers_to_disconnect.chain(provers_to_disconnect) {
                 // TODO (howardwu): Remove this after specializing this function.
                 if self.router().node_type().is_prover() {
-                    if let Some(peer) = self.router().get_connected_peer(&peer_ip) {
+                    if let Some(peer) = self.router().get_connected_peer(&peer_addr) {
                         if peer.node_type().is_validator() {
                             continue;
                         }
                     }
                 }
 
-                info!("Disconnecting from '{peer_ip}' (exceeded maximum connections)");
-                self.send(peer_ip, Message::Disconnect(DisconnectReason::TooManyPeers.into()));
+                info!("Disconnecting from '{peer_addr}' (exceeded maximum connections)");
+                self.send(peer_addr, Message::Disconnect(DisconnectReason::TooManyPeers.into()));
                 // Disconnect from this peer.
-                self.router().disconnect(peer_ip);
+                self.router().disconnect(peer_addr);
             }
         }
 
