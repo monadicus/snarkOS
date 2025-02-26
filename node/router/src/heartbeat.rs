@@ -17,7 +17,6 @@ use core::cmp::Reverse;
 
 use crate::{
     Outbound,
-    Peer,
     Router,
     messages::{DisconnectReason, Message, PeerRequest},
 };
@@ -107,36 +106,38 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
         }
     }
 
-    /// Returns a sorted list of removable connected peers
-    /// where the first entry has the lowest priority and
-    /// the last one the highest.
+    /// Returns a sorted vector of network addresess of all removable connected peers
+    /// where the first entry has the lowest priority andthe last one the highest.
     ///
     /// Rules:
     ///     - Trusted peers and bootstrap nodes are not removable
     ///     - Peers that we are currently syncing with are not removable
     ///     - Validators are considered higher priority than clients
     ///     - Connections that have not been seen in a while are considered lower priority
-    fn get_removable_peers(&self) -> Vec<Peer<N>> {
+    fn get_removable_peers(&self) -> Vec<std::net::SocketAddr> {
         // The trusted peers (specified at runtime)
         let trusted = self.router().trusted_peers();
         // The hardcoded bootstrap nodes
         let bootstrap = self.router().bootstrap_peers();
-
-        // All peers that can be removed
-        let mut removable: Vec<_> = self
-            .router()
-            .get_connected_peers()
-            .into_iter()
-            .filter(|peer| !trusted.contains(&peer.ip())&& !bootstrap.contains(&peer.ip()))
-            .filter(|peer| !self.router().cache.contains_inbound_block_request(&peer.ip())) // Skip if the peer is syncing.
-            .filter(|peer| self.is_block_synced() || self.router().cache.num_outbound_block_requests(&peer.ip()) == 0) // Skip if you are syncing from this peer.
-            .collect();
+        // Are we synced already? (cache this here, so it does not need to be recomputed)
+        let is_block_synced = self.is_block_synced();
 
         // Sort by priority, where lowest priority will be at the beginning
         // of the vector.
-        removable.sort_by_key(|peer| (peer.is_client(), Reverse(peer.last_seen())));
+        let mut peers = self.router().get_connected_peers();
+        peers.sort_by_key(|peer| (peer.is_client(), Reverse(peer.last_seen())));
 
-        removable
+        // Deterimine which of the peers can be removed
+        peers
+            .into_iter()
+            .filter(|peer| {
+                !trusted.contains(&peer.ip()) // Always keep trusted nodes
+                  && !bootstrap.contains(&peer.ip()) // Always keep bootstrap nodes
+                  && !self.router().cache.contains_inbound_block_request(&peer.ip()) // This peer is currently syncing from us
+                  && (is_block_synced || self.router().cache.num_outbound_block_requests(&peer.ip()) == 0) // We are currently syncing from this peer
+            })
+            .map(|peer| peer.ip())
+            .collect()
     }
 
     /// This function removes the peer that we have not heard from the longest,
@@ -154,7 +155,7 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
         }
 
         // Disconnect from the oldest connected peer, if one exists.
-        if let Some(oldest) = self.get_removable_peers().pop().map(|p| p.ip()) {
+        if let Some(oldest) = self.get_removable_peers().pop() {
             info!("Disconnecting from '{oldest}' (periodic refresh of peers)");
             let _ = self.send(oldest, Message::Disconnect(DisconnectReason::PeerRefresh.into()));
             // Disconnect from this peer.
@@ -209,8 +210,7 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
                 .choose_multiple(rng, num_surplus_provers);
 
             // Determine the clients and validators to disconnect from.
-            let peer_ips_to_disconnect =
-                self.get_removable_peers().into_iter().map(|p| p.ip()).take(num_surplus_clients_validators);
+            let peer_ips_to_disconnect = self.get_removable_peers().into_iter().take(num_surplus_clients_validators);
 
             // Proceed to send disconnect requests to these peers.
             for peer_ip in peer_ips_to_disconnect.chain(prover_ips_to_disconnect) {
