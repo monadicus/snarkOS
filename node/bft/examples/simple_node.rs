@@ -19,12 +19,15 @@ extern crate tracing;
 use snarkos_account::Account;
 use snarkos_node_bft::{
     BFT,
+    Gateway,
     MEMORY_POOL_PORT,
     Primary,
     helpers::{ConsensusReceiver, PrimarySender, Storage, init_consensus_channels, init_primary_channels},
 };
 use snarkos_node_bft_ledger_service::TranslucentLedgerService;
 use snarkos_node_bft_storage_service::BFTMemoryService;
+use snarkos_node_sync::{BlockSync, BlockSyncMode};
+use snarkos_node_tcp::P2P;
 use snarkvm::{
     console::{account::PrivateKey, algorithms::BHP256, types::Address},
     ledger::{
@@ -139,8 +142,10 @@ pub async fn start_bft(
     let (consensus_sender, consensus_receiver) = init_consensus_channels::<CurrentNetwork>();
     // Initialize the consensus receiver handler.
     consensus_handler(consensus_receiver);
+    let gateway = Gateway::new(account.clone(), storage.clone(), ledger.clone(), None, &[], None)?;
+    let block_sync = Arc::new(BlockSync::new(BlockSyncMode::Gateway, ledger.clone(), gateway.tcp().clone()));
     // Initialize the BFT instance.
-    let mut bft = BFT::<CurrentNetwork>::new(account, storage, ledger, ip, &trusted_validators, dev)?;
+    let mut bft = BFT::<CurrentNetwork>::new(block_sync, account, storage, ledger, ip, &trusted_validators, dev)?;
     // Run the BFT instance.
     bft.run(Some(consensus_sender), sender.clone(), receiver).await?;
     // Retrieve the BFT's primary.
@@ -177,7 +182,10 @@ pub async fn start_primary(
     // Initialize the trusted validators.
     let trusted_validators = trusted_validators(node_id, num_nodes, peers);
     // Initialize the primary instance.
-    let mut primary = Primary::<CurrentNetwork>::new(account, storage, ledger, ip, &trusted_validators, dev)?;
+    let gateway = Gateway::new(account.clone(), storage.clone(), ledger.clone(), None, &[], None).unwrap();
+    let block_sync = Arc::new(BlockSync::new(BlockSyncMode::Gateway, ledger.clone(), gateway.tcp().clone()));
+    let mut primary =
+        Primary::<CurrentNetwork>::new(block_sync, account, storage, ledger, ip, &trusted_validators, dev)?;
     // Run the primary instance.
     primary.run(None, sender.clone(), receiver).await?;
     // Handle OS signals.

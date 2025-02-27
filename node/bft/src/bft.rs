@@ -30,6 +30,7 @@ use crate::{
 };
 use snarkos_account::Account;
 use snarkos_node_bft_ledger_service::LedgerService;
+use snarkos_node_sync::BlockSync;
 use snarkvm::{
     console::account::Address,
     ledger::{
@@ -79,6 +80,7 @@ pub struct BFT<N: Network> {
 impl<N: Network> BFT<N> {
     /// Initializes a new instance of the BFT.
     pub fn new(
+        block_sync: Arc<BlockSync<N>>,
         account: Account<N>,
         storage: Storage<N>,
         ledger: Arc<dyn LedgerService<N>>,
@@ -87,7 +89,7 @@ impl<N: Network> BFT<N> {
         dev: Option<u16>,
     ) -> Result<Self> {
         Ok(Self {
-            primary: Primary::new(account, storage, ledger, ip, trusted_validators, dev)?,
+            primary: Primary::new(block_sync, account, storage, ledger, ip, trusted_validators, dev)?,
             dag: Default::default(),
             leader_certificate: Default::default(),
             leader_certificate_timer: Default::default(),
@@ -892,10 +894,12 @@ impl<N: Network> BFT<N> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{BFT, MAX_LEADER_CERTIFICATE_DELAY_IN_SECS, helpers::Storage};
+    use crate::{BFT, Gateway, MAX_LEADER_CERTIFICATE_DELAY_IN_SECS, helpers::Storage};
     use snarkos_account::Account;
     use snarkos_node_bft_ledger_service::MockLedgerService;
     use snarkos_node_bft_storage_service::BFTMemoryService;
+    use snarkos_node_sync::{BlockSync, BlockSyncMode};
+    use snarkos_node_tcp::P2P;
     use snarkvm::{
         console::account::{Address, PrivateKey},
         ledger::{
@@ -964,8 +968,12 @@ mod tests {
         let storage = Storage::new(ledger.clone(), Arc::new(BFTMemoryService::new()), 10);
         // Initialize the account.
         let account = Account::new(rng)?;
+        // Initialize the gateway.
+        let gateway = Gateway::new(account.clone(), storage.clone(), ledger.clone(), None, &[], None)?;
+        // Create the block synchronization logic.
+        let block_sync = Arc::new(BlockSync::new(BlockSyncMode::Gateway, ledger.clone(), gateway.tcp().clone()));
         // Initialize the BFT.
-        let bft = BFT::new(account.clone(), storage.clone(), ledger.clone(), None, &[], None)?;
+        let bft = BFT::new(block_sync, account.clone(), storage.clone(), ledger.clone(), None, &[], None)?;
         assert!(bft.is_timer_expired());
         // Ensure this call succeeds on an odd round.
         let result = bft.is_leader_quorum_or_nonleaders_available(1);
@@ -1000,7 +1008,9 @@ mod tests {
         assert_eq!(storage.max_gc_rounds(), 10);
 
         // Initialize the BFT.
-        let bft = BFT::new(account, storage, ledger, None, &[], None)?;
+        let gateway = Gateway::new(account.clone(), storage.clone(), ledger.clone(), None, &[], None)?;
+        let block_sync = Arc::new(BlockSync::new(BlockSyncMode::Gateway, ledger.clone(), gateway.tcp().clone()));
+        let bft = BFT::new(block_sync, account, storage, ledger, None, &[], None)?;
         assert!(bft.is_timer_expired()); // 0 + 5 < now()
 
         // Store is at round 1, and we are checking for round 2.
@@ -1022,7 +1032,9 @@ mod tests {
         assert_eq!(storage.max_gc_rounds(), 10);
 
         // Initialize the BFT.
-        let bft = BFT::new(account, storage, ledger, None, &[], None)?;
+        let gateway = Gateway::new(account.clone(), storage.clone(), ledger.clone(), None, &[], None)?;
+        let block_sync = Arc::new(BlockSync::new(BlockSyncMode::Gateway, ledger.clone(), gateway.tcp().clone()));
+        let bft = BFT::new(block_sync, account, storage, ledger, None, &[], None)?;
         assert!(bft.is_timer_expired()); // 0 + 5 < now()
 
         // Ensure this call fails on an even round.
@@ -1062,7 +1074,9 @@ mod tests {
         // Initialize the account.
         let account = Account::new(rng)?;
         // Initialize the BFT.
-        let bft = BFT::new(account.clone(), storage.clone(), ledger.clone(), None, &[], None)?;
+        let gateway = Gateway::new(account.clone(), storage.clone(), ledger.clone(), None, &[], None)?;
+        let block_sync = Arc::new(BlockSync::new(BlockSyncMode::Gateway, ledger.clone(), gateway.tcp().clone()));
+        let bft = BFT::new(block_sync, account.clone(), storage.clone(), ledger.clone(), None, &[], None)?;
         // Set the leader certificate.
         let leader_certificate = sample_batch_certificate_for_round(2, rng);
         *bft.leader_certificate.write() = Some(leader_certificate);
@@ -1074,7 +1088,9 @@ mod tests {
         assert!(result);
 
         // Initialize a new BFT.
-        let bft_timer = BFT::new(account.clone(), storage.clone(), ledger.clone(), None, &[], None)?;
+        let gateway = Gateway::new(account.clone(), storage.clone(), ledger.clone(), None, &[], None)?;
+        let block_sync = Arc::new(BlockSync::new(BlockSyncMode::Gateway, ledger.clone(), gateway.tcp().clone()));
+        let bft_timer = BFT::new(block_sync, account.clone(), storage.clone(), ledger.clone(), None, &[], None)?;
         // If the leader certificate is not set and the timer has not expired, we are not ready for the next round.
         let result = bft_timer.is_even_round_ready_for_next_round(certificates.clone(), committee.clone(), 2);
         if !bft_timer.is_timer_expired() {
@@ -1105,7 +1121,9 @@ mod tests {
         assert_eq!(storage.max_gc_rounds(), 10);
 
         // Initialize the BFT.
-        let bft = BFT::new(account, storage, ledger, None, &[], None)?;
+        let gateway = Gateway::new(account.clone(), storage.clone(), ledger.clone(), None, &[], None)?;
+        let block_sync = Arc::new(BlockSync::new(BlockSyncMode::Gateway, ledger.clone(), gateway.tcp().clone()));
+        let bft = BFT::new(block_sync, account, storage, ledger, None, &[], None)?;
 
         // Ensure this call fails on an odd round.
         let result = bft.update_leader_certificate_to_even_round(1);
@@ -1123,7 +1141,9 @@ mod tests {
         assert_eq!(storage.max_gc_rounds(), 10);
 
         // Initialize the BFT.
-        let bft = BFT::new(account, storage, ledger, None, &[], None)?;
+        let gateway = Gateway::new(account.clone(), storage.clone(), ledger.clone(), None, &[], None)?;
+        let block_sync = Arc::new(BlockSync::new(BlockSyncMode::Gateway, ledger.clone(), gateway.tcp().clone()));
+        let bft = BFT::new(block_sync, account, storage, ledger, None, &[], None)?;
 
         // Ensure this call succeeds on an even round.
         let result = bft.update_leader_certificate_to_even_round(6);
@@ -1175,7 +1195,9 @@ mod tests {
 
         // Initialize the BFT.
         let account = Account::new(rng)?;
-        let bft = BFT::new(account, storage.clone(), ledger, None, &[], None)?;
+        let gateway = Gateway::new(account.clone(), storage.clone(), ledger.clone(), None, &[], None)?;
+        let block_sync = Arc::new(BlockSync::new(BlockSyncMode::Gateway, ledger.clone(), gateway.tcp().clone()));
+        let bft = BFT::new(block_sync, account, storage.clone(), ledger, None, &[], None)?;
 
         // Set the leader certificate.
         *bft.leader_certificate.write() = Some(leader_certificate);
@@ -1213,7 +1235,9 @@ mod tests {
             // Initialize the storage.
             let storage = Storage::new(ledger.clone(), Arc::new(BFTMemoryService::new()), 1);
             // Initialize the BFT.
-            let bft = BFT::new(account.clone(), storage, ledger.clone(), None, &[], None)?;
+            let gateway = Gateway::new(account.clone(), storage.clone(), ledger.clone(), None, &[], None)?;
+            let block_sync = Arc::new(BlockSync::new(BlockSyncMode::Gateway, ledger.clone(), gateway.tcp().clone()));
+            let bft = BFT::new(block_sync, account.clone(), storage, ledger.clone(), None, &[], None)?;
 
             // Insert a mock DAG in the BFT.
             *bft.dag.write() = crate::helpers::dag::test_helpers::mock_dag_with_modified_last_committed_round(3);
@@ -1243,7 +1267,9 @@ mod tests {
             // Initialize the storage.
             let storage = Storage::new(ledger.clone(), Arc::new(BFTMemoryService::new()), 1);
             // Initialize the BFT.
-            let bft = BFT::new(account, storage, ledger, None, &[], None)?;
+            let gateway = Gateway::new(account.clone(), storage.clone(), ledger.clone(), None, &[], None)?;
+            let block_sync = Arc::new(BlockSync::new(BlockSyncMode::Gateway, ledger.clone(), gateway.tcp().clone()));
+            let bft = BFT::new(block_sync, account, storage, ledger, None, &[], None)?;
 
             // Insert a mock DAG in the BFT.
             *bft.dag.write() = crate::helpers::dag::test_helpers::mock_dag_with_modified_last_committed_round(2);
@@ -1301,7 +1327,9 @@ mod tests {
         /* Test missing previous certificate. */
 
         // Initialize the BFT.
-        let bft = BFT::new(account, storage, ledger, None, &[], None)?;
+        let gateway = Gateway::new(account.clone(), storage.clone(), ledger.clone(), None, &[], None)?;
+        let block_sync = Arc::new(BlockSync::new(BlockSyncMode::Gateway, ledger.clone(), gateway.tcp().clone()));
+        let bft = BFT::new(block_sync, account, storage, ledger, None, &[], None)?;
 
         // The expected error message.
         let error_msg = format!(
@@ -1362,7 +1390,9 @@ mod tests {
 
         // Initialize the BFT.
         let account = Account::new(rng)?;
-        let bft = BFT::new(account, storage.clone(), ledger, None, &[], None)?;
+        let gateway = Gateway::new(account.clone(), storage.clone(), ledger.clone(), None, &[], None)?;
+        let block_sync = Arc::new(BlockSync::new(BlockSyncMode::Gateway, ledger.clone(), gateway.tcp().clone()));
+        let bft = BFT::new(block_sync, account, storage.clone(), ledger, None, &[], None)?;
         // Insert a mock DAG in the BFT.
         *bft.dag.write() = crate::helpers::dag::test_helpers::mock_dag_with_modified_last_committed_round(commit_round);
 
@@ -1428,7 +1458,9 @@ mod tests {
 
         // Initialize the BFT.
         let account = Account::new(rng)?;
-        let bft = BFT::new(account.clone(), storage, ledger.clone(), None, &[], None)?;
+        let gateway = Gateway::new(account.clone(), storage.clone(), ledger.clone(), None, &[], None)?;
+        let block_sync = Arc::new(BlockSync::new(BlockSyncMode::Gateway, ledger.clone(), gateway.tcp().clone()));
+        let bft = BFT::new(block_sync, account.clone(), storage, ledger.clone(), None, &[], None)?;
 
         // Insert a mock DAG in the BFT.
         *bft.dag.write() = crate::helpers::dag::test_helpers::mock_dag_with_modified_last_committed_round(commit_round);
@@ -1446,7 +1478,9 @@ mod tests {
         // Initialize a new instance of storage.
         let storage_2 = Storage::new(ledger.clone(), Arc::new(BFTMemoryService::new()), max_gc_rounds);
         // Initialize a new instance of BFT.
-        let bootup_bft = BFT::new(account, storage_2, ledger, None, &[], None)?;
+        let gateway = Gateway::new(account.clone(), storage_2.clone(), ledger.clone(), None, &[], None)?;
+        let block_sync = Arc::new(BlockSync::new(BlockSyncMode::Gateway, ledger.clone(), gateway.tcp().clone()));
+        let bootup_bft = BFT::new(block_sync, account, storage_2, ledger, None, &[], None)?;
 
         // Sync the BFT DAG at bootup.
         bootup_bft.sync_bft_dag_at_bootup(certificates.clone()).await;
@@ -1600,7 +1634,9 @@ mod tests {
 
         // Initialize the BFT without bootup.
         let account = Account::new(rng)?;
-        let bft = BFT::new(account.clone(), storage, ledger.clone(), None, &[], None)?;
+        let gateway = Gateway::new(account.clone(), storage.clone(), ledger.clone(), None, &[], None)?;
+        let block_sync = Arc::new(BlockSync::new(BlockSyncMode::Gateway, ledger.clone(), gateway.tcp().clone()));
+        let bft = BFT::new(block_sync, account.clone(), storage.clone(), ledger.clone(), None, &[], None)?;
 
         // Insert a mock DAG in the BFT without bootup.
         *bft.dag.write() = crate::helpers::dag::test_helpers::mock_dag_with_modified_last_committed_round(0);
@@ -1625,7 +1661,9 @@ mod tests {
         let bootup_storage = Storage::new(ledger.clone(), Arc::new(BFTMemoryService::new()), max_gc_rounds);
 
         // Initialize a new instance of BFT with bootup.
-        let bootup_bft = BFT::new(account, bootup_storage.clone(), ledger.clone(), None, &[], None)?;
+        let gateway = Gateway::new(account.clone(), storage.clone(), ledger.clone(), None, &[], None)?;
+        let block_sync = Arc::new(BlockSync::new(BlockSyncMode::Gateway, ledger.clone(), gateway.tcp().clone()));
+        let bootup_bft = BFT::new(block_sync, account, bootup_storage.clone(), ledger.clone(), None, &[], None)?;
 
         // Sync the BFT DAG at bootup.
         bootup_bft.sync_bft_dag_at_bootup(pre_shutdown_certificates.clone()).await;
@@ -1803,7 +1841,10 @@ mod tests {
         }
         // Initialize the bootup BFT.
         let account = Account::new(rng)?;
-        let bootup_bft = BFT::new(account.clone(), storage.clone(), ledger.clone(), None, &[], None)?;
+        // Initialize the block synchronization logic.
+        let gateway = Gateway::new(account.clone(), storage.clone(), ledger.clone(), None, &[], None)?;
+        let block_sync = Arc::new(BlockSync::new(BlockSyncMode::Gateway, ledger.clone(), gateway.tcp().clone()));
+        let bootup_bft = BFT::new(block_sync, account.clone(), storage.clone(), ledger.clone(), None, &[], None)?;
         // Insert a mock DAG in the BFT without bootup.
         *bootup_bft.dag.write() = crate::helpers::dag::test_helpers::mock_dag_with_modified_last_committed_round(0);
         // Sync the BFT DAG at bootup.

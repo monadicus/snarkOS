@@ -44,7 +44,7 @@ use crate::{
 use snarkos_account::Account;
 use snarkos_node_bft_events::PrimaryPing;
 use snarkos_node_bft_ledger_service::LedgerService;
-use snarkos_node_sync::DUMMY_SELF_IP;
+use snarkos_node_sync::{BlockSync, DUMMY_SELF_IP};
 use snarkvm::{
     console::{
         prelude::*,
@@ -110,6 +110,7 @@ impl<N: Network> Primary<N> {
 
     /// Initializes a new primary instance.
     pub fn new(
+        block_sync: Arc<BlockSync<N>>,
         account: Account<N>,
         storage: Storage<N>,
         ledger: Arc<dyn LedgerService<N>>,
@@ -120,7 +121,7 @@ impl<N: Network> Primary<N> {
         // Initialize the gateway.
         let gateway = Gateway::new(account, storage.clone(), ledger.clone(), ip, trusted_validators, dev)?;
         // Initialize the sync module.
-        let sync = Sync::new(gateway.clone(), storage.clone(), ledger.clone());
+        let sync = Sync::new(block_sync, gateway.clone(), storage.clone(), ledger.clone());
 
         // Initialize the primary instance.
         Ok(Self {
@@ -1766,6 +1767,8 @@ mod tests {
     use super::*;
     use snarkos_node_bft_ledger_service::MockLedgerService;
     use snarkos_node_bft_storage_service::BFTMemoryService;
+    use snarkos_node_sync::{BlockSync, BlockSyncMode};
+    use snarkos_node_tcp::P2P;
     use snarkvm::{
         ledger::committee::{Committee, MIN_VALIDATOR_STAKE},
         prelude::{Address, Signature},
@@ -1802,7 +1805,9 @@ mod tests {
         let storage = Storage::new(ledger.clone(), Arc::new(BFTMemoryService::new()), 10);
 
         // Initialize the primary.
-        let mut primary = Primary::new(account, storage, ledger, None, &[], None).unwrap();
+        let gateway = Gateway::new(account.clone(), storage.clone(), ledger.clone(), None, &[], None).unwrap();
+        let block_sync = Arc::new(BlockSync::new(BlockSyncMode::Gateway, ledger.clone(), gateway.tcp().clone()));
+        let mut primary = Primary::new(block_sync, account, storage, ledger, None, &[], None).unwrap();
 
         // Construct a worker instance.
         primary.workers = Arc::from([Worker::new(

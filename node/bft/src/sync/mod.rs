@@ -23,8 +23,7 @@ use crate::{
 };
 use snarkos_node_bft_events::{CertificateRequest, CertificateResponse, Event};
 use snarkos_node_bft_ledger_service::LedgerService;
-use snarkos_node_sync::{BlockSync, BlockSyncMode, locators::BlockLocators};
-use snarkos_node_tcp::P2P;
+use snarkos_node_sync::{BlockSync, locators::BlockLocators};
 use snarkvm::{
     console::{network::Network, types::Field},
     ledger::{authority::Authority, block::Block, narwhal::BatchCertificate},
@@ -48,8 +47,8 @@ pub struct Sync<N: Network> {
     storage: Storage<N>,
     /// The ledger service.
     ledger: Arc<dyn LedgerService<N>>,
-    /// The block sync module.
-    block_sync: BlockSync<N>,
+    /// The block synchronization logic.
+    block_sync: Arc<BlockSync<N>>,
     /// The pending certificates queue.
     pending: Arc<Pending<Field<N>, BatchCertificate<N>>>,
     /// The BFT sender.
@@ -66,9 +65,12 @@ pub struct Sync<N: Network> {
 
 impl<N: Network> Sync<N> {
     /// Initializes a new sync instance.
-    pub fn new(gateway: Gateway<N>, storage: Storage<N>, ledger: Arc<dyn LedgerService<N>>) -> Self {
-        // Initialize the block sync module.
-        let block_sync = BlockSync::new(BlockSyncMode::Gateway, ledger.clone(), gateway.tcp().clone());
+    pub fn new(
+        block_sync: Arc<BlockSync<N>>,
+        gateway: Gateway<N>,
+        storage: Storage<N>,
+        ledger: Arc<dyn LedgerService<N>>,
+    ) -> Self {
         // Return the sync instance.
         Self {
             gateway,
@@ -608,7 +610,7 @@ impl<N: Network> Sync<N> {
     }
 
     /// Returns `true` if the node is in gateway mode.
-    pub const fn is_gateway_mode(&self) -> bool {
+    pub fn is_gateway_mode(&self) -> bool {
         self.block_sync.mode().is_gateway()
     }
 
@@ -719,7 +721,10 @@ mod tests {
     use super::*;
 
     use crate::{helpers::now, ledger_service::CoreLedgerService, storage_service::BFTMemoryService};
+
     use snarkos_account::Account;
+    use snarkos_node_sync::{BlockSync, BlockSyncMode};
+    use snarkos_node_tcp::P2P;
     use snarkvm::{
         console::{
             account::{Address, PrivateKey},
@@ -948,8 +953,11 @@ mod tests {
         ));
         // Initialize the gateway.
         let gateway = Gateway::new(account.clone(), storage.clone(), syncing_ledger.clone(), None, &[], None)?;
+        // Initialize the block synchronization logic.
+        let block_sync =
+            Arc::new(BlockSync::new(BlockSyncMode::Gateway, syncing_ledger.clone(), gateway.tcp().clone()));
         // Initialize the sync module.
-        let sync = Sync::new(gateway.clone(), storage.clone(), syncing_ledger.clone());
+        let sync = Sync::new(block_sync, gateway.clone(), storage.clone(), syncing_ledger.clone());
         // Try to sync block 1.
         sync.sync_storage_with_block(block_1).await?;
         assert_eq!(syncing_ledger.latest_block_height(), 1);

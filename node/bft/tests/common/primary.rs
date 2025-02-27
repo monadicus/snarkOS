@@ -21,11 +21,14 @@ use crate::common::{
 use snarkos_account::Account;
 use snarkos_node_bft::{
     BFT,
+    Gateway,
     MAX_BATCH_DELAY_IN_MS,
     Primary,
     helpers::{PrimarySender, Storage, init_primary_channels},
 };
 use snarkos_node_bft_storage_service::BFTMemoryService;
+use snarkos_node_sync::{BlockSync, BlockSyncMode};
+use snarkos_node_tcp::P2P;
 use snarkvm::{
     console::{
         account::{Address, PrivateKey},
@@ -159,13 +162,19 @@ impl TestNetwork {
                 Arc::new(BFTMemoryService::new()),
                 BatchHeader::<CurrentNetwork>::MAX_GC_ROUNDS as u64,
             );
+            // Initialize the gateway.
+            let gateway = Gateway::new(account.clone(), storage.clone(), ledger.clone(), None, &[], None).unwrap();
+            // Initialize the block synchronization logic.
+            let block_sync = Arc::new(BlockSync::new(BlockSyncMode::Gateway, ledger.clone(), gateway.tcp().clone()));
 
             let (primary, bft) = if config.bft {
-                let bft = BFT::<CurrentNetwork>::new(account, storage, ledger, None, &[], Some(id as u16)).unwrap();
+                let bft = BFT::<CurrentNetwork>::new(block_sync, account, storage, ledger, None, &[], Some(id as u16))
+                    .unwrap();
                 (bft.primary().clone(), Some(bft))
             } else {
                 let primary =
-                    Primary::<CurrentNetwork>::new(account, storage, ledger, None, &[], Some(id as u16)).unwrap();
+                    Primary::<CurrentNetwork>::new(block_sync, account, storage, ledger, None, &[], Some(id as u16))
+                        .unwrap();
                 (primary, None)
             };
 
