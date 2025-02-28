@@ -46,6 +46,9 @@ pub use signed_proposals::*;
 pub mod storage;
 pub use storage::*;
 
+pub mod telemetry;
+pub use telemetry::*;
+
 pub mod timestamp;
 pub use timestamp::*;
 
