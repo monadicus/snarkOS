@@ -16,6 +16,7 @@
 #[macro_use]
 extern crate tracing;
 
+use aleo_std::StorageMode;
 use snarkos_account::Account;
 use snarkos_node_bft::{
     BFT,
@@ -129,9 +130,9 @@ pub async fn start_bft(
         BatchHeader::<CurrentNetwork>::MAX_GC_ROUNDS as u64,
     );
     // Initialize the gateway IP and dev mode.
-    let (ip, dev) = match peers.get(&node_id) {
-        Some(ip) => (Some(*ip), None),
-        None => (None, Some(node_id)),
+    let (ip, storage_mode) = match peers.get(&node_id) {
+        Some(ip) => (Some(*ip), StorageMode::Production),
+        None => (None, StorageMode::Development(node_id)),
     };
     // Initialize the trusted validators.
     let trusted_validators = trusted_validators(node_id, num_nodes, peers);
@@ -140,7 +141,7 @@ pub async fn start_bft(
     // Initialize the consensus receiver handler.
     consensus_handler(consensus_receiver);
     // Initialize the BFT instance.
-    let mut bft = BFT::<CurrentNetwork>::new(account, storage, ledger, ip, &trusted_validators, dev)?;
+    let mut bft = BFT::<CurrentNetwork>::new(account, storage, ledger, ip, &trusted_validators, storage_mode)?;
     // Run the BFT instance.
     bft.run(Some(consensus_sender), sender.clone(), receiver).await?;
     // Retrieve the BFT's primary.
@@ -170,14 +171,14 @@ pub async fn start_primary(
         BatchHeader::<CurrentNetwork>::MAX_GC_ROUNDS as u64,
     );
     // Initialize the gateway IP and dev mode.
-    let (ip, dev) = match peers.get(&node_id) {
-        Some(ip) => (Some(*ip), None),
-        None => (None, Some(node_id)),
+    let (ip, storage_mode) = match peers.get(&node_id) {
+        Some(ip) => (Some(*ip), StorageMode::Production),
+        None => (None, StorageMode::Development(node_id)),
     };
     // Initialize the trusted validators.
     let trusted_validators = trusted_validators(node_id, num_nodes, peers);
     // Initialize the primary instance.
-    let mut primary = Primary::<CurrentNetwork>::new(account, storage, ledger, ip, &trusted_validators, dev)?;
+    let mut primary = Primary::<CurrentNetwork>::new(account, storage, ledger, ip, &trusted_validators, storage_mode)?;
     // Run the primary instance.
     primary.run(None, sender.clone(), receiver).await?;
     // Handle OS signals.
