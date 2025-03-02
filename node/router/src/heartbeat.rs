@@ -154,11 +154,12 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
             return;
         }
 
-        // Disconnect from the oldest connected peer, if one exists.
-        if let Some(oldest) = self.get_removable_peers().pop().map(|peer| peer.ip()) {
+        // Disconnect from the oldest connected peer, which is the first entry in the list
+        // of removable peers.
+        // Do nothing, if the list is empty.
+        if let Some(oldest) = self.get_removable_peers().into_iter().map(|peer| peer.ip()).next() {
             info!("Disconnecting from '{oldest}' (periodic refresh of peers)");
             let _ = self.send(oldest, Message::Disconnect(DisconnectReason::PeerRefresh.into()));
-            // Disconnect from this peer.
             self.router().disconnect(oldest);
         }
     }
