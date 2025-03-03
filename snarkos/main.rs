@@ -51,13 +51,12 @@ fn main() -> anyhow::Result<()> {
 fn check_for_version() {
     if let Some(first_arg) = env::args().nth(1) {
         if ["--version", "-V"].contains(&&*first_arg) {
-            let version = PKG_VERSION;
             let branch = GIT_HEAD_REF.unwrap_or("unknown_branch");
             let commit = GIT_COMMIT_HASH.unwrap_or("unknown_commit");
             let mut features = FEATURES_LOWERCASE_STR.to_owned();
             features.retain(|c| c != ' ');
 
-            println!("snarkos {version} {branch} {commit} features=[{features}]");
+            println!("snarkos {branch} {commit} features=[{features}]");
 
             exit(0);
         }
