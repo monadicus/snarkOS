@@ -15,7 +15,7 @@ keywords = [
 categories = [ "cryptography", "cryptography::cryptocurrencies", "os" ]
 license = "Apache-2.0"
 edition = "2021"
-rust-version = "1.81.0" # Attention - Change the MSRV in rust-toolchain and in .circleci/config.yml as well
+rust-version = "1.83.0" # Attention - Change the MSRV in rust-toolchain and in .circleci/config.yml as well
 
 [workspace]
 members = [
@@ -46,9 +46,9 @@ default-features = false
 
 [workspace.dependencies.snarkvm] # If this is updated, the rev in `node/rest/Cargo.toml` must be updated as well.
 #path = "../snarkVM"
-#git = "https://github.com/ProvableHQ/snarkVM.git"
-#rev = "32bf9ab"
-version = "=1.3.0"
+git = "https://github.com/ProvableHQ/snarkVM.git"
+rev = "59776cb"
+#version = "=1.3.0"
 features = [ "circuit", "console", "rocks" ]
 
 [[bin]]
@@ -56,7 +56,7 @@ name = "snarkos"
 path = "snarkos/main.rs"
 
 [features]
-metrics = [ "snarkos-node-metrics", "snarkos-node/metrics" ]
+default = [ "snarkos-node-metrics", "snarkos-node/metrics", "snarkos-cli/metrics" ]
 history = [ "snarkos-node/history" ]
 test_targets = [ "snarkos-cli/test_targets" ]
 
@@ -150,7 +150,7 @@ debug-assertions = false
 
 [profile.dev]
 opt-level = 2
-lto = "thin"
+lto = "off"
 incremental = true
 
 [profile.test]

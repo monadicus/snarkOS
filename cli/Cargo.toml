@@ -17,7 +17,7 @@ license = "Apache-2.0"
 edition = "2021"
 
 [features]
-default = [ "snarkos-node/metrics" ]
+metrics = [ "dep:metrics", "snarkos-node/metrics" ]
 test_targets = [ "snarkvm/test_targets" ]
 
 [dependencies.aleo-std]
@@ -50,6 +50,7 @@ features = [ "serde", "rayon" ]
 package = "snarkos-node-metrics"
 path = "../node/metrics"
 version = "=3.3.2"
+optional = true
 
 [dependencies.num_cpus]
 version = "1"
@@ -112,7 +113,7 @@ version = "3"
 version = "0.3"
 
 [dependencies.thiserror]
-version = "1.0"
+version = "2.0.11"
 
 [dependencies.tokio]
 version = "1.28"
