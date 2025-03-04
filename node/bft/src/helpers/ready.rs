@@ -82,7 +82,6 @@ impl<N: Network> Ready<N> {
 
     /// Returns the transmissions in the ready queue.
     pub fn transmissions(&self) -> IndexMap<TransmissionID<N>, Transmission<N>> {
-        // TODO: return iterator?
         self.transmissions.iter().cloned().collect()
     }
 

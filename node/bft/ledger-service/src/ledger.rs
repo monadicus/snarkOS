@@ -375,6 +375,7 @@ impl<N: Network, C: ConsensusStorage<N>> LedgerService<N> for CoreLedgerService<
         Ok(())
     }
 
+    /// Computes the execution cost in microcredits for a transaction.
     fn compute_cost(&self, _transaction_id: N::TransactionID, transaction: Transaction<N>) -> Result<u64> {
         self.ledger.vm().compute_cost(&transaction)
     }
