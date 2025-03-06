@@ -489,11 +489,12 @@ impl<N: Network> Sync<N> {
             let commit_round = leader_certificate.round();
             let certificate_round = commit_round.saturating_add(1);
 
-            // Get the committee lookback for the commit round.
-            let committee_lookback = self.ledger.get_committee_lookback_for_round(commit_round)?;
-            // Retrieve all of the certificates for the **certificate** round.
+            // Get the committee lookback for the round just after the leader.
+            let committee_lookback = self.ledger.get_committee_lookback_for_round(certificate_round)?;
+            // Retrieve all of the certificates for the round just after the leader.
             let certificates = self.storage.get_certificates_for_round(certificate_round);
-            // Construct a set over the authors who included the leader's certificate in the certificate round.
+            // Construct a set over the authors, at the round just after the leader,
+            // who included the leader's certificate in their previous certificate IDs.
             let authors = certificates
                 .iter()
                 .filter_map(|c| match c.previous_certificate_ids().contains(&leader_certificate.id()) {
