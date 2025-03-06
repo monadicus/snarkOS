@@ -207,7 +207,7 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
                 .router()
                 .connected_provers()
                 .into_iter()
-                .filter(|peer_addr| !trusted.contains(peer_addr) && !bootstrap.contains(peer_addr))
+                .filter(|peer_ip| !trusted.contains(peer_ip) && !bootstrap.contains(peer_ip))
                 .choose_multiple(rng, num_surplus_provers);
 
             // Determine the clients and validators to disconnect from.
@@ -219,20 +219,20 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
                 .take(num_surplus_clients_validators);
 
             // Proceed to send disconnect requests to these peers.
-            for peer_addr in peers_to_disconnect.chain(provers_to_disconnect) {
+            for peer_ip in peers_to_disconnect.chain(provers_to_disconnect) {
                 // TODO (howardwu): Remove this after specializing this function.
                 if self.router().node_type().is_prover() {
-                    if let Some(peer) = self.router().get_connected_peer(&peer_addr) {
+                    if let Some(peer) = self.router().get_connected_peer(&peer_ip) {
                         if peer.node_type().is_validator() {
                             continue;
                         }
                     }
                 }
 
-                info!("Disconnecting from '{peer_addr}' (exceeded maximum connections)");
-                self.send(peer_addr, Message::Disconnect(DisconnectReason::TooManyPeers.into()));
+                info!("Disconnecting from '{peer_ip}' (exceeded maximum connections)");
+                self.send(peer_ip, Message::Disconnect(DisconnectReason::TooManyPeers.into()));
                 // Disconnect from this peer.
-                self.router().disconnect(peer_addr);
+                self.router().disconnect(peer_ip);
             }
         }
 
@@ -297,11 +297,11 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
     /// This function attempts to connect to any disconnected trusted peers.
     fn handle_trusted_peers(&self) {
         // Ensure that the trusted nodes are connected.
-        for peer_addr in self.router().trusted_peers() {
+        for peer_ip in self.router().trusted_peers() {
             // If the peer is not connected, attempt to connect to it.
-            if !self.router().is_connected(peer_addr) {
-                debug!("Attempting to (re-)connect to trusted peer `{peer_addr}`");
-                self.router().connect(*peer_addr);
+            if !self.router().is_connected(peer_ip) {
+                debug!("Attempting to (re-)connect to trusted peer `{peer_ip}`");
+                self.router().connect(*peer_ip);
             }
         }
     }
