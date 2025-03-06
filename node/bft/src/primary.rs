@@ -564,7 +564,12 @@ impl<N: Network> Primary<N> {
                         }
 
                         // Ensure the transaction doesn't bring the proposal above the spend limit.
-                        let block_height = self.ledger.latest_block_height() + 1;
+                        //
+                        // Validators start following the new consensus rules early, in order to guarantee a smooth transition.
+                        // The activation height is offset by the maximum number of blocks that can be produced within gc to
+                        // ensure honest validators can't mismatch due to differing views of the dag.
+                        let block_height =
+                            self.ledger.latest_block_height() + 1 + (BatchHeader::<N>::MAX_GC_ROUNDS as u32 / 2);
                         if N::CONSENSUS_VERSION(block_height)? >= ConsensusVersion::V4 {
                             match self.ledger.compute_cost(transaction_id, transaction) {
                                 Ok(cost) if proposal_cost + cost <= N::BATCH_SPEND_LIMIT => proposal_cost += cost,
@@ -2241,7 +2246,9 @@ mod tests {
             1,
             &accounts,
             committee,
-            CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V4).unwrap(),
+            CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V4).unwrap()
+                // Offset to check soft activation.
+                - (BatchHeader::<CurrentNetwork>::MAX_GC_ROUNDS as u32 / 2),
         );
 
         // Check there is no batch currently proposed.
