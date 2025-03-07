@@ -107,7 +107,7 @@ impl<N: Network> Storage<N> {
         // Retrieve the current round.
         let current_round = committee.starting_round().max(1);
         // Set the unprocessed certificates cache size.
-        let unprocessed_cache_size = NonZeroUsize::new((N::MAX_CERTIFICATES * 2) as usize).unwrap();
+        let unprocessed_cache_size = NonZeroUsize::new((N::LATEST_MAX_CERTIFICATES().unwrap() * 2) as usize).unwrap();
 
         // Return the storage.
         let storage = Self(Arc::new(StorageInner {

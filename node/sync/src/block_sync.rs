@@ -375,12 +375,16 @@ impl<N: Network> BlockSync<N> {
                 Ok(_) => match self.ledger.advance_to_next_block(&block) {
                     Ok(_) => true,
                     Err(err) => {
-                        warn!("Failed to advance to next block ({}): {err}", block.height());
+                        warn!(
+                            "Failed to advance to next block (height: {}, hash: '{}'): {err}",
+                            block.height(),
+                            block.hash()
+                        );
                         false
                     }
                 },
                 Err(err) => {
-                    warn!("The next block ({}) is invalid - {err}", block.height());
+                    warn!("The next block (height: {}, hash: '{}') is invalid - {err}", block.height(), block.hash());
                     false
                 }
             };
@@ -619,6 +623,8 @@ impl<N: Network> BlockSync<N> {
                 bail!("The sync pool did not request block {height} from '{peer_ip}'")
             }
             Ok(())
+        } else if self.ledger.contains_block_height(height) {
+            bail!("The sync request was removed because we already advanced")
         } else {
             bail!("The sync pool did not request block {height}")
         }
@@ -644,7 +650,9 @@ impl<N: Network> BlockSync<N> {
         // Remove the request entry for the given height.
         requests.remove(&height);
         // Remove the request timestamp entry for the given height.
-        self.request_timestamps.write().remove(&height);
+        if let Some(request_time) = self.request_timestamps.write().remove(&height) {
+            trace!("Block request for height {height} was completed in {}ms", request_time.elapsed().as_millis());
+        }
         // Remove the response entry for the given height.
         self.responses.write().remove(&height);
     }
