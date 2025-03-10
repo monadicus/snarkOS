@@ -36,7 +36,7 @@ use std::{
         Arc,
         atomic::{AtomicBool, AtomicU32, Ordering},
     },
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 #[cfg(not(test))]
@@ -151,7 +151,8 @@ impl<N: Network> BlockSync<N> {
     }
 }
 
-#[allow(dead_code)]
+// Helper functions needed for testing
+#[cfg(test)]
 impl<N: Network> BlockSync<N> {
     /// Returns the latest block height of the given peer IP.
     fn get_peer_height(&self, peer_ip: &SocketAddr) -> Option<u32> {
@@ -303,8 +304,10 @@ impl<N: Network> BlockSync<N> {
                     break 'outer;
                 }
             }
+
             // Sleep for 10 milliseconds to avoid triggering spam detection.
-            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            // TODO (kaimast): Document why 10ms (not 1 or 100) and make it a constant
+            tokio::time::sleep(Duration::from_millis(10)).await;
         }
     }
 

@@ -16,7 +16,7 @@
 use crate::{
     Gateway,
     MAX_FETCH_TIMEOUT_IN_MS,
-    PRIMARY_PING_IN_MS,
+    PRIMARY_PING_INTERVAL,
     Transport,
     helpers::{BFTSender, Pending, Storage, SyncReceiver, fmt_id, max_redundant_requests},
     spawn_blocking,
@@ -39,9 +39,10 @@ use tokio::{
     task::JoinHandle,
 };
 
+/// The syncing logic for the consensus layer.
 #[derive(Clone)]
 pub struct Sync<N: Network> {
-    /// The gateway.
+    /// The gateway enables communication with other validators.
     gateway: Gateway<N>,
     /// The storage.
     storage: Storage<N>,
@@ -110,10 +111,10 @@ impl<N: Network> Sync<N> {
             // Ideally, a node does not consider itself synced when it has not received
             // any block locators from peers. However, in the initial bootup of validators,
             // this needs to happen, so we use this additional sleep as a grace period.
-            tokio::time::sleep(Duration::from_millis(PRIMARY_PING_IN_MS)).await;
+            tokio::time::sleep(PRIMARY_PING_INTERVAL).await;
             loop {
                 // Sleep briefly to avoid triggering spam detection.
-                tokio::time::sleep(Duration::from_millis(PRIMARY_PING_IN_MS)).await;
+                tokio::time::sleep(PRIMARY_PING_INTERVAL).await;
                 // Perform the sync routine.
                 let communication = &self_.gateway;
                 // let communication = &node.router;

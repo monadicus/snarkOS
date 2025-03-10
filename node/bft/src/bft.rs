@@ -61,9 +61,9 @@ use tokio::{
 
 #[derive(Clone)]
 pub struct BFT<N: Network> {
-    /// The primary.
+    /// The primary for this node.
     primary: Primary<N>,
-    /// The DAG.
+    /// The DAG of batches from which we build the blockchain.
     dag: Arc<RwLock<DAG<N>>>,
     /// The batch certificate of the leader from the current even round, if one was present.
     leader_certificate: Arc<RwLock<Option<BatchCertificate<N>>>>,

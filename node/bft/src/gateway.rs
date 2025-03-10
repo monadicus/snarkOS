@@ -105,6 +105,8 @@ pub trait Transport<N: Network>: Send + Sync {
     fn broadcast(&self, event: Event<N>);
 }
 
+/// The gateway maintains connections to other validators.
+/// For connections with clients and provers, the Router logic is used.
 #[derive(Clone)]
 pub struct Gateway<N: Network> {
     /// The account of the node.
