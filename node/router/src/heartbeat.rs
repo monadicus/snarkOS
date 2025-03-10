@@ -109,14 +109,14 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
     /// where the first entry has the lowest priority andthe last one the highest.
     ///
     /// Rules:
-    ///     - Trusted peers and bootstrap nodes are not removable
-    ///     - Peers that we are currently syncing with are not removable
-    ///     - Validators are considered higher priority than provers or clients
-    ///     - Connections that have not been seen in a while are considered lower priority
+    ///     - Trusted peers and bootstrap nodes are not removable.
+    ///     - Peers that we are currently syncing with are not remeovable.
+    ///     - Validators are considered higher priority than provers or clients.
+    ///     - Connections that have not been seen in a while are considered lower priority.
     fn get_removable_peers(&self) -> Vec<Peer<N>> {
-        // The trusted peers (specified at runtime)
+        // The trusted peers (specified at runtime).
         let trusted = self.router().trusted_peers();
-        // The hardcoded bootstrap nodes
+        // The hardcoded bootstrap nodes.
         let bootstrap = self.router().bootstrap_peers();
         // Are we synced already? (cache this here, so it does not need to be recomputed)
         let is_block_synced = self.is_block_synced();
@@ -124,18 +124,18 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
         // Sort by priority, where lowest priority will be at the beginning
         // of the vector.
         // Note, that this gives equal priority to clients and provers, which
-        // we might want to change in the future
+        // we might want to change in the future.
         let mut peers = self.router().get_connected_peers();
         peers.sort_by_key(|peer| (peer.is_validator(), peer.last_seen()));
 
-        // Deterimine which of the peers can be removed
+        // Deterimine which of the peers can be removed.
         peers
             .into_iter()
             .filter(|peer| {
-                !trusted.contains(&peer.ip()) // Always keep trusted nodes
-                  && !bootstrap.contains(&peer.ip()) // Always keep bootstrap nodes
-                  && !self.router().cache.contains_inbound_block_request(&peer.ip()) // This peer is currently syncing from us
-                  && (is_block_synced || self.router().cache.num_outbound_block_requests(&peer.ip()) == 0) // We are currently syncing from this peer
+                !trusted.contains(&peer.ip()) // Always keep trusted nodes.
+                  && !bootstrap.contains(&peer.ip()) // Always keep bootstrap nodes.
+                  && !self.router().cache.contains_inbound_block_request(&peer.ip()) // This peer is currently syncing from us.
+                  && (is_block_synced || self.router().cache.num_outbound_block_requests(&peer.ip()) == 0) // We are currently syncing from this peer.
             })
             .collect()
     }
