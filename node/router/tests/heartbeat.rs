@@ -74,7 +74,7 @@ impl Outbound<Network> for HeartbeatTest {
 
 impl Heartbeat<Network> for HeartbeatTest {
     // This number does not actually affect any of the test, because
-    // we only test get_removable_peers so far
+    // we only test get_removable_peers so far.
     const MAXIMUM_NUMBER_OF_PEERS: usize = 2;
 }
 
@@ -91,8 +91,6 @@ async fn connect_to(router: &TestRouter<Network>, other: &TestRouter<Network>) {
 /// Checks that clients are ordered before nodes and that ordering is based on when a peer was last seen.
 #[tokio::test]
 async fn peer_priority_ordering() {
-    initialize_logger(2);
-
     let router = client(0, 10).await;
     router.enable_listener().await;
     router.enable_handshake().await;
@@ -153,8 +151,6 @@ async fn peer_priority_ordering() {
 /// Checks that trusted peers are never marked as removable.
 #[tokio::test]
 async fn peer_priority_trusted_peers() {
-    initialize_logger(2);
-
     let validator_peer = validator(0, 5, &[], true).await;
     validator_peer.enable_listener().await;
     validator_peer.enable_handshake().await;
