@@ -82,7 +82,7 @@ pub type ProposedBatch<N> = RwLock<Option<Proposal<N>>>;
 /// AleoBFT adapts a primary-worker architecture as described in the Narwhal and Tusk paper (Section 4.2).
 #[derive(Clone)]
 pub struct Primary<N: Network> {
-    /// The sync modules which enables fetching data from other validators.
+    /// The sync modules enables fetching data from other validators.
     sync: Sync<N>,
     /// The gateway allows talking to other nodes in the validator set.
     gateway: Gateway<N>,
@@ -100,7 +100,7 @@ pub struct Primary<N: Network> {
     latest_proposed_batch_timestamp: Arc<RwLock<i64>>,
     /// The recently-signed batch proposals.
     signed_proposals: Arc<RwLock<SignedProposals<N>>>,
-    /// The spawned handles.
+    /// The handles for all background tasks spawned by this primary.
     handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
     /// The lock for propose_batch.
     propose_lock: Arc<TMutex<u64>>,

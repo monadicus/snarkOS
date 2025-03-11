@@ -58,7 +58,7 @@ pub struct Sync<N: Network> {
     handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
     /// The response lock.
     response_lock: Arc<TMutex<()>>,
-    /// The sync lock.
+    /// The sync lock. Ensures that only one tasks syncs the ledger at a time.
     sync_lock: Arc<TMutex<()>>,
     /// The latest block responses.
     latest_block_responses: Arc<TMutex<HashMap<u32, Block<N>>>>,
@@ -106,7 +106,7 @@ impl<N: Network> Sync<N> {
 
         // Start the block sync loop.
         let self_ = self.clone();
-        self.handles.lock().push(tokio::spawn(async move {
+        self.spawn(async move {
             // Sleep briefly to allow an initial primary ping to come in prior to entering the loop.
             // Ideally, a node does not consider itself synced when it has not received
             // any block locators from peers. However, in the initial bootup of validators,
@@ -130,7 +130,7 @@ impl<N: Network> Sync<N> {
                     self_.latest_block_responses.lock().await.clear();
                 }
             }
-        }));
+        });
 
         // Start the pending queue expiration loop.
         let self_ = self.clone();
