@@ -121,7 +121,7 @@ async fn peer_priority_ordering() {
     // Ensure connections were established.
     assert_eq!(heartbeat.router().get_connected_peers().len(), 3);
 
-    // There are no trusted or bootstrap peers, so everything should be remoable.
+    // There are no trusted or bootstrap peers, so everything should be removable.
     assert_eq!(removable_peers.len(), 3);
 
     let mut removable_peers = removable_peers.into_iter();
