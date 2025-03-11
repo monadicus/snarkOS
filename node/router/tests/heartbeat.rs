@@ -13,6 +13,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod common;
+use common::*;
+
 use snarkos_node_router::{
     Heartbeat,
     Outbound,
@@ -27,15 +30,9 @@ use snarkos_node_tcp::{
 };
 use snarkvm::prelude::MainnetV0 as Network;
 
-use std::net::SocketAddr;
-
-use std::time::Duration;
-use tokio::time::sleep;
-
 use async_trait::async_trait;
-
-mod common;
-use common::*;
+use std::{net::SocketAddr, time::Duration};
+use tokio::time::sleep;
 
 #[derive(Clone)]
 struct HeartbeatTest {
