@@ -88,8 +88,9 @@ async fn connect_to(router: &TestRouter<Network>, other: &TestRouter<Network>) {
     }
 }
 
+/// Checks that clients are ordered before nodes and that ordering is based on when a peer was last seen.
 #[tokio::test]
-async fn peer_priority_nodes_first() {
+async fn peer_priority_ordering() {
     initialize_logger(2);
 
     let router = client(0, 10).await;
@@ -113,21 +114,43 @@ async fn peer_priority_nodes_first() {
     connect_to(&router, &client_peer).await;
     connect_to(&router, &validator_peer2).await;
 
+    // Update last seen to affect priority.
+    router.update_last_seen_for_connected_peer(validator_peer1.local_ip());
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    router.update_last_seen_for_connected_peer(validator_peer2.local_ip());
+
     let heartbeat = HeartbeatTest { router };
 
     let removable_peers = heartbeat.get_removable_peers();
 
-    // Ensure connections were established
+    // Ensure connections were established.
     assert_eq!(heartbeat.router().get_connected_peers().len(), 3);
 
-    // There are no trusted or bootstrap peers, so everything should
-    // be remoable
+    // There are no trusted or bootstrap peers, so everything should be remoable.
     assert_eq!(removable_peers.len(), 3);
 
-    // Client should be lowest priority
-    assert_eq!(removable_peers.first().unwrap().ip(), client_peer.local_ip());
+    let mut removable_peers = removable_peers.into_iter();
+
+    // Client should be lowest priority.
+    assert_eq!(removable_peers.next().unwrap().ip(), client_peer.local_ip());
+
+    // Validator 1 has lower priority now because it was seen last.
+    assert_eq!(removable_peers.next().unwrap().ip(), validator_peer1.local_ip());
+
+    // Validator 2 has highest priority.
+    assert_eq!(removable_peers.next().unwrap().ip(), validator_peer2.local_ip());
+
+    // Update last seen again to check that priorities get updated correctly.
+    heartbeat.router.update_last_seen_for_connected_peer(validator_peer1.local_ip());
+
+    // Validator 1 must have higher priority now.
+    let mut removable_peers = heartbeat.get_removable_peers().into_iter();
+    assert_eq!(removable_peers.next().unwrap().ip(), client_peer.local_ip());
+    assert_eq!(removable_peers.next().unwrap().ip(), validator_peer2.local_ip());
+    assert_eq!(removable_peers.next().unwrap().ip(), validator_peer1.local_ip());
 }
 
+/// Checks that trusted peers are never marked as removable.
 #[tokio::test]
 async fn peer_priority_trusted_peers() {
     initialize_logger(2);
@@ -152,41 +175,8 @@ async fn peer_priority_trusted_peers() {
 
     let removable_peers = heartbeat.get_removable_peers();
 
-    // Ensure connections were established
+    // Ensure connections were established.
     assert_eq!(heartbeat.router().get_connected_peers().len(), 2);
-    // All peers are trusted and cannot be removed
+    // All peers are trusted and cannot be removed.
     assert_eq!(removable_peers.len(), 0);
-}
-
-#[tokio::test]
-async fn peer_priority_last_seen() {
-    let validator_peer1 = validator(0, 5, &[], true).await;
-    validator_peer1.enable_listener().await;
-    validator_peer1.enable_handshake().await;
-
-    let validator_peer2 = validator(0, 5, &[], true).await;
-    validator_peer2.enable_listener().await;
-    validator_peer2.enable_handshake().await;
-
-    let router = validator(0, 5, &[], false).await;
-    router.enable_listener().await;
-    router.enable_handshake().await;
-    router.enable_on_connect().await;
-
-    connect_to(&router, &validator_peer1).await;
-    connect_to(&router, &validator_peer2).await;
-
-    router.update_last_seen_for_connected_peer(validator_peer1.local_ip());
-    tokio::time::sleep(Duration::from_millis(500)).await;
-    router.update_last_seen_for_connected_peer(validator_peer2.local_ip());
-
-    let heartbeat = HeartbeatTest { router };
-
-    let removable_peers = heartbeat.get_removable_peers();
-
-    assert_eq!(heartbeat.router().get_connected_peers().len(), 2);
-    assert_eq!(removable_peers.len(), 2);
-
-    // Validator 1 has lower priority now because it was seen last
-    assert_eq!(removable_peers.first().unwrap().ip(), validator_peer1.local_ip());
 }
