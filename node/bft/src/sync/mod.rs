@@ -773,7 +773,7 @@ mod tests {
         let commit_round = 2;
 
         // Initialize the store.
-        let store = CurrentConsensusStore::open(None).unwrap();
+        let store = CurrentConsensusStore::open(StorageMode::new_test(None)).unwrap();
         let account: Account<CurrentNetwork> = Account::new(rng)?;
 
         // Create a genesis block with a seeded RNG to reproduce the same genesis private keys.
@@ -997,7 +997,7 @@ mod tests {
         let commit_round = 2;
 
         // Initialize the store.
-        let store = CurrentConsensusStore::open(None).unwrap();
+        let store = CurrentConsensusStore::open(StorageMode::new_test(None)).unwrap();
         let account: Account<CurrentNetwork> = Account::new(rng)?;
 
         // Create a genesis block with a seeded RNG to reproduce the same genesis private keys.

@@ -29,8 +29,9 @@ use std::{fs, path::PathBuf};
 pub fn proposal_cache_path(network: u16, dev: Option<u16>) -> PathBuf {
     const PROPOSAL_CACHE_FILE_NAME: &str = "current-proposal-cache";
 
+    let storage_mode = if let Some(id) = dev { StorageMode::Development(id) } else { StorageMode::Production };
     // Obtain the path to the ledger.
-    let mut path = aleo_ledger_dir(network, StorageMode::from(dev));
+    let mut path = aleo_ledger_dir(network, &storage_mode);
     // Go to the folder right above the ledger.
     path.pop();
     // Append the proposal store's file name.
