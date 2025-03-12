@@ -61,6 +61,7 @@ pub struct Sync<N: Network> {
     /// The sync lock.
     sync_lock: Arc<TMutex<()>>,
     /// The latest block responses.
+    ///
     /// This is used in [`Sync::sync_storage_with_block()`] to accumulate blocks
     /// whose addition to the ledger is deferred until certain checks pass.
     latest_block_responses: Arc<TMutex<HashMap<u32, Block<N>>>>,
@@ -416,6 +417,7 @@ impl<N: Network> Sync<N> {
     }
 
     /// Syncs the storage with the given block.
+    ///
     /// This also updates the DAG, and uses the DAG to ensure that the block's leader certificate
     /// meets the voter availability threshold (i.e. > f voting stake)
     /// or is reachable via a DAG path from a later leader certificate that does.
