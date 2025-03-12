@@ -262,12 +262,14 @@ impl<N: Network> BlockLocators<N> {
             last_height = *current_height;
         }
 
-        // If the last height is below NUM_RECENT_BLOCKS, ensure the number of recent blocks matches the last height.
-        // TODO: generalize check for RECENT_INTERVAL > 1, or remove this comment if we hardwire that to 1
-        if last_height < NUM_RECENT_BLOCKS as u32 && recents.len().saturating_sub(1) as u32 != last_height {
-            bail!("As the last height is below {NUM_RECENT_BLOCKS}, the number of recent blocks must match the height")
-        }
-        // Otherwise, ensure the number of recent blocks matches NUM_RECENT_BLOCKS.
+        // At this point, if last_height < NUM_RECENT_BLOCKS`,
+        // we know that the `recents` map consists of exactly block heights from 0 to last_height,
+        // because the loop above has ensured that the first entry is for height 0,
+        // and at the end of the loop `last_height` is the last key in `recents`,
+        // and all the keys in `recents` are consecutive in increments of 1.
+        // So the `recents` map consists of NUM_RECENT_BLOCKS or fewer entries.
+
+        // If last height >= NUM_RECENT_BLOCKS, ensure the number of recent blocks matches NUM_RECENT_BLOCKS.
         // TODO: generalize check for RECENT_INTERVAL > 1, or remove this comment if we hardwire that to 1
         if last_height >= NUM_RECENT_BLOCKS as u32 && recents.len() != NUM_RECENT_BLOCKS {
             bail!("Number of recent blocks must match {NUM_RECENT_BLOCKS}")
