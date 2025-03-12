@@ -490,7 +490,7 @@ impl<N: Network> Sync<N> {
             let certificate_round = commit_round.saturating_add(1);
 
             // Get the committee lookback for the round just after the leader.
-            let committee_lookback = self.ledger.get_committee_lookback_for_round(certificate_round)?;
+            let certificate_committee_lookback = self.ledger.get_committee_lookback_for_round(certificate_round)?;
             // Retrieve all of the certificates for the round just after the leader.
             let certificates = self.storage.get_certificates_for_round(certificate_round);
             // Construct a set over the authors, at the round just after the leader,
@@ -505,7 +505,7 @@ impl<N: Network> Sync<N> {
 
             debug!("Validating sync block {next_block_height} at round {commit_round}...");
             // Check if the leader is ready to be committed.
-            if committee_lookback.is_availability_threshold_reached(&authors) {
+            if certificate_committee_lookback.is_availability_threshold_reached(&authors) {
                 // Initialize the current certificate.
                 let mut current_certificate = leader_certificate;
                 // Check if there are any linked blocks that need to be added.
