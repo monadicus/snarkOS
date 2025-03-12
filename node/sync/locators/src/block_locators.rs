@@ -250,7 +250,7 @@ impl<N: Network> BlockLocators<N> {
         // Ensure the given recent blocks increment in height, and at the correct interval.
         let mut last_height = 0;
         for (i, current_height) in recents.keys().enumerate() {
-            if i == 0 && recents.len() < NUM_RECENT_BLOCKS && *current_height != last_height {
+            if i == 0 && recents.len() < NUM_RECENT_BLOCKS && *current_height > 0 {
                 bail!("Ledgers under {NUM_RECENT_BLOCKS} blocks must have the first recent block at height 0")
             }
             if i > 0 && *current_height <= last_height {
