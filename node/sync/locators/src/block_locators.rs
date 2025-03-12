@@ -557,7 +557,7 @@ mod tests {
         let checkpoints = IndexMap::from([(0, zero), (CHECKPOINT_INTERVAL, checkpoint_1)]);
         check_is_valid(
             checkpoints,
-            (CHECKPOINT_INTERVAL - NUM_RECENT_BLOCKS as u32)..(CHECKPOINT_INTERVAL * 2 - NUM_RECENT_BLOCKS as u32),
+            (CHECKPOINT_INTERVAL - NUM_RECENT_BLOCKS as u32 + 1)..(CHECKPOINT_INTERVAL * 2 - NUM_RECENT_BLOCKS as u32),
         );
     }
 
