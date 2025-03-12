@@ -420,7 +420,11 @@ impl<N: Network> BlockSync<N> {
     }
 
     /// Updates the block locators and common ancestors for the given peer IP.
-    /// This function checks that the given block locators are well-formed, however it does **not** check
+    ///
+    /// This function does not need to check that the block locators are well-formed,
+    /// because that is already done in [`BlockLocators::new()`], as noted in [`BlockLocators`].
+    ///
+    /// This function does **not** check
     /// that the block locators are consistent with the peer's previous block locators or other peers' block locators.
     pub fn update_peer_locators(&self, peer_ip: SocketAddr, locators: BlockLocators<N>) -> Result<()> {
         // If the locators match the existing locators for the peer, return early.
