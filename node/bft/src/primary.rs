@@ -955,14 +955,50 @@ impl<N: Network> Primary<N> {
             bail!("Received a batch certificate for myself ({author})");
         }
 
+        // Retrieve the committee lookback.
+        let committee_lookback = self.ledger.get_committee_lookback_for_round(certificate_round)?;
+
+        // Ensure that the signers of the certificate reach the quorum threshold.
+        let signers = certificate.signatures().map(|signature| signature.to_address()).collect();
+        ensure!(
+            committee_lookback.is_quorum_threshold_reached(&signers),
+            "Certificate '{}' for round {certificate_round} does not meet quorum requirements",
+            certificate.id()
+        );
+
+        // Ensure that the signers of the certificate are in the committee.
+        for signer in signers {
+            ensure!(
+                committee_lookback.is_committee_member(signer),
+                "Signer '{signer}' of certificate '{}' for round {certificate_round} is not in the committee",
+                certificate.id()
+            )
+        }
+
+        // Under the fundamental fault tolerance assumption of at most f (stake of) faulty validators,
+        // the above check on signers guarantees that at least one correct validator
+        // has ensured the validity of the proposal,
+        // either by construction (by the author) or by checking (by an endorser):
+        // given N > 0 and f the largest integer < N/3 (where / is exact rational division),
+        // we have N >= 3f + 1, which implies N - f >= 2f + 1, which is always > f.
+        // With the above check that the signers are in the committee,
+        // at this point we know that the certificate is valid.
+
         // Store the certificate, after ensuring it is valid.
+        // The following call recursively fetches and stores
+        // the previous certificates referenced from this certificate.
+        // It is critical to make the following call this after validating the certificate above.
+        // The reason is that a sequence of malformed certificates,
+        // with references to previous certificates with non-decreasing rounds,
+        // cause the recursive fetching of certificates to crash the validator due to resource exhaustion.
+        // Note that if the following call, if not returning an error, guarantees the backward closure of the DAG
+        // (i.e. that all the referenced previous certificates are in the DAG before storing this one),
+        // then all the validity checks in [`Storage::check_certificate`] should be redundant.
         self.sync_with_certificate_from_peer::<false>(peer_ip, certificate).await?;
 
         // If there are enough certificates to reach quorum threshold for the certificate round,
         // then proceed to advance to the next round.
 
-        // Retrieve the committee lookback.
-        let committee_lookback = self.ledger.get_committee_lookback_for_round(certificate_round)?;
         // Retrieve the certificate authors.
         let authors = self.storage.get_certificate_authors_for_round(certificate_round);
         // Check if the certificates have reached the quorum threshold.
