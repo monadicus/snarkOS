@@ -47,7 +47,7 @@ default-features = false
 [workspace.dependencies.snarkvm] # If this is updated, the rev in `node/rest/Cargo.toml` must be updated as well.
 # path = "../snarkVM"
 git = "https://github.com/ProvableHQ/snarkVM.git"
-rev = "c6558fb"
+rev = "69f97fa"
 #version = "=1.3.0"
 features = [ "circuit", "console", "rocks" ]
 
@@ -68,6 +68,16 @@ cuda = [
   "snarkos-node-rest/cuda",
   "snarkos-node-router/cuda",
   "snarkos-node-sync/cuda"
+]
+locktick = [
+  "snarkos-node/locktick",
+  "snarkos-node-bft/locktick",
+  "snarkos-node-consensus/locktick",
+  "snarkos-node-metrics/locktick",
+  "snarkos-node-rest/locktick",
+  "snarkos-node-router/locktick",
+  "snarkos-node-sync/locktick",
+  "snarkos-node-tcp/locktick"
 ]
 test_targets = [ "snarkos-cli/test_targets" ]
 
