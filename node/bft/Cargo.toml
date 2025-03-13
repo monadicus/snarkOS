@@ -67,7 +67,7 @@ features = [ "serde", "rayon" ]
 
 [dependencies.locktick]
 version = "0.3"
-features = [ "parking_lot" ]
+features = [ "parking_lot", "tokio" ]
 optional = true
 
 [dependencies.lru]

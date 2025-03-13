@@ -44,7 +44,10 @@ use snarkvm::{
 use colored::Colorize;
 use indexmap::{IndexMap, IndexSet};
 #[cfg(feature = "locktick")]
-use locktick::parking_lot::{Mutex, RwLock};
+use locktick::{
+    parking_lot::{Mutex, RwLock},
+    tokio::Mutex as TMutex,
+};
 #[cfg(not(feature = "locktick"))]
 use parking_lot::{Mutex, RwLock};
 use std::{
@@ -56,8 +59,10 @@ use std::{
         atomic::{AtomicI64, Ordering},
     },
 };
+#[cfg(not(feature = "locktick"))]
+use tokio::sync::Mutex as TMutex;
 use tokio::{
-    sync::{Mutex as TMutex, OnceCell, oneshot},
+    sync::{OnceCell, oneshot},
     task::JoinHandle,
 };
 

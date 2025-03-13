@@ -33,13 +33,15 @@ use snarkvm::{
 
 use anyhow::{Result, bail};
 #[cfg(feature = "locktick")]
-use locktick::parking_lot::Mutex;
+use locktick::{parking_lot::Mutex, tokio::Mutex as TMutex};
 #[cfg(not(feature = "locktick"))]
 use parking_lot::Mutex;
 use rayon::prelude::*;
 use std::{collections::HashMap, future::Future, net::SocketAddr, sync::Arc, time::Duration};
+#[cfg(not(feature = "locktick"))]
+use tokio::sync::Mutex as TMutex;
 use tokio::{
-    sync::{Mutex as TMutex, OnceCell, oneshot},
+    sync::{OnceCell, oneshot},
     task::JoinHandle,
 };
 
