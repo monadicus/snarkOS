@@ -609,10 +609,10 @@ impl<N: Network> Router<N> {
 
     /// Removes the connected peer and adds them to the candidate peers.
     pub fn remove_connected_peer(&self, peer_ip: SocketAddr) {
-        // Removes the bidirectional map between the listener address and (ambiguous) peer address.
-        self.resolver.write().remove_peer(&peer_ip);
         // Remove this peer from the connected peers, if it exists.
         self.connected_peers.write().remove(&peer_ip);
+        // Removes the bidirectional map between the listener address and (ambiguous) peer address.
+        self.resolver.write().remove_peer(&peer_ip);
         // Add the peer to the candidate peers.
         self.candidate_peers.write().insert(peer_ip);
         // Clear cached entries applicable to the peer.
