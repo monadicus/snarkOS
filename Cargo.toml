@@ -70,6 +70,8 @@ cuda = [
   "snarkos-node-sync/cuda"
 ]
 locktick = [
+  "dep:locktick",
+  "dep:tracing",
   "snarkos-node/locktick",
   "snarkos-node-bft/locktick",
   "snarkos-node-consensus/locktick",
@@ -90,6 +92,10 @@ features = [ "derive" ]
 
 [dependencies.crossterm]
 version = "0.27.0"
+
+[dependencies.locktick]
+version = "0.3"
+optional = true
 
 [dependencies.once_cell]
 version = "1"
@@ -145,6 +151,10 @@ version = "=3.3.2"
 
 [target.'cfg(all(target_os = "linux", target_arch = "x86_64"))'.dependencies]
 tikv-jemallocator = "0.5"
+
+[dependencies.tracing]
+version = "0.1"
+optional = true
 
 [dev-dependencies.rusty-hook]
 version = "0.11.2"
