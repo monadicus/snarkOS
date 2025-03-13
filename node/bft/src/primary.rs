@@ -565,11 +565,18 @@ impl<N: Network> Primary<N> {
 
                         // Ensure the transaction doesn't bring the proposal above the spend limit.
                         //
-                        // Validators start following the new consensus rules early, in order to guarantee a smooth transition.
+                        // Validators start following the new consensus rules early to guarantee a smooth transition.
                         // The activation height is offset by the maximum number of blocks that can be produced within gc to
                         // ensure honest validators can't mismatch due to differing views of the dag.
-                        let block_height =
-                            self.ledger.latest_block_height() + 1 + (BatchHeader::<N>::MAX_GC_ROUNDS as u32 / 2);
+                        let block_height = self
+                            .ledger
+                            .latest_block_height()
+                            // Add one to get the next block height.
+                            .saturating_add(1)
+                            // Estimate and upper bound the block height for the number of rounds within gc.
+                            // Blocks contain at least two dag rounds and in max_gc_rounds we'll produce max_gc_rounds / 2 blocks. 
+                            .saturating_add((BatchHeader::<N>::MAX_GC_ROUNDS as u32).saturating_div(2));
+
                         if N::CONSENSUS_VERSION(block_height)? >= ConsensusVersion::V4 {
                             match self.ledger.compute_cost(transaction_id, transaction) {
                                 Ok(cost) if proposal_cost + cost <= N::BATCH_SPEND_LIMIT => proposal_cost += cost,
