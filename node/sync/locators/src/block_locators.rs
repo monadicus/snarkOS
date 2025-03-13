@@ -570,17 +570,17 @@ mod tests {
         let block_locators = BlockLocators::<CurrentNetwork>::new_unchecked(Default::default(), Default::default());
         block_locators.ensure_is_valid().unwrap_err();
 
-        // Ensure internally-mismatching genesis block locators is valid.
+        // Ensure internally-mismatching genesis block locators is not valid.
         let block_locators =
             BlockLocators::<CurrentNetwork>::new_unchecked(IndexMap::from([(0, zero)]), IndexMap::from([(0, one)]));
         block_locators.ensure_is_valid().unwrap_err();
 
-        // Ensure internally-mismatching genesis block locators is valid.
+        // Ensure internally-mismatching genesis block locators is not valid.
         let block_locators =
             BlockLocators::<CurrentNetwork>::new_unchecked(IndexMap::from([(0, one)]), IndexMap::from([(0, zero)]));
         block_locators.ensure_is_valid().unwrap_err();
 
-        // Ensure internally-mismatching block locators with two recent blocks is valid.
+        // Ensure internally-mismatching block locators with two recent blocks is not valid.
         let block_locators = BlockLocators::<CurrentNetwork>::new_unchecked(
             IndexMap::from([(0, one), (1, zero)]),
             IndexMap::from([(0, zero)]),
@@ -592,6 +592,14 @@ mod tests {
             IndexMap::from([(0, zero), (1, zero)]),
             IndexMap::from([(0, zero)]),
         );
+        block_locators.ensure_is_valid().unwrap_err();
+
+        // Ensure insufficient checkpoints are not valid.
+        let mut recents = IndexMap::new();
+        for i in 0..NUM_RECENT_BLOCKS {
+            recents.insert(10_000 + i as u32, (Field::<CurrentNetwork>::from_u32(i as u32)).into());
+        }
+        let block_locators = BlockLocators::<CurrentNetwork>::new_unchecked(recents, IndexMap::from([(0, zero)]));
         block_locators.ensure_is_valid().unwrap_err();
     }
 
