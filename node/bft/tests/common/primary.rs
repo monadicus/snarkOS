@@ -46,6 +46,9 @@ use snarkvm::{
 use aleo_std::StorageMode;
 use indexmap::IndexMap;
 use itertools::Itertools;
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::Mutex;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::Mutex;
 use std::{
     collections::HashMap,

@@ -61,6 +61,9 @@ use snarkvm::{
 use colored::Colorize;
 use futures::stream::{FuturesUnordered, StreamExt};
 use indexmap::{IndexMap, IndexSet};
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::{Mutex, RwLock};
+#[cfg(not(feature = "locktick"))]
 use parking_lot::{Mutex, RwLock};
 use rayon::prelude::*;
 use std::{

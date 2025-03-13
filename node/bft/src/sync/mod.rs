@@ -32,6 +32,9 @@ use snarkvm::{
 };
 
 use anyhow::{Result, bail};
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::Mutex;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::Mutex;
 use rayon::prelude::*;
 use std::{collections::HashMap, future::Future, net::SocketAddr, sync::Arc, time::Duration};

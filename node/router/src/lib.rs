@@ -46,6 +46,9 @@ use snarkos_node_tcp::{Config, P2P, Tcp, is_bogon_ip, is_unspecified_or_broadcas
 use snarkvm::prelude::{Address, Network, PrivateKey, ViewKey};
 
 use anyhow::{Result, bail};
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::{Mutex, RwLock};
+#[cfg(not(feature = "locktick"))]
 use parking_lot::{Mutex, RwLock};
 #[cfg(not(any(test)))]
 use std::net::IpAddr;

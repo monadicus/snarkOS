@@ -27,7 +27,11 @@ use snarkvm::{
 };
 
 use indexmap::IndexMap;
-use parking_lot::RwLock;
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::{Mutex, RwLock};
+use lru::LruCache;
+#[cfg(not(feature = "locktick"))]
+use parking_lot::{Mutex, RwLock};
 use rayon::prelude::*;
 use std::{
     collections::BTreeMap,
