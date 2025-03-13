@@ -78,7 +78,10 @@ pub trait Inbound<N: Network>: Reading + Outbound<N> {
         // Retrieve the listener IP for the peer.
         let peer_ip = match self.router().resolve_to_listener(&peer_addr) {
             Some(peer_ip) => peer_ip,
-            None => bail!("Unable to resolve the (ambiguous) peer address '{peer_addr}'"),
+            None => {
+                // No longer connected to the peer.
+                return Ok(());
+            }
         };
 
         // Drop the peer, if they have sent more than `MESSAGE_LIMIT` messages
