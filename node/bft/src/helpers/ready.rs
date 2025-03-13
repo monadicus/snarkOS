@@ -263,9 +263,6 @@ mod tests {
         assert!(ready.is_empty());
         // Check the transmission IDs.
         assert_eq!(ready.transmission_ids(), IndexSet::new());
-
-        dbg!(ready.offset);
-
         // Check the transmissions.
         assert_eq!(transmissions, vec![
             (solution_id_1, solution_1),

@@ -838,7 +838,7 @@ mod tests {
         let peer_ip = SocketAddr::from(([127, 0, 0, 1], 1234));
         let _ = worker_.send_transmission_request(peer_ip, transmission_id).await;
         assert!(worker.pending.contains(transmission_id));
-        let result = dbg!(worker.process_unconfirmed_transaction(transaction_id, transaction_data).await);
+        let result = worker.process_unconfirmed_transaction(transaction_id, transaction_data).await;
         assert!(result.is_ok());
         assert!(!worker.pending.contains(transmission_id));
         assert!(worker.ready.read().contains(transmission_id));
