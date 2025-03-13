@@ -379,6 +379,8 @@ pub mod test_helpers {
     type CurrentNetwork = snarkvm::prelude::MainnetV0;
 
     /// Simulates a block locator at the given height.
+    ///
+    /// The returned block locator is checked to be well-formed.
     pub fn sample_block_locators(height: u32) -> BlockLocators<CurrentNetwork> {
         // Create the recent locators.
         let mut recents = IndexMap::new();
@@ -401,6 +403,8 @@ pub mod test_helpers {
     }
 
     /// Simulates a block locator at the given height, with a fork within NUM_RECENT_BLOCKS of the given height.
+    ///
+    /// The returned block locator is checked to be well-formed.
     pub fn sample_block_locators_with_fork(height: u32, fork_height: u32) -> BlockLocators<CurrentNetwork> {
         assert!(fork_height <= height, "Fork height must be less than or equal to the given height");
         assert!(
@@ -448,7 +452,8 @@ pub mod test_helpers {
             assert_eq!(block_locators.checkpoints.len(), expected_num_checkpoints as usize);
             assert_eq!(block_locators.recents.len(), expected_num_recents as usize);
             assert_eq!(block_locators.latest_locator_height(), expected_height);
-            assert!(block_locators.is_valid());
+            // Note that `sample_block_locators` always returns well-formed block locators,
+            // so we don't need to check `is_valid()` here.
         }
     }
 }
