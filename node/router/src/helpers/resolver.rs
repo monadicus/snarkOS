@@ -13,18 +13,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(feature = "locktick")]
-use locktick::parking_lot::RwLock;
-#[cfg(not(feature = "locktick"))]
-use parking_lot::RwLock;
 use std::{collections::HashMap, net::SocketAddr};
 
 #[derive(Debug)]
 pub struct Resolver {
     /// The map of the listener address to (ambiguous) peer address.
-    from_listener: RwLock<HashMap<SocketAddr, SocketAddr>>,
+    from_listener: HashMap<SocketAddr, SocketAddr>,
     /// The map of the (ambiguous) peer address to listener address.
-    to_listener: RwLock<HashMap<SocketAddr, SocketAddr>>,
+    to_listener: HashMap<SocketAddr, SocketAddr>,
 }
 
 impl Default for Resolver {
@@ -42,24 +38,24 @@ impl Resolver {
 
     /// Returns the listener address for the given (ambiguous) peer address, if it exists.
     pub fn get_listener(&self, peer_addr: &SocketAddr) -> Option<SocketAddr> {
-        self.to_listener.read().get(peer_addr).copied()
+        self.to_listener.get(peer_addr).copied()
     }
 
     /// Returns the (ambiguous) peer address for the given listener address, if it exists.
     pub fn get_ambiguous(&self, peer_ip: &SocketAddr) -> Option<SocketAddr> {
-        self.from_listener.read().get(peer_ip).copied()
+        self.from_listener.get(peer_ip).copied()
     }
 
     /// Inserts a bidirectional mapping of the listener address and the (ambiguous) peer address.
-    pub fn insert_peer(&self, listener_ip: SocketAddr, peer_addr: SocketAddr) {
-        self.from_listener.write().insert(listener_ip, peer_addr);
-        self.to_listener.write().insert(peer_addr, listener_ip);
+    pub fn insert_peer(&mut self, listener_ip: SocketAddr, peer_addr: SocketAddr) {
+        self.from_listener.insert(listener_ip, peer_addr);
+        self.to_listener.insert(peer_addr, listener_ip);
     }
 
     /// Removes the bidirectional mapping of the listener address and the (ambiguous) peer address.
-    pub fn remove_peer(&self, listener_ip: &SocketAddr) {
-        if let Some(peer_addr) = self.from_listener.write().remove(listener_ip) {
-            self.to_listener.write().remove(&peer_addr);
+    pub fn remove_peer(&mut self, listener_ip: &SocketAddr) {
+        if let Some(peer_addr) = self.from_listener.remove(listener_ip) {
+            self.to_listener.remove(&peer_addr);
         }
     }
 }
