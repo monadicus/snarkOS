@@ -541,7 +541,7 @@ mod tests {
         let mut recents = IndexMap::new();
         for i in 0..NUM_RECENT_BLOCKS {
             recents.insert(i as u32, (Field::<CurrentNetwork>::from_u32(i as u32)).into());
-            let block_locators = BlockLocators::<CurrentNetwork>::new(recents.clone(), checkpoints.clone()).unwrap();
+            let block_locators = BlockLocators::<CurrentNetwork>::new_unchecked(recents.clone(), checkpoints.clone());
             block_locators.ensure_is_valid().unwrap();
         }
         // Ensure NUM_RECENT_BLOCKS + 1 is not valid.
