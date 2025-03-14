@@ -261,6 +261,12 @@ impl<N: Network> Router<N> {
                 }
                 disconnected
             } else {
+                // FIXME (ljedrz): this shouldn't be necessary; it's a double-check
+                //  that the higher-level collection is consistent with the resolver.
+                if router.is_connected(&peer_ip) {
+                    warn!("Fallback connection artifact cleanup (report this to @ljedrz)");
+                    router.remove_connected_peer(peer_ip);
+                }
                 false
             }
         })
