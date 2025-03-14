@@ -90,7 +90,7 @@ pub fn initialize_logger(verbosity: u8) {
             .add_directive("hyper=off".parse().unwrap())
             .add_directive("reqwest=off".parse().unwrap())
             .add_directive("want=off".parse().unwrap())
-            .add_directive("warp=off".parse().unwrap());
+            .add_directive("h2=off".parse().unwrap());
 
         let filter = if verbosity > 3 {
             filter.add_directive("snarkos_node_bft::gateway=trace".parse().unwrap())
