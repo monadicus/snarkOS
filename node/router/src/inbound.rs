@@ -158,7 +158,10 @@ pub trait Inbound<N: Network>: Reading + Outbound<N> {
                 bail!("Peer '{peer_ip}' is not following the protocol")
             }
             Message::Disconnect(message) => {
-                bail!("{:?}", message.reason)
+                // The peer informs us that they had disconnected. Disconnect from them too.
+                debug!("Peer '{peer_ip}' decided to disconnect due to '{:?}'", message.reason);
+                self.router().disconnect(peer_ip);
+                Ok(())
             }
             Message::PeerRequest(..) => match self.peer_request(peer_ip) {
                 true => Ok(()),
