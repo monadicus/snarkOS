@@ -22,14 +22,13 @@ use snarkvm::{
         narwhal::{BatchCertificate, BatchHeader, Transmission, TransmissionID},
     },
     prelude::{Address, Field, Network, Result, anyhow, bail, ensure},
-    utilities::{cfg_into_iter, cfg_sorted_by},
+    utilities::{cfg_into_iter, cfg_iter, cfg_sorted_by},
 };
 
 use indexmap::{IndexMap, IndexSet, map::Entry};
 use lru::LruCache;
 use parking_lot::RwLock;
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
-use snarkvm::algorithms::cfg_iter;
 use std::{
     collections::{HashMap, HashSet},
     num::NonZeroUsize,
