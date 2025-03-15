@@ -970,13 +970,14 @@ impl<N: Network> Primary<N> {
         );
 
         // Ensure that the signers of the certificate are in the committee.
-        for signer in signers {
+        cfg_iter!(signers).try_for_each(|signer| {
             ensure!(
-                committee_lookback.is_committee_member(signer),
+                committee_lookback.is_committee_member(*signer),
                 "Signer '{signer}' of certificate '{}' for round {certificate_round} is not in the committee",
                 certificate.id()
-            )
-        }
+            );
+            Ok(())
+        })?;
 
         // Under the fundamental fault tolerance assumption of at most f (stake of) faulty validators,
         // the above check on signers guarantees that at least one correct validator
