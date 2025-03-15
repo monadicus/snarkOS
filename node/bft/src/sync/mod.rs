@@ -487,7 +487,7 @@ impl<N: Network> Sync<N> {
                 _ => bail!("Received a block with an unexpected authority type."),
             };
             let commit_round = leader_certificate.round();
-            let certificate_round = commit_round.checked_add(1).unwrap();
+            let certificate_round = commit_round.checked_add(1).ok_or_else(|| anyhow!("Integer overflow on round number"))?;
 
             // Get the committee lookback for the round just after the leader.
             let certificate_committee_lookback = self.ledger.get_committee_lookback_for_round(certificate_round)?;
