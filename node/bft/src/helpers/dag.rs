@@ -24,7 +24,6 @@ use std::collections::{BTreeMap, HashMap};
 
 /// Maintains an acyclic directed graph (DAG) of batches, from which we build a totally-ordered blockchain.
 /// The DAG is updated in rounds, where each validator adds at most one new batch.
-/// Each batch
 #[derive(Debug)]
 pub struct DAG<N: Network> {
     /// The in-memory collection of certificates that comprise the DAG.

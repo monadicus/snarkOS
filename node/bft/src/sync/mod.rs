@@ -18,12 +18,13 @@ use crate::{
     MAX_FETCH_TIMEOUT_IN_MS,
     PRIMARY_PING_INTERVAL,
     Transport,
+    events::DataBlocks,
     helpers::{BFTSender, Pending, Storage, SyncReceiver, fmt_id, max_redundant_requests},
     spawn_blocking,
 };
 use snarkos_node_bft_events::{CertificateRequest, CertificateResponse, Event};
 use snarkos_node_bft_ledger_service::LedgerService;
-use snarkos_node_sync::{BlockSync, locators::BlockLocators};
+use snarkos_node_sync::{BLOCK_REQUEST_BATCH_DELAY, BlockSync, locators::BlockLocators};
 use snarkvm::{
     console::{network::Network, types::Field},
     ledger::{authority::Authority, block::Block, narwhal::BatchCertificate},
@@ -40,6 +41,8 @@ use tokio::{
 };
 
 /// The syncing logic for the consensus layer.
+///
+/// This adds validator-specific behavior the generic `BlockSync` module.
 #[derive(Clone)]
 pub struct Sync<N: Network> {
     /// The gateway enables communication with other validators.
@@ -100,7 +103,30 @@ impl<N: Network> Sync<N> {
         self.sync_storage_with_ledger_at_bootup().await
     }
 
+    /// Performs one iteration of the block synchronization.
+    #[inline]
+    pub async fn try_block_sync(&self) {
+        // Prepare the block requests, if any.
+        // In the process, we update the state of `is_block_synced` for the sync module.
+        let (block_requests, sync_peers) = self.block_sync.prepare_block_requests();
+        trace!("Prepared {} block requests", block_requests.len());
+
+        // Process the block requests.
+        for requests in block_requests.chunks(DataBlocks::<N>::MAXIMUM_NUMBER_OF_BLOCKS as usize) {
+            if !self.block_sync.send_block_requests(&self.gateway, &sync_peers, requests).await {
+                // Stop if we fail to process a batch of requests.
+                break;
+            }
+
+            // Sleep to avoid triggering spam detection.
+            tokio::time::sleep(BLOCK_REQUEST_BATCH_DELAY).await;
+        }
+    }
+
     /// Starts the sync module.
+    ///
+    /// When this function returns sucessfully, the sync module will have spawned background tasks
+    /// that fetch blocks from other validators.
     pub async fn run(&self, sync_receiver: SyncReceiver<N>) -> Result<()> {
         info!("Starting the sync module...");
 
@@ -115,10 +141,8 @@ impl<N: Network> Sync<N> {
             loop {
                 // Sleep briefly to avoid triggering spam detection.
                 tokio::time::sleep(PRIMARY_PING_INTERVAL).await;
-                // Perform the sync routine.
-                let communication = &self_.gateway;
                 // let communication = &node.router;
-                self_.block_sync.try_block_sync(communication).await;
+                self_.try_block_sync().await;
 
                 // Sync the storage with the blocks.
                 if let Err(e) = self_.sync_storage_with_blocks().await {
@@ -166,12 +190,15 @@ impl<N: Network> Sync<N> {
         let self_ = self.clone();
         self.spawn(async move {
             while let Some((peer_ip, blocks, callback)) = rx_block_sync_advance_with_sync_blocks.recv().await {
-                // Process the block response.
-                if let Err(e) = self_.block_sync.process_block_response(peer_ip, blocks) {
+                // Verify that the response is valid.
+                if let Err(e) = self_.block_sync.insert_block_responses(peer_ip, blocks) {
                     // Send the error to the callback.
                     callback.send(Err(e)).ok();
                     continue;
                 }
+
+                // Advance block synchronization
+                self_.block_sync.try_advancing_block_synchronization();
 
                 // Sync the storage with the blocks.
                 if let Err(e) = self_.sync_storage_with_blocks().await {
@@ -610,21 +637,9 @@ impl<N: Network> Sync<N> {
         self.block_sync.num_blocks_behind()
     }
 
-    /// Returns `true` if the node is in gateway mode.
-    pub fn is_gateway_mode(&self) -> bool {
-        self.block_sync.mode().is_gateway()
-    }
-
     /// Returns the current block locators of the node.
     pub fn get_block_locators(&self) -> Result<BlockLocators<N>> {
         self.block_sync.get_block_locators()
-    }
-
-    /// Returns the block sync module.
-    #[cfg(test)]
-    #[doc(hidden)]
-    pub(super) fn block_sync(&self) -> &BlockSync<N> {
-        &self.block_sync
     }
 }
 
@@ -724,7 +739,7 @@ mod tests {
     use crate::{helpers::now, ledger_service::CoreLedgerService, storage_service::BFTMemoryService};
 
     use snarkos_account::Account;
-    use snarkos_node_sync::{BlockSync, BlockSyncMode};
+    use snarkos_node_sync::BlockSync;
     use snarkos_node_tcp::P2P;
     use snarkvm::{
         console::{
@@ -955,8 +970,7 @@ mod tests {
         // Initialize the gateway.
         let gateway = Gateway::new(account.clone(), storage.clone(), syncing_ledger.clone(), None, &[], None)?;
         // Initialize the block synchronization logic.
-        let block_sync =
-            Arc::new(BlockSync::new(BlockSyncMode::Gateway, syncing_ledger.clone(), gateway.tcp().clone()));
+        let block_sync = Arc::new(BlockSync::new(syncing_ledger.clone(), gateway.tcp().clone()));
         // Initialize the sync module.
         let sync = Sync::new(block_sync, gateway.clone(), storage.clone(), syncing_ledger.clone());
         // Try to sync block 1.

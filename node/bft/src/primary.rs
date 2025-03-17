@@ -1769,7 +1769,7 @@ mod tests {
     use super::*;
     use snarkos_node_bft_ledger_service::MockLedgerService;
     use snarkos_node_bft_storage_service::BFTMemoryService;
-    use snarkos_node_sync::{BlockSync, BlockSyncMode};
+    use snarkos_node_sync::BlockSync;
     use snarkos_node_tcp::P2P;
     use snarkvm::{
         ledger::committee::{Committee, MIN_VALIDATOR_STAKE},
@@ -1808,7 +1808,7 @@ mod tests {
 
         // Initialize the primary.
         let gateway = Gateway::new(account.clone(), storage.clone(), ledger.clone(), None, &[], None).unwrap();
-        let block_sync = Arc::new(BlockSync::new(BlockSyncMode::Gateway, ledger.clone(), gateway.tcp().clone()));
+        let block_sync = Arc::new(BlockSync::new(ledger.clone(), gateway.tcp().clone()));
         let mut primary = Primary::new(block_sync, account, storage, ledger, None, &[], None).unwrap();
 
         // Construct a worker instance.
@@ -2179,7 +2179,7 @@ mod tests {
         // The author must be known to resolver to pass propose checks.
         primary.gateway.resolver().insert_peer(peer_ip, peer_ip, peer_account.1.address());
         // The primary must be considered synced.
-        primary.sync.block_sync().try_block_sync(&primary.gateway.clone()).await;
+        primary.sync.try_block_sync().await;
 
         // Try to process the batch proposal from the peer, should succeed.
         assert!(
@@ -2250,7 +2250,7 @@ mod tests {
         // The author must be known to resolver to pass propose checks.
         primary.gateway.resolver().insert_peer(peer_ip, peer_ip, peer_account.1.address());
         // The primary must be considered synced.
-        primary.sync.block_sync().try_block_sync(&primary.gateway.clone()).await;
+        primary.sync.try_block_sync().await;
 
         // Try to process the batch proposal from the peer, should succeed.
         primary.process_batch_propose_from_peer(peer_ip, (*proposal.batch_header()).clone().into()).await.unwrap();
@@ -2283,7 +2283,7 @@ mod tests {
         // The author must be known to resolver to pass propose checks.
         primary.gateway.resolver().insert_peer(peer_ip, peer_ip, peer_account.1.address());
         // The primary must be considered synced.
-        primary.sync.block_sync().try_block_sync(&primary.gateway.clone()).await;
+        primary.sync.try_block_sync().await;
 
         // Try to process the batch proposal from the peer, should error.
         assert!(
@@ -2327,7 +2327,7 @@ mod tests {
         // The author must be known to resolver to pass propose checks.
         primary.gateway.resolver().insert_peer(peer_ip, peer_ip, peer_account.1.address());
         // The primary must be considered synced.
-        primary.sync.block_sync().try_block_sync(&primary.gateway.clone()).await;
+        primary.sync.try_block_sync().await;
 
         // Try to process the batch proposal from the peer, should error.
         assert!(
@@ -2371,7 +2371,7 @@ mod tests {
         // The author must be known to resolver to pass propose checks.
         primary.gateway.resolver().insert_peer(peer_ip, peer_ip, peer_account.1.address());
         // The primary must be considered synced.
-        primary.sync.block_sync().try_block_sync(&primary.gateway.clone()).await;
+        primary.sync.try_block_sync().await;
 
         // Try to process the batch proposal from the peer, should error.
         assert!(
@@ -2409,7 +2409,7 @@ mod tests {
         // The author must be known to resolver to pass propose checks.
         primary.gateway.resolver().insert_peer(peer_ip, peer_ip, peer_account.1.address());
         // The primary must be considered synced.
-        primary.sync.block_sync().try_block_sync(&primary.gateway.clone()).await;
+        primary.sync.try_block_sync().await;
 
         // Try to process the batch proposal from the peer, should error.
         assert!(

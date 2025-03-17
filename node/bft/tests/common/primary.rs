@@ -27,7 +27,7 @@ use snarkos_node_bft::{
     helpers::{PrimarySender, Storage, init_primary_channels},
 };
 use snarkos_node_bft_storage_service::BFTMemoryService;
-use snarkos_node_sync::{BlockSync, BlockSyncMode};
+use snarkos_node_sync::BlockSync;
 use snarkos_node_tcp::P2P;
 use snarkvm::{
     console::{
@@ -165,7 +165,7 @@ impl TestNetwork {
             // Initialize the gateway.
             let gateway = Gateway::new(account.clone(), storage.clone(), ledger.clone(), None, &[], None).unwrap();
             // Initialize the block synchronization logic.
-            let block_sync = Arc::new(BlockSync::new(BlockSyncMode::Gateway, ledger.clone(), gateway.tcp().clone()));
+            let block_sync = Arc::new(BlockSync::new(ledger.clone(), gateway.tcp().clone()));
 
             let (primary, bft) = if config.bft {
                 let bft = BFT::<CurrentNetwork>::new(block_sync, account, storage, ledger, None, &[], Some(id as u16))

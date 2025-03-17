@@ -28,7 +28,7 @@ use snarkos_node_router::{
     Routing,
     messages::{NodeType, PuzzleResponse, UnconfirmedSolution, UnconfirmedTransaction},
 };
-use snarkos_node_sync::{BlockSync, BlockSyncMode};
+use snarkos_node_sync::BlockSync;
 use snarkos_node_tcp::{
     P2P,
     protocols::{Disconnect, Handshake, OnConnect, Reading, Writing},
@@ -125,7 +125,7 @@ impl<N: Network, C: ConsensusStorage<N>> Validator<N, C> {
         .await?;
 
         // Initialize the block synchronization logic.
-        let sync = Arc::new(BlockSync::new(BlockSyncMode::Gateway, ledger_service.clone(), router.tcp().clone()));
+        let sync = Arc::new(BlockSync::new(ledger_service.clone(), router.tcp().clone()));
 
         // Initialize the consensus layer.
         let mut consensus = Consensus::new(

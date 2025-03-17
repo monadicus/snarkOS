@@ -898,7 +898,7 @@ mod tests {
     use snarkos_account::Account;
     use snarkos_node_bft_ledger_service::MockLedgerService;
     use snarkos_node_bft_storage_service::BFTMemoryService;
-    use snarkos_node_sync::{BlockSync, BlockSyncMode};
+    use snarkos_node_sync::BlockSync;
     use snarkos_node_tcp::P2P;
     use snarkvm::{
         console::account::{Address, PrivateKey},
@@ -947,7 +947,7 @@ mod tests {
         // Initialize the gateway.
         let gateway = Gateway::new(account.clone(), storage.clone(), ledger.clone(), None, &[], None)?;
         // Create the block synchronization logic.
-        let block_sync = Arc::new(BlockSync::new(BlockSyncMode::Gateway, ledger.clone(), gateway.tcp().clone()));
+        let block_sync = Arc::new(BlockSync::new(ledger.clone(), gateway.tcp().clone()));
         // Initialize the BFT.
         BFT::new(block_sync, account.clone(), storage.clone(), ledger.clone(), None, &[], None)
     }
