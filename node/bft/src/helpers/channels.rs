@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024-2025 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -241,6 +242,9 @@ impl<N: Network> SyncSender<N> {
         // Initialize a callback sender and receiver.
         let (callback_sender, callback_receiver) = oneshot::channel();
         // Send the request to update the peer locators.
+        // This `tx_block_sync_update_peer_locators.send()` call
+        // causes the `rx_block_sync_update_peer_locators.recv()` call
+        // in one of the loops in [`Sync::run()`] to return.
         self.tx_block_sync_update_peer_locators.send((peer_ip, block_locators, callback_sender)).await?;
         // Await the callback to continue.
         callback_receiver.await?
@@ -251,6 +255,9 @@ impl<N: Network> SyncSender<N> {
         // Initialize a callback sender and receiver.
         let (callback_sender, callback_receiver) = oneshot::channel();
         // Send the request to advance with sync blocks.
+        // This `tx_block_sync_advance_with_sync_blocks.send()` call
+        // causes the `rx_block_sync_advance_with_sync_blocks.recv()` call
+        // in one of the loops in [`Sync::run()`] to return.
         self.tx_block_sync_advance_with_sync_blocks.send((peer_ip, blocks, callback_sender)).await?;
         // Await the callback to continue.
         callback_receiver.await?

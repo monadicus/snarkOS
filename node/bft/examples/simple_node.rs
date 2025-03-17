@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024-2025 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -17,36 +18,36 @@ extern crate tracing;
 
 use snarkos_account::Account;
 use snarkos_node_bft::{
-    helpers::{init_consensus_channels, init_primary_channels, ConsensusReceiver, PrimarySender, Storage},
-    Primary,
     BFT,
     MEMORY_POOL_PORT,
+    Primary,
+    helpers::{ConsensusReceiver, PrimarySender, Storage, init_consensus_channels, init_primary_channels},
 };
 use snarkos_node_bft_ledger_service::TranslucentLedgerService;
 use snarkos_node_bft_storage_service::BFTMemoryService;
 use snarkvm::{
     console::{account::PrivateKey, algorithms::BHP256, types::Address},
     ledger::{
+        Block,
+        Ledger,
         block::Transaction,
         committee::{Committee, MIN_VALIDATOR_STAKE},
         narwhal::{BatchHeader, Data},
         puzzle::{Solution, SolutionID},
-        store::{helpers::memory::ConsensusMemory, ConsensusStore},
-        Block,
-        Ledger,
+        store::{ConsensusStore, helpers::memory::ConsensusMemory},
     },
     prelude::{Field, Hash, Network, Uniform, VM},
-    utilities::{to_bytes_le, FromBytes, TestRng, ToBits, ToBytes},
+    utilities::{FromBytes, TestRng, ToBits, ToBytes, to_bytes_le},
 };
 
 use ::bytes::Bytes;
-use anyhow::{anyhow, ensure, Error, Result};
+use anyhow::{Error, Result, anyhow, ensure};
 use axum::{
+    Router,
     extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::get,
-    Router,
 };
 use axum_extra::response::ErasedJson;
 use clap::{Parser, ValueEnum};
@@ -57,7 +58,7 @@ use std::{
     net::SocketAddr,
     path::PathBuf,
     str::FromStr,
-    sync::{atomic::AtomicBool, Arc, Mutex, OnceLock},
+    sync::{Arc, Mutex, OnceLock, atomic::AtomicBool},
 };
 use tokio::{net::TcpListener, sync::oneshot};
 use tracing_subscriber::{
@@ -86,7 +87,7 @@ pub fn initialize_logger(verbosity: u8) {
             .add_directive("hyper=off".parse().unwrap())
             .add_directive("reqwest=off".parse().unwrap())
             .add_directive("want=off".parse().unwrap())
-            .add_directive("warp=off".parse().unwrap());
+            .add_directive("h2=off".parse().unwrap());
 
         let filter = if verbosity > 3 {
             filter.add_directive("snarkos_node_bft::gateway=trace".parse().unwrap())
@@ -223,7 +224,7 @@ fn genesis_block(
     let vm = VM::from(store).unwrap();
     // Initialize the genesis block.
     let bonded_balances: IndexMap<_, _> =
-        committee.members().iter().map(|(address, (amount, _))| (*address, (*address, *address, *amount))).collect();
+        committee.members().iter().map(|(address, (amount, _, _))| (*address, (*address, *address, *amount))).collect();
     vm.genesis_quorum(&genesis_private_key, committee, public_balances, bonded_balances, rng).unwrap()
 }
 
@@ -276,7 +277,7 @@ fn initialize_components(node_id: u16, num_nodes: u16) -> Result<(Committee<Curr
         // Sample the account.
         let account = Account::new(&mut rand_chacha::ChaChaRng::seed_from_u64(i as u64))?;
         // Add the validator.
-        members.insert(account.address(), (MIN_VALIDATOR_STAKE, false));
+        members.insert(account.address(), (MIN_VALIDATOR_STAKE, false, i as u8));
         println!("  Validator {}: {}", i, account.address());
     }
     println!();
@@ -602,7 +603,7 @@ async fn main() -> Result<()> {
     #[cfg(feature = "metrics")]
     if args.metrics {
         info!("Initializing metrics...");
-        metrics::initialize_metrics();
+        metrics::initialize_metrics(SocketAddr::from_str(&format!("0.0.0.0:{}", 9000 + args.id)).ok());
     }
 
     // Start the monitoring server.

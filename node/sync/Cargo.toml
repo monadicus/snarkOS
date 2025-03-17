@@ -1,10 +1,10 @@
 [package]
 name = "snarkos-node-sync"
-version = "2.2.7"
+version = "3.3.2"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A synchronization module for a decentralized operating system"
 homepage = "https://aleo.org"
-repository = "https://github.com/AleoHQ/snarkOS"
+repository = "https://github.com/ProvableHQ/snarkOS"
 keywords = [
   "aleo",
   "cryptography",
@@ -12,13 +12,15 @@ keywords = [
   "decentralized",
   "zero-knowledge"
 ]
-categories = [ "cryptography", "operating-systems" ]
+categories = [ "cryptography", "cryptography::cryptocurrencies", "os" ]
 license = "Apache-2.0"
 edition = "2021"
 
 [features]
 default = [ ]
+metrics = [ "dep:metrics" ]
 test = [ "snarkos-node-sync-locators/test" ]
+test_targets = [ "snarkvm/test_targets" ]
 
 [dependencies.anyhow]
 version = "1.0"
@@ -44,16 +46,30 @@ version = "1"
 
 [dependencies.snarkos-node-bft-ledger-service]
 path = "../bft/ledger-service"
-version = "=2.2.7"
+version = "=3.3.2"
 features = [ "ledger-write" ]
+
+[dependencies.metrics]
+package = "snarkos-node-metrics"
+path = "../metrics"
+version = "=3.3.2"
+optional = true
+
+[dependencies.snarkos-node-router]
+path = "../router"
+version = "=3.3.2"
 
 [dependencies.snarkos-node-sync-communication-service]
 path = "communication-service"
-version = "=2.2.7"
+version = "=3.3.2"
 
 [dependencies.snarkos-node-sync-locators]
 path = "locators"
-version = "=2.2.7"
+version = "=3.3.2"
+
+[dependencies.snarkos-node-tcp]
+path = "../tcp"
+version = "=3.3.2"
 
 [dependencies.snarkvm]
 workspace = true

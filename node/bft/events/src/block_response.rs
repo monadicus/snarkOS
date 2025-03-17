@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024-2025 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -64,7 +65,7 @@ pub struct DataBlocks<N: Network>(pub Vec<Block<N>>);
 
 impl<N: Network> DataBlocks<N> {
     /// The maximum number of blocks that can be sent in a single message.
-    pub const MAXIMUM_NUMBER_OF_BLOCKS: u8 = 1;
+    pub const MAXIMUM_NUMBER_OF_BLOCKS: u8 = 5;
 
     /// Ensures that the blocks are well-formed in a block response.
     pub fn ensure_response_is_well_formed(
@@ -135,16 +136,16 @@ impl<N: Network> FromBytes for DataBlocks<N> {
 
 #[cfg(test)]
 pub mod prop_tests {
-    use crate::{block_request::prop_tests::any_block_request, BlockResponse, DataBlocks};
+    use crate::{BlockResponse, DataBlocks, block_request::prop_tests::any_block_request};
     use snarkvm::{
         ledger::ledger_test_helpers::sample_genesis_block,
-        prelude::{block::Block, narwhal::Data, FromBytes, TestRng, ToBytes},
+        prelude::{FromBytes, TestRng, ToBytes, block::Block, narwhal::Data},
     };
 
     use bytes::{Buf, BufMut, BytesMut};
     use proptest::{
         collection::vec,
-        prelude::{any, BoxedStrategy, Strategy},
+        prelude::{BoxedStrategy, Strategy, any},
     };
     use test_strategy::proptest;
 

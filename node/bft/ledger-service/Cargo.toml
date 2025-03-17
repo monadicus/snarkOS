@@ -1,10 +1,10 @@
 [package]
 name = "snarkos-node-bft-ledger-service"
-version = "2.2.7"
+version = "3.3.2"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A ledger service for the memory pool in a decentralized operating system"
 homepage = "https://aleo.org"
-repository = "https://github.com/AleoHQ/snarkOS"
+repository = "https://github.com/ProvableHQ/snarkOS"
 keywords = [
   "aleo",
   "cryptography",
@@ -12,18 +12,20 @@ keywords = [
   "decentralized",
   "zero-knowledge"
 ]
-categories = [ "cryptography", "operating-systems" ]
+categories = [ "cryptography", "cryptography::cryptocurrencies", "os" ]
 license = "Apache-2.0"
 edition = "2021"
 
 [features]
 default = [ ]
-ledger = [ "lru", "parking_lot", "rand", "tokio", "tracing" ]
+ledger = [ "parking_lot", "rand", "rayon", "tokio", "tracing" ]
 ledger-write = [ ]
+metrics = [ "dep:metrics", "snarkvm/metrics" ]
 mock = [ "parking_lot", "tracing" ]
 prover = [ ]
 test = [ "mock", "translucent" ]
 translucent = [ "ledger" ]
+test_targets = [ "snarkvm/test_targets" ]
 
 [dependencies.async-trait]
 version = "0.1"
@@ -32,8 +34,10 @@ version = "0.1"
 version = "2.1"
 features = [ "serde", "rayon" ]
 
-[dependencies.lru]
-version = "0.12"
+[dependencies.metrics]
+package = "snarkos-node-metrics"
+path = "../../metrics"
+version = "=3.3.2"
 optional = true
 
 [dependencies.parking_lot]
@@ -42,6 +46,10 @@ optional = true
 
 [dependencies.rand]
 version = "0.8"
+optional = true
+
+[dependencies.rayon]
+version = "1"
 optional = true
 
 [dependencies.snarkvm]

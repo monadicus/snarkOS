@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024-2025 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -12,8 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{MAX_TIMESTAMP_DELTA_IN_SECS, PROPOSAL_EXPIRATION_IN_SECS};
-use snarkvm::prelude::{bail, Result};
+use crate::MAX_TIMESTAMP_DELTA_IN_SECS;
+use snarkvm::prelude::{Result, bail};
 
 use time::OffsetDateTime;
 
@@ -29,15 +30,6 @@ pub fn check_timestamp_for_liveness(timestamp: i64) -> Result<()> {
         bail!("Timestamp {timestamp} is too far in the future")
     }
     Ok(())
-}
-
-/// Returns whether the proposal is expired.
-pub fn is_proposal_expired(current_timestamp: i64, proposal_timestamp: i64) -> bool {
-    debug_assert!(
-        current_timestamp >= proposal_timestamp,
-        "Current timestamp must be greater or equal to the proposal timestamp"
-    );
-    current_timestamp.saturating_sub(proposal_timestamp) >= PROPOSAL_EXPIRATION_IN_SECS
 }
 
 #[cfg(test)]

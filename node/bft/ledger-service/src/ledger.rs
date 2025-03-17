@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024-2025 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -12,39 +13,41 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{fmt_id, spawn_blocking, LedgerService};
+use crate::{LedgerService, fmt_id, spawn_blocking};
 use snarkvm::{
     ledger::{
+        Ledger,
         block::{Block, Transaction},
         committee::Committee,
         narwhal::{BatchCertificate, Data, Subdag, Transmission, TransmissionID},
         puzzle::{Solution, SolutionID},
         store::ConsensusStorage,
-        Ledger,
     },
-    prelude::{bail, Address, Field, Network, Result},
+    prelude::{Address, Field, FromBytes, Network, Result, bail, cfg_into_iter},
 };
 
 use indexmap::IndexMap;
-use lru::LruCache;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::RwLock;
+use rayon::prelude::*;
 use std::{
+    collections::BTreeMap,
     fmt,
+    io::Read,
     ops::Range,
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
 };
 
-/// The capacity of the LRU holding the recently queried committees.
-const COMMITTEE_CACHE_SIZE: usize = 16;
+/// The capacity of the cache holding the highest blocks.
+const BLOCK_CACHE_SIZE: usize = 10;
 
 /// A core ledger service.
 #[allow(clippy::type_complexity)]
 pub struct CoreLedgerService<N: Network, C: ConsensusStorage<N>> {
     ledger: Ledger<N, C>,
-    committee_cache: Arc<Mutex<LruCache<u64, Committee<N>>>>,
+    block_cache: Arc<RwLock<BTreeMap<u32, Block<N>>>>,
     latest_leader: Arc<RwLock<Option<(u64, Address<N>)>>>,
     shutdown: Arc<AtomicBool>,
 }
@@ -52,8 +55,8 @@ pub struct CoreLedgerService<N: Network, C: ConsensusStorage<N>> {
 impl<N: Network, C: ConsensusStorage<N>> CoreLedgerService<N, C> {
     /// Initializes a new core ledger service.
     pub fn new(ledger: Ledger<N, C>, shutdown: Arc<AtomicBool>) -> Self {
-        let committee_cache = Arc::new(Mutex::new(LruCache::new(COMMITTEE_CACHE_SIZE.try_into().unwrap())));
-        Self { ledger, committee_cache, latest_leader: Default::default(), shutdown }
+        let block_cache = Arc::new(RwLock::new(BTreeMap::new()));
+        Self { ledger, block_cache, latest_leader: Default::default(), shutdown }
     }
 }
 
@@ -79,6 +82,11 @@ impl<N: Network, C: ConsensusStorage<N>> LedgerService<N> for CoreLedgerService<
     /// Returns the latest block in the ledger.
     fn latest_block(&self) -> Block<N> {
         self.ledger.latest_block()
+    }
+
+    /// Returns the latest restrictions ID in the ledger.
+    fn latest_restrictions_id(&self) -> Field<N> {
+        self.ledger.vm().restrictions().restrictions_id()
     }
 
     /// Returns the latest cached leader and its associated round.
@@ -113,13 +121,21 @@ impl<N: Network, C: ConsensusStorage<N>> LedgerService<N> for CoreLedgerService<
 
     /// Returns the block for the given block height.
     fn get_block(&self, height: u32) -> Result<Block<N>> {
+        // First, check if the block is in the block cache.
+        // Using `try_read` to avoid blocking the thread: https://github.com/rayon-rs/rayon/issues/1205
+        if let Some(block_cache) = self.block_cache.try_read() {
+            if let Some(block) = block_cache.get(&height) {
+                return Ok(block.clone());
+            }
+        }
+        // If no block is found in the cache, then retrieve the block from the ledger.
         self.ledger.get_block(height)
     }
 
     /// Returns the blocks in the given block range.
     /// The range is inclusive of the start and exclusive of the end.
     fn get_blocks(&self, heights: Range<u32>) -> Result<Vec<Block<N>>> {
-        self.ledger.get_blocks(heights)
+        cfg_into_iter!(heights).map(|height| self.get_block(height)).collect()
     }
 
     /// Returns the solution for the given solution ID.
@@ -147,36 +163,14 @@ impl<N: Network, C: ConsensusStorage<N>> LedgerService<N> for CoreLedgerService<
     }
 
     /// Returns the committee for the given round.
-    /// If the given round is in the future, then the current committee is returned.
     fn get_committee_for_round(&self, round: u64) -> Result<Committee<N>> {
-        // Check if the committee is already in the cache.
-        if let Some(committee) = self.committee_cache.lock().get(&round) {
-            return Ok(committee.clone());
-        }
-
         match self.ledger.get_committee_for_round(round)? {
-            // Return the committee if it exists.
-            Some(committee) => {
-                // Insert the committee into the cache.
-                self.committee_cache.lock().push(round, committee.clone());
-                // Return the committee.
-                Ok(committee)
-            }
-            // Return the current committee if the round is in the future.
-            None => {
-                // Retrieve the current committee.
-                let current_committee = self.current_committee()?;
-                // Return the current committee if the round is in the future.
-                match current_committee.starting_round() <= round {
-                    true => Ok(current_committee),
-                    false => bail!("No committee found for round {round} in the ledger"),
-                }
-            }
+            Some(committee) => Ok(committee),
+            None => bail!("No committee found for round {round} in the ledger"),
         }
     }
 
     /// Returns the committee lookback for the given round.
-    /// If the committee lookback round is in the future, then the current committee is returned.
     fn get_committee_lookback_for_round(&self, round: u64) -> Result<Committee<N>> {
         // Get the round number for the previous committee. Note, we subtract 2 from odd rounds,
         // because committees are updated in even rounds.
@@ -201,8 +195,8 @@ impl<N: Network, C: ConsensusStorage<N>> LedgerService<N> for CoreLedgerService<
     fn contains_transmission(&self, transmission_id: &TransmissionID<N>) -> Result<bool> {
         match transmission_id {
             TransmissionID::Ratification => Ok(false),
-            TransmissionID::Solution(solution_id) => self.ledger.contains_solution_id(solution_id),
-            TransmissionID::Transaction(transaction_id) => self.ledger.contains_transaction_id(transaction_id),
+            TransmissionID::Solution(solution_id, _) => self.ledger.contains_solution_id(solution_id),
+            TransmissionID::Transaction(transaction_id, _) => self.ledger.contains_transaction_id(transaction_id),
         }
     }
 
@@ -213,33 +207,48 @@ impl<N: Network, C: ConsensusStorage<N>> LedgerService<N> for CoreLedgerService<
         transmission: &mut Transmission<N>,
     ) -> Result<()> {
         match (transmission_id, transmission) {
-            (TransmissionID::Ratification, Transmission::Ratification) => {}
-            (TransmissionID::Transaction(expected_transaction_id), Transmission::Transaction(transaction_data)) => {
-                match transaction_data.clone().deserialize_blocking() {
-                    Ok(transaction) => {
-                        // Ensure the transaction ID matches the expected transaction ID.
-                        if transaction.id() != expected_transaction_id {
-                            bail!(
-                                "Received mismatching transaction ID  - expected {}, found {}",
-                                fmt_id(expected_transaction_id),
-                                fmt_id(transaction.id()),
-                            );
-                        }
-
-                        // Ensure the transaction is not a fee transaction.
-                        if transaction.is_fee() {
-                            bail!("Received a fee transaction in a transmission");
-                        }
-
-                        // Update the transmission with the deserialized transaction.
-                        *transaction_data = Data::Object(transaction);
-                    }
-                    Err(err) => {
-                        bail!("Failed to deserialize transaction: {err}");
-                    }
-                }
+            (TransmissionID::Ratification, Transmission::Ratification) => {
+                bail!("Ratification transmissions are currently not supported.")
             }
-            (TransmissionID::Solution(expected_solution_id), Transmission::Solution(solution_data)) => {
+            (
+                TransmissionID::Transaction(expected_transaction_id, expected_checksum),
+                Transmission::Transaction(transaction_data),
+            ) => {
+                // Deserialize the transaction. If the transaction exceeds the maximum size, then return an error.
+                let transaction = match transaction_data.clone() {
+                    Data::Object(transaction) => transaction,
+                    Data::Buffer(bytes) => Transaction::<N>::read_le(&mut bytes.take(N::MAX_TRANSACTION_SIZE as u64))?,
+                };
+                // Ensure the transaction ID matches the expected transaction ID.
+                if transaction.id() != expected_transaction_id {
+                    bail!(
+                        "Received mismatching transaction ID - expected {}, found {}",
+                        fmt_id(expected_transaction_id),
+                        fmt_id(transaction.id()),
+                    );
+                }
+
+                // Ensure the transmission checksum matches the expected checksum.
+                let checksum = transaction_data.to_checksum::<N>()?;
+                if checksum != expected_checksum {
+                    bail!(
+                        "Received mismatching checksum for transaction {} - expected {expected_checksum} but found {checksum}",
+                        fmt_id(expected_transaction_id)
+                    );
+                }
+
+                // Ensure the transaction is not a fee transaction.
+                if transaction.is_fee() {
+                    bail!("Received a fee transaction in a transmission");
+                }
+
+                // Update the transmission with the deserialized transaction.
+                *transaction_data = Data::Object(transaction);
+            }
+            (
+                TransmissionID::Solution(expected_solution_id, expected_checksum),
+                Transmission::Solution(solution_data),
+            ) => {
                 match solution_data.clone().deserialize_blocking() {
                     Ok(solution) => {
                         if solution.id() != expected_solution_id {
@@ -247,6 +256,15 @@ impl<N: Network, C: ConsensusStorage<N>> LedgerService<N> for CoreLedgerService<
                                 "Received mismatching solution ID - expected {}, found {}",
                                 fmt_id(expected_solution_id),
                                 fmt_id(solution.id()),
+                            );
+                        }
+
+                        // Ensure the transmission checksum matches the expected checksum.
+                        let checksum = solution_data.to_checksum::<N>()?;
+                        if checksum != expected_checksum {
+                            bail!(
+                                "Received mismatching checksum for solution {} - expected {expected_checksum} but found {checksum}",
+                                fmt_id(expected_solution_id)
                             );
                         }
 
@@ -294,8 +312,13 @@ impl<N: Network, C: ConsensusStorage<N>> LedgerService<N> for CoreLedgerService<
         transaction_id: N::TransactionID,
         transaction: Data<Transaction<N>>,
     ) -> Result<()> {
-        // Deserialize the transaction.
-        let transaction = spawn_blocking!(transaction.deserialize_blocking())?;
+        // Deserialize the transaction. If the transaction exceeds the maximum size, then return an error.
+        let transaction = spawn_blocking!({
+            match transaction {
+                Data::Object(transaction) => Ok(transaction),
+                Data::Buffer(bytes) => Ok(Transaction::<N>::read_le(&mut bytes.take(N::MAX_TRANSACTION_SIZE as u64))?),
+            }
+        })?;
         // Ensure the transaction ID matches in the transaction.
         if transaction_id != transaction.id() {
             bail!("Invalid transaction - expected {transaction_id}, found {}", transaction.id());
@@ -328,11 +351,33 @@ impl<N: Network, C: ConsensusStorage<N>> LedgerService<N> for CoreLedgerService<
     #[cfg(feature = "ledger-write")]
     fn advance_to_next_block(&self, block: &Block<N>) -> Result<()> {
         // If the Ctrl-C handler registered the signal, then skip advancing to the next block.
-        if self.shutdown.load(Ordering::Relaxed) {
+        if self.shutdown.load(Ordering::Acquire) {
             bail!("Skipping advancing to block {} - The node is shutting down", block.height());
         }
         // Advance to the next block.
         self.ledger.advance_to_next_block(block)?;
+        // Add the block to the block cache.
+        {
+            let mut block_cache = self.block_cache.write();
+            block_cache.insert(block.height(), block.clone());
+            // Prune the block cache if it exceeds the maximum size.
+            if block_cache.len() > BLOCK_CACHE_SIZE {
+                block_cache.pop_first();
+            }
+        }
+        // Update BFT metrics.
+        #[cfg(feature = "metrics")]
+        {
+            let num_sol = block.solutions().len();
+            let num_tx = block.transactions().len();
+
+            metrics::gauge(metrics::bft::HEIGHT, block.height() as f64);
+            metrics::gauge(metrics::bft::LAST_COMMITTED_ROUND, block.round() as f64);
+            metrics::increment_gauge(metrics::blocks::SOLUTIONS, num_sol as f64);
+            metrics::increment_gauge(metrics::blocks::TRANSACTIONS, num_tx as f64);
+            metrics::update_block_metrics(block);
+        }
+
         tracing::info!("\n\nAdvanced to block {} at round {} - {}\n", block.height(), block.round(), block.hash());
         Ok(())
     }

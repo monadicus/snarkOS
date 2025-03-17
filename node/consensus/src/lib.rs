@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024-2025 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -19,17 +20,18 @@ extern crate tracing;
 
 use snarkos_account::Account;
 use snarkos_node_bft::{
+    BFT,
+    MAX_BATCH_DELAY_IN_MS,
+    Primary,
     helpers::{
-        fmt_id,
-        init_consensus_channels,
         ConsensusReceiver,
         PrimaryReceiver,
         PrimarySender,
         Storage as NarwhalStorage,
+        fmt_id,
+        init_consensus_channels,
     },
     spawn_blocking,
-    Primary,
-    BFT,
 };
 use snarkos_node_bft_ledger_service::LedgerService;
 use snarkos_node_bft_storage_service::BFTPersistentStorage;
@@ -48,11 +50,14 @@ use colored::Colorize;
 use indexmap::IndexMap;
 use lru::LruCache;
 use parking_lot::Mutex;
-use std::{future::Future, net::SocketAddr, num::NonZeroUsize, sync::Arc};
+use std::{future::Future, net::SocketAddr, num::NonZeroUsize, sync::Arc, time::Duration};
 use tokio::{
-    sync::{oneshot, OnceCell},
+    sync::{OnceCell, oneshot},
     task::JoinHandle,
 };
+
+#[cfg(feature = "metrics")]
+use std::collections::HashMap;
 
 /// The capacity of the queue reserved for deployments.
 /// Note: This is an inbound queue capacity, not a Narwhal-enforced capacity.
@@ -98,6 +103,8 @@ pub struct Consensus<N: Network> {
     seen_solutions: Arc<Mutex<LruCache<SolutionID<N>, ()>>>,
     /// The recently-seen unconfirmed transactions.
     seen_transactions: Arc<Mutex<LruCache<N::TransactionID, ()>>>,
+    #[cfg(feature = "metrics")]
+    transmissions_queue_timestamps: Arc<Mutex<HashMap<TransmissionID<N>, i64>>>,
     /// The spawned handles.
     handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
 }
@@ -131,6 +138,8 @@ impl<N: Network> Consensus<N> {
             transactions_queue: Default::default(),
             seen_solutions: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(1 << 16).unwrap()))),
             seen_transactions: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(1 << 16).unwrap()))),
+            #[cfg(feature = "metrics")]
+            transmissions_queue_timestamps: Default::default(),
             handles: Default::default(),
         })
     }
@@ -191,34 +200,104 @@ impl<N: Network> Consensus<N> {
 impl<N: Network> Consensus<N> {
     /// Returns the unconfirmed transmission IDs.
     pub fn unconfirmed_transmission_ids(&self) -> impl '_ + Iterator<Item = TransmissionID<N>> {
-        self.bft.unconfirmed_transmission_ids()
+        self.worker_transmission_ids().chain(self.inbound_transmission_ids())
     }
 
     /// Returns the unconfirmed transmissions.
     pub fn unconfirmed_transmissions(&self) -> impl '_ + Iterator<Item = (TransmissionID<N>, Transmission<N>)> {
-        self.bft.unconfirmed_transmissions()
+        self.worker_transmissions().chain(self.inbound_transmissions())
     }
 
     /// Returns the unconfirmed solutions.
     pub fn unconfirmed_solutions(&self) -> impl '_ + Iterator<Item = (SolutionID<N>, Data<Solution<N>>)> {
-        self.bft.unconfirmed_solutions()
+        self.worker_solutions().chain(self.inbound_solutions())
     }
 
     /// Returns the unconfirmed transactions.
     pub fn unconfirmed_transactions(&self) -> impl '_ + Iterator<Item = (N::TransactionID, Data<Transaction<N>>)> {
-        self.bft.unconfirmed_transactions()
+        self.worker_transactions().chain(self.inbound_transactions())
+    }
+}
+
+impl<N: Network> Consensus<N> {
+    /// Returns the worker transmission IDs.
+    pub fn worker_transmission_ids(&self) -> impl '_ + Iterator<Item = TransmissionID<N>> {
+        self.bft.worker_transmission_ids()
+    }
+
+    /// Returns the worker transmissions.
+    pub fn worker_transmissions(&self) -> impl '_ + Iterator<Item = (TransmissionID<N>, Transmission<N>)> {
+        self.bft.worker_transmissions()
+    }
+
+    /// Returns the worker solutions.
+    pub fn worker_solutions(&self) -> impl '_ + Iterator<Item = (SolutionID<N>, Data<Solution<N>>)> {
+        self.bft.worker_solutions()
+    }
+
+    /// Returns the worker transactions.
+    pub fn worker_transactions(&self) -> impl '_ + Iterator<Item = (N::TransactionID, Data<Transaction<N>>)> {
+        self.bft.worker_transactions()
+    }
+}
+
+impl<N: Network> Consensus<N> {
+    /// Returns the transmission IDs in the inbound queue.
+    pub fn inbound_transmission_ids(&self) -> impl '_ + Iterator<Item = TransmissionID<N>> {
+        self.inbound_transmissions().map(|(id, _)| id)
+    }
+
+    /// Returns the transmissions in the inbound queue.
+    pub fn inbound_transmissions(&self) -> impl '_ + Iterator<Item = (TransmissionID<N>, Transmission<N>)> {
+        self.inbound_transactions()
+            .map(|(id, tx)| {
+                (
+                    TransmissionID::Transaction(id, tx.to_checksum::<N>().unwrap_or_default()),
+                    Transmission::Transaction(tx),
+                )
+            })
+            .chain(self.inbound_solutions().map(|(id, solution)| {
+                (
+                    TransmissionID::Solution(id, solution.to_checksum::<N>().unwrap_or_default()),
+                    Transmission::Solution(solution),
+                )
+            }))
+    }
+
+    /// Returns the solutions in the inbound queue.
+    pub fn inbound_solutions(&self) -> impl '_ + Iterator<Item = (SolutionID<N>, Data<Solution<N>>)> {
+        // Return an iterator over the solutions in the inbound queue.
+        self.solutions_queue.lock().clone().into_iter().map(|(id, solution)| (id, Data::Object(solution)))
+    }
+
+    /// Returns the transactions in the inbound queue.
+    pub fn inbound_transactions(&self) -> impl '_ + Iterator<Item = (N::TransactionID, Data<Transaction<N>>)> {
+        // Acquire the lock on the transactions queue.
+        let tx_queue = self.transactions_queue.lock();
+        // Return an iterator over the deployment and execution transactions in the inbound queue.
+        tx_queue
+            .deployments
+            .clone()
+            .into_iter()
+            .chain(tx_queue.executions.clone())
+            .map(|(id, tx)| (id, Data::Object(tx)))
     }
 }
 
 impl<N: Network> Consensus<N> {
     /// Adds the given unconfirmed solution to the memory pool.
     pub async fn add_unconfirmed_solution(&self, solution: Solution<N>) -> Result<()> {
+        // Calculate the transmission checksum.
+        let checksum = Data::<Solution<N>>::Buffer(solution.to_bytes_le()?.into()).to_checksum::<N>()?;
         #[cfg(feature = "metrics")]
         {
             metrics::increment_gauge(metrics::consensus::UNCONFIRMED_SOLUTIONS, 1f64);
-            metrics::increment_gauge(metrics::consensus::UNCONFIRMED_TRANSMISSIONS, 1f64);
+            let timestamp = snarkos_node_bft::helpers::now();
+            self.transmissions_queue_timestamps
+                .lock()
+                .insert(TransmissionID::Solution(solution.id(), checksum), timestamp);
         }
-        // Process the unconfirmed solution.
+        // Queue the unconfirmed solution.
         {
             let solution_id = solution.id();
 
@@ -228,7 +307,7 @@ impl<N: Network> Consensus<N> {
                 return Ok(());
             }
             // Check if the solution already exists in the ledger.
-            if self.ledger.contains_transmission(&TransmissionID::from(solution_id))? {
+            if self.ledger.contains_transmission(&TransmissionID::Solution(solution_id, checksum))? {
                 bail!("Solution '{}' exists in the ledger {}", fmt_id(solution_id), "(skipping)".dimmed());
             }
             // Add the solution to the memory pool.
@@ -238,6 +317,12 @@ impl<N: Network> Consensus<N> {
             }
         }
 
+        // Try to process the unconfirmed solutions in the memory pool.
+        self.process_unconfirmed_solutions().await
+    }
+
+    /// Processes unconfirmed transactions in the memory pool.
+    pub async fn process_unconfirmed_solutions(&self) -> Result<()> {
         // If the memory pool of this node is full, return early.
         let num_unconfirmed_solutions = self.num_unconfirmed_solutions();
         let num_unconfirmed_transmissions = self.num_unconfirmed_transmissions();
@@ -277,12 +362,17 @@ impl<N: Network> Consensus<N> {
 
     /// Adds the given unconfirmed transaction to the memory pool.
     pub async fn add_unconfirmed_transaction(&self, transaction: Transaction<N>) -> Result<()> {
+        // Calculate the transmission checksum.
+        let checksum = Data::<Transaction<N>>::Buffer(transaction.to_bytes_le()?.into()).to_checksum::<N>()?;
         #[cfg(feature = "metrics")]
         {
             metrics::increment_gauge(metrics::consensus::UNCONFIRMED_TRANSACTIONS, 1f64);
-            metrics::increment_gauge(metrics::consensus::UNCONFIRMED_TRANSMISSIONS, 1f64);
+            let timestamp = snarkos_node_bft::helpers::now();
+            self.transmissions_queue_timestamps
+                .lock()
+                .insert(TransmissionID::Transaction(transaction.id(), checksum), timestamp);
         }
-        // Process the unconfirmed transaction.
+        // Queue the unconfirmed transaction.
         {
             let transaction_id = transaction.id();
 
@@ -296,7 +386,7 @@ impl<N: Network> Consensus<N> {
                 return Ok(());
             }
             // Check if the transaction already exists in the ledger.
-            if self.ledger.contains_transmission(&TransmissionID::from(&transaction_id))? {
+            if self.ledger.contains_transmission(&TransmissionID::Transaction(transaction_id, checksum))? {
                 bail!("Transaction '{}' exists in the ledger {}", fmt_id(transaction_id), "(skipping)".dimmed());
             }
             // Add the transaction to the memory pool.
@@ -308,8 +398,14 @@ impl<N: Network> Consensus<N> {
             } else if self.transactions_queue.lock().executions.put(transaction_id, transaction).is_some() {
                 bail!("Transaction '{}' exists in the memory pool", fmt_id(transaction_id));
             }
-        }
 
+            // Try to process the unconfirmed transactions in the memory pool.
+            self.process_unconfirmed_transactions().await
+        }
+    }
+
+    /// Processes unconfirmed transactions in the memory pool.
+    pub async fn process_unconfirmed_transactions(&self) -> Result<()> {
         // If the memory pool of this node is full, return early.
         let num_unconfirmed_transmissions = self.num_unconfirmed_transmissions();
         if num_unconfirmed_transmissions >= Primary::<N>::MAX_TRANSMISSIONS_TOLERANCE {
@@ -372,6 +468,23 @@ impl<N: Network> Consensus<N> {
                 self_.process_bft_subdag(committed_subdag, transmissions, callback).await;
             }
         });
+
+        // Process the unconfirmed transactions in the memory pool.
+        let self_ = self.clone();
+        self.spawn(async move {
+            loop {
+                // Sleep briefly.
+                tokio::time::sleep(Duration::from_millis(MAX_BATCH_DELAY_IN_MS)).await;
+                // Process the unconfirmed transactions in the memory pool.
+                if let Err(e) = self_.process_unconfirmed_transactions().await {
+                    warn!("Cannot process unconfirmed transactions - {e}");
+                }
+                // Process the unconfirmed solutions in the memory pool.
+                if let Err(e) = self_.process_unconfirmed_solutions().await {
+                    warn!("Cannot process unconfirmed solutions - {e}");
+                }
+            }
+        });
     }
 
     /// Processes the committed subdag and transmissions from the BFT.
@@ -417,23 +530,25 @@ impl<N: Network> Consensus<N> {
         // Advance to the next block.
         self.ledger.advance_to_next_block(&next_block)?;
 
+        // If the next block starts a new epoch, clear the existing solutions.
+        if next_block.height() % N::NUM_BLOCKS_PER_EPOCH == 0 {
+            // Clear the solutions queue.
+            self.solutions_queue.lock().clear();
+            // Clear the worker solutions.
+            self.bft.primary().clear_worker_solutions();
+        }
+
         #[cfg(feature = "metrics")]
         {
             let elapsed = std::time::Duration::from_secs((snarkos_node_bft::helpers::now() - start) as u64);
             let next_block_timestamp = next_block.header().metadata().timestamp();
             let block_latency = next_block_timestamp - current_block_timestamp;
-            let num_sol = next_block.solutions().len();
-            let num_tx = next_block.transactions().len();
-            let num_transmissions = num_tx + num_sol;
             let proof_target = next_block.header().proof_target();
             let coinbase_target = next_block.header().coinbase_target();
             let cumulative_proof_target = next_block.header().cumulative_proof_target();
 
-            metrics::gauge(metrics::blocks::HEIGHT, next_block.height() as f64);
-            metrics::increment_gauge(metrics::blocks::SOLUTIONS, num_sol as f64);
-            metrics::increment_gauge(metrics::blocks::TRANSACTIONS, num_tx as f64);
-            metrics::increment_gauge(metrics::blocks::TRANSMISSIONS, num_transmissions as f64);
-            metrics::gauge(metrics::consensus::LAST_COMMITTED_ROUND, next_block.round() as f64);
+            metrics::add_transmission_latency_metric(&self.transmissions_queue_timestamps, &next_block);
+
             metrics::gauge(metrics::consensus::COMMITTED_CERTIFICATES, num_committed_certificates as f64);
             metrics::histogram(metrics::consensus::CERTIFICATE_COMMIT_LATENCY, elapsed.as_secs_f64());
             metrics::histogram(metrics::consensus::BLOCK_LATENCY, block_latency as f64);
@@ -450,7 +565,11 @@ impl<N: Network> Consensus<N> {
         for (transmission_id, transmission) in transmissions.into_iter() {
             // Reinsert the transmission into the memory pool.
             if let Err(e) = self.reinsert_transmission(transmission_id, transmission).await {
-                warn!("Unable to reinsert transmission {} into the memory pool - {e}", fmt_id(transmission_id));
+                warn!(
+                    "Unable to reinsert transmission {}.{} into the memory pool - {e}",
+                    fmt_id(transmission_id),
+                    fmt_id(transmission_id.checksum().unwrap_or_default()).dimmed()
+                );
             }
         }
     }
@@ -466,11 +585,11 @@ impl<N: Network> Consensus<N> {
         // Send the transmission to the primary.
         match (transmission_id, transmission) {
             (TransmissionID::Ratification, Transmission::Ratification) => return Ok(()),
-            (TransmissionID::Solution(solution_id), Transmission::Solution(solution)) => {
+            (TransmissionID::Solution(solution_id, _), Transmission::Solution(solution)) => {
                 // Send the solution to the primary.
                 self.primary_sender().tx_unconfirmed_solution.send((solution_id, solution, callback)).await?;
             }
-            (TransmissionID::Transaction(transaction_id), Transmission::Transaction(transaction)) => {
+            (TransmissionID::Transaction(transaction_id, _), Transmission::Transaction(transaction)) => {
                 // Send the transaction to the primary.
                 self.primary_sender().tx_unconfirmed_transaction.send((transaction_id, transaction, callback)).await?;
             }

@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024-2025 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -12,12 +13,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use snarkvm::prelude::{error, has_duplicates, FromBytes, IoResult, Network, Read, ToBytes, Write};
+use snarkvm::prelude::{FromBytes, IoResult, Network, Read, ToBytes, Write, error, has_duplicates};
 
-use anyhow::{bail, ensure, Result};
-use indexmap::{indexmap, IndexMap};
+use anyhow::{Result, bail, ensure};
+use indexmap::{IndexMap, indexmap};
 use serde::{Deserialize, Serialize};
-use std::collections::{btree_map::IntoIter, BTreeMap};
+use std::collections::{BTreeMap, btree_map::IntoIter};
 
 /// The number of recent blocks (near tip).
 pub const NUM_RECENT_BLOCKS: usize = 100; // 100 blocks
@@ -26,6 +27,45 @@ const RECENT_INTERVAL: u32 = 1; // 1 block intervals
 /// The interval between block checkpoints.
 pub const CHECKPOINT_INTERVAL: u32 = 10_000; // 10,000 block intervals
 
+/// Block locator maps.
+///
+/// This data structure is used by validators to advertise the blocks that
+/// they have and can provide to other validators to help them sync.
+/// Periodically, each validator broadcasts a [`PrimaryPing`],
+/// which contains a `BlockLocators` instance.
+/// Recall that blocks are indexed by their `u32` height, starting with 0 for the genesis block.
+/// The keys of the `recents` and `checkpoints` maps are the block heights;
+/// the values of the maps are the corresponding block hashes.
+///
+/// If a validator has `N` blocks, the `recents` and `checkpoints` maps are as follows:
+/// - The `recents` map contains entries for blocks at heights
+///   `N - 1 - (NUM_RECENT_BLOCKS - 1) * RECENT_INTERVAL`,
+///   `N - 1 - (NUM_RECENT_BLOCKS - 2) * RECENT_INTERVAL`,
+///   ...,
+///   `N - 1`.
+///   If any of the just listed heights are negative, there are no entries for them of course,
+///   and the `recents` map has fewer than `NUM_RECENT_BLOCKS` entries.
+///   If `RECENT_INTERVAL` is 1, the `recents` map contains entries
+///   for the last `NUM_RECENT_BLOCKS` blocks, i.e. from `N - NUM_RECENT_BLOCKS` to `N - 1`;
+///   if additionally `N < NUM_RECENT_BLOCKS`, the `recents` map contains
+///   entries for all the blocks, from `0` to `N - 1`.
+/// - The `checkpoints` map contains an entry for every `CHECKPOINT_INTERVAL`-th block,
+///   starting with 0 and not exceeding `N`, i.e. it has entries for blocks
+///   `0`, `CHECKPOINT_INTERVAL`, `2 * CHECKPOINT_INTERVAL`, ..., `k * CHECKPOINT_INTERVAL`,
+///   where `k` is the maximum integer such that `k * CHECKPOINT_INTERVAL <= N`.
+///
+/// The `recents` and `checkpoints` maps may have overlapping entries,
+/// e.g. if `N-1` is a multiple of `CHECKPOINT_INTERVAL`;
+/// but if `CHECKPOINT_INTERVAL` is much larger than `NUM_RECENT_BLOCKS`,
+/// there is no overlap most of the time.
+///
+/// `BlockLocators` instances are built, in the form described above,
+/// by [`BlockSync::get_block_locators()`].
+/// When a `BlockLocators` instance is received (in a [`PrimaryPing`]) by a validator,
+/// the maps may not have the form described below; the deserializer does not enforce that.
+/// However, before incorporating the `BlockLocators` instance information into its state,
+/// the validator checks that the maps have the correct form,
+/// via [`BlockLocators::ensure_is_valid()`].
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BlockLocators<N: Network> {
     /// The map of recent blocks.
@@ -207,7 +247,7 @@ impl<N: Network> BlockLocators<N> {
             last_height = *current_height;
         }
 
-        // If the last height is below NUM_RECENTS, ensure the number of recent blocks matches the last height.
+        // If the last height is below NUM_RECENT_BLOCKS, ensure the number of recent blocks matches the last height.
         if last_height < NUM_RECENT_BLOCKS as u32 && recents.len().saturating_sub(1) as u32 != last_height {
             bail!("As the last height is below {NUM_RECENT_BLOCKS}, the number of recent blocks must match the height")
         }
@@ -335,10 +375,13 @@ pub mod test_helpers {
         BlockLocators::new(recents, checkpoints).unwrap()
     }
 
-    /// Simulates a block locator at the given height, with a fork within NUM_RECENTS of the given height.
+    /// Simulates a block locator at the given height, with a fork within NUM_RECENT_BLOCKS of the given height.
     pub fn sample_block_locators_with_fork(height: u32, fork_height: u32) -> BlockLocators<CurrentNetwork> {
         assert!(fork_height <= height, "Fork height must be less than or equal to the given height");
-        assert!(height - fork_height < NUM_RECENT_BLOCKS as u32, "Fork must be within NUM_RECENTS of the given height");
+        assert!(
+            height - fork_height < NUM_RECENT_BLOCKS as u32,
+            "Fork must be within NUM_RECENT_BLOCKS of the given height"
+        );
 
         // Create the recent locators.
         let mut recents = IndexMap::new();
@@ -404,17 +447,17 @@ mod tests {
                 let block_locators =
                     BlockLocators::<CurrentNetwork>::new_unchecked(recents.clone(), checkpoints.clone());
                 if height == 0 && recents.len() < NUM_RECENT_BLOCKS {
-                    // For the first NUM_RECENTS blocks, ensure NUM_RECENTS - 1 or less is valid.
+                    // For the first NUM_RECENT_BLOCKS, ensure NUM_RECENT_BLOCKS - 1 or less is valid.
                     block_locators.ensure_is_valid().unwrap();
                 } else if recents.len() < NUM_RECENT_BLOCKS {
-                    // After the first NUM_RECENTS blocks from genesis, ensure NUM_RECENTS - 1 or less is not valid.
+                    // After the first NUM_RECENT_BLOCKS blocks from genesis, ensure NUM_RECENT_BLOCKS - 1 or less is not valid.
                     block_locators.ensure_is_valid().unwrap_err();
                 } else {
-                    // After the first NUM_RECENTS blocks from genesis, ensure NUM_RECENTS is valid.
+                    // After the first NUM_RECENT_BLOCKS blocks from genesis, ensure NUM_RECENT_BLOCKS is valid.
                     block_locators.ensure_is_valid().unwrap();
                 }
             }
-            // Ensure NUM_RECENTS + 1 is not valid.
+            // Ensure NUM_RECENT_BLOCKS + 1 is not valid.
             recents.insert(
                 height + NUM_RECENT_BLOCKS as u32,
                 (Field::<CurrentNetwork>::from_u32(height + NUM_RECENT_BLOCKS as u32)).into(),
@@ -476,7 +519,7 @@ mod tests {
             let block_locators = BlockLocators::<CurrentNetwork>::new(recents.clone(), checkpoints.clone()).unwrap();
             block_locators.ensure_is_valid().unwrap();
         }
-        // Ensure NUM_RECENTS + 1 is not valid.
+        // Ensure NUM_RECENT_BLOCKS + 1 is not valid.
         recents.insert(NUM_RECENT_BLOCKS as u32, (Field::<CurrentNetwork>::from_u32(NUM_RECENT_BLOCKS as u32)).into());
         let block_locators = BlockLocators::<CurrentNetwork>::new_unchecked(recents.clone(), checkpoints);
         block_locators.ensure_is_valid().unwrap_err();

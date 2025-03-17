@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024-2025 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -52,12 +53,12 @@ impl<N: Network> FromBytes for UnconfirmedSolution<N> {
 pub mod prop_tests {
     use crate::{Solution, SolutionID, UnconfirmedSolution};
     use snarkvm::{
-        ledger::narwhal::Data,
+        ledger::{narwhal::Data, puzzle::PartialSolution},
         prelude::{Address, FromBytes, PrivateKey, Rng, TestRng, ToBytes},
     };
 
     use bytes::{Buf, BufMut, BytesMut};
-    use proptest::prelude::{any, BoxedStrategy, Strategy};
+    use proptest::prelude::{BoxedStrategy, Strategy, any};
     use test_strategy::proptest;
 
     type CurrentNetwork = snarkvm::prelude::MainnetV0;
@@ -72,7 +73,8 @@ pub mod prop_tests {
                 let mut rng = TestRng::fixed(seed);
                 let private_key = PrivateKey::<CurrentNetwork>::new(&mut rng).unwrap();
                 let address = Address::try_from(private_key).unwrap();
-                Solution::new(rng.gen(), address, rng.gen()).unwrap()
+                let partial_solution = PartialSolution::new(rng.gen(), address, rng.gen()).unwrap();
+                Solution::new(partial_solution, rng.gen())
             })
             .boxed()
     }

@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024-2025 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -14,6 +15,11 @@
 
 use crate::common::sample_genesis_block;
 use snarkos_node_router::{
+    Heartbeat,
+    Inbound,
+    Outbound,
+    Router,
+    Routing,
     messages::{
         BlockRequest,
         DisconnectReason,
@@ -24,27 +30,23 @@ use snarkos_node_router::{
         UnconfirmedSolution,
         UnconfirmedTransaction,
     },
-    Heartbeat,
-    Inbound,
-    Outbound,
-    Router,
-    Routing,
 };
 use snarkos_node_tcp::{
-    protocols::{Disconnect, Handshake, OnConnect, Reading, Writing},
     Connection,
     ConnectionSide,
-    Tcp,
     P2P,
+    Tcp,
+    protocols::{Disconnect, Handshake, OnConnect, Reading, Writing},
 };
 use snarkvm::prelude::{
+    Field,
+    Network,
     block::{Block, Header, Transaction},
     puzzle::Solution,
-    Network,
 };
 
 use async_trait::async_trait;
-use std::{io, net::SocketAddr};
+use std::{io, net::SocketAddr, str::FromStr};
 use tracing::*;
 
 #[derive(Clone)]
@@ -80,7 +82,10 @@ impl<N: Network> Handshake for TestRouter<N> {
         let conn_side = connection.side();
         let stream = self.borrow_stream(&mut connection);
         let genesis_header = *sample_genesis_block().header();
-        self.router().handshake(peer_addr, stream, conn_side, genesis_header).await?;
+        let restrictions_id =
+            Field::<N>::from_str("7562506206353711030068167991213732850758501012603348777370400520506564970105field")
+                .unwrap();
+        self.router().handshake(peer_addr, stream, conn_side, genesis_header, restrictions_id).await?;
 
         Ok(connection)
     }
@@ -88,8 +93,15 @@ impl<N: Network> Handshake for TestRouter<N> {
 
 #[async_trait]
 impl<N: Network> OnConnect for TestRouter<N> {
-    async fn on_connect(&self, _peer_addr: SocketAddr) {
-        // This behavior is currently not tested.
+    async fn on_connect(&self, peer_addr: SocketAddr) {
+        let peer_ip = if let Some(ip) = self.router().resolve_to_listener(&peer_addr) {
+            ip
+        } else {
+            panic!("The peer IP should be known by the time OnConnect is triggered!");
+        };
+
+        // Promote the peer's status from "connecting" to "connected".
+        self.router().insert_connected_peer(peer_ip);
     }
 }
 
@@ -148,6 +160,16 @@ impl<N: Network> Outbound<N> for TestRouter<N> {
     /// Returns a reference to the router.
     fn router(&self) -> &Router<N> {
         &self.0
+    }
+
+    /// Returns `true` if the node is synced up to the latest block (within the given tolerance).
+    fn is_block_synced(&self) -> bool {
+        true
+    }
+
+    /// Returns the number of blocks this node is behind the greatest peer height.
+    fn num_blocks_behind(&self) -> u32 {
+        0
     }
 }
 

@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024-2025 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -157,8 +158,7 @@ async fn test_storage_coherence() {
     assert!(network.is_committee_coherent(1..TARGET_ROUND));
 
     // Check the round certificates are coherent across the network. We skip the genesis round and
-    // check up to 2 rounds before the the target round as the round preceding the target round
-    // might still be incomplete since the network advances when quorum is reached, not when all
-    // the nodes have completed the round.
-    assert!(network.is_certificate_round_coherent(1..TARGET_ROUND - 1));
+    // check only up to 3 rounds before the the target round, because the network advances when
+    // quorum is reached, not when all the nodes have completed the round and received certificates.
+    assert!(network.is_certificate_round_coherent(1..TARGET_ROUND - 2));
 }

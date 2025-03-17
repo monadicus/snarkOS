@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024-2025 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -17,19 +18,19 @@ use async_trait::async_trait;
 use indexmap::IndexMap;
 use snarkvm::{
     ledger::{
+        Ledger,
         block::{Block, Transaction},
         committee::Committee,
         narwhal::{Data, Subdag, Transmission, TransmissionID},
         puzzle::{Solution, SolutionID},
         store::ConsensusStorage,
-        Ledger,
     },
-    prelude::{narwhal::BatchCertificate, Address, Field, Network, Result},
+    prelude::{Address, Field, Network, Result, narwhal::BatchCertificate},
 };
 use std::{
     fmt,
     ops::Range,
-    sync::{atomic::AtomicBool, Arc},
+    sync::{Arc, atomic::AtomicBool},
 };
 
 pub struct TranslucentLedgerService<N: Network, C: ConsensusStorage<N>> {
@@ -65,6 +66,11 @@ impl<N: Network, C: ConsensusStorage<N>> LedgerService<N> for TranslucentLedgerS
     /// Returns the latest block in the ledger.
     fn latest_block(&self) -> Block<N> {
         self.inner.latest_block()
+    }
+
+    /// Returns the latest restrictions ID in the ledger.
+    fn latest_restrictions_id(&self) -> Field<N> {
+        self.inner.latest_restrictions_id()
     }
 
     /// Returns the latest cached leader and its associated round.
@@ -129,7 +135,6 @@ impl<N: Network, C: ConsensusStorage<N>> LedgerService<N> for TranslucentLedgerS
     }
 
     /// Returns the committee for the given round.
-    /// If the given round is in the future, then the current committee is returned.
     fn get_committee_for_round(&self, round: u64) -> Result<Committee<N>> {
         self.inner.get_committee_for_round(round)
     }

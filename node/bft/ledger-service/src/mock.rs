@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024-2025 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -12,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{fmt_id, LedgerService};
+use crate::{LedgerService, fmt_id};
 use snarkvm::{
     ledger::{
         block::{Block, Transaction},
@@ -20,7 +21,7 @@ use snarkvm::{
         narwhal::{BatchCertificate, Data, Subdag, Transmission, TransmissionID},
         puzzle::{Solution, SolutionID},
     },
-    prelude::{bail, ensure, Address, Field, Network, Result},
+    prelude::{Address, Field, Network, Result, Zero, bail, ensure},
 };
 
 use indexmap::IndexMap;
@@ -66,6 +67,11 @@ impl<N: Network> LedgerService<N> for MockLedgerService<N> {
     /// Returns the latest block in the ledger.
     fn latest_block(&self) -> Block<N> {
         unreachable!("MockLedgerService does not support latest_block")
+    }
+
+    /// Returns the latest restrictions ID in the ledger.
+    fn latest_restrictions_id(&self) -> Field<N> {
+        Field::zero()
     }
 
     /// Returns the latest cached leader and its associated round.
@@ -147,7 +153,6 @@ impl<N: Network> LedgerService<N> for MockLedgerService<N> {
     }
 
     /// Returns the committee for the given round.
-    /// If the given round is in the future, then the current committee is returned.
     fn get_committee_for_round(&self, _round: u64) -> Result<Committee<N>> {
         Ok(self.committee.clone())
     }
@@ -165,7 +170,11 @@ impl<N: Network> LedgerService<N> for MockLedgerService<N> {
 
     /// Returns `false` for all queries.
     fn contains_transmission(&self, transmission_id: &TransmissionID<N>) -> Result<bool> {
-        trace!("[MockLedgerService] Contains transmission ID {} - false", fmt_id(transmission_id));
+        trace!(
+            "[MockLedgerService] Contains transmission ID {}.{} - false",
+            fmt_id(transmission_id),
+            fmt_id(transmission_id.checksum().unwrap_or_default())
+        );
         Ok(false)
     }
 
@@ -175,7 +184,11 @@ impl<N: Network> LedgerService<N> for MockLedgerService<N> {
         transmission_id: TransmissionID<N>,
         _transmission: &mut Transmission<N>,
     ) -> Result<()> {
-        trace!("[MockLedgerService] Ensure transmission ID matches {:?} - Ok", fmt_id(transmission_id));
+        trace!(
+            "[MockLedgerService] Ensure transmission ID matches {}.{} - Ok",
+            fmt_id(transmission_id),
+            fmt_id(transmission_id.checksum().unwrap_or_default())
+        );
         Ok(())
     }
 

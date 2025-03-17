@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024-2025 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -12,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use snarkos_node_router::{messages::NodeType, Routing};
+use snarkos_node_router::{Routing, messages::NodeType};
 use snarkvm::prelude::{Address, Network, PrivateKey, ViewKey};
 
 use once_cell::sync::OnceCell;
@@ -20,8 +21,8 @@ use std::{
     future::Future,
     io,
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
     time::Duration,
 };
@@ -62,7 +63,7 @@ pub trait NodeInterface<N: Network>: Routing<N> {
 
         #[cfg(target_family = "unix")]
         fn signal_listener() -> impl Future<Output = io::Result<()>> {
-            use tokio::signal::unix::{signal, SignalKind};
+            use tokio::signal::unix::{SignalKind, signal};
 
             // Handle SIGINT, SIGTERM, SIGQUIT, and SIGHUP.
             let mut s_int = signal(SignalKind::interrupt()).unwrap();
@@ -90,6 +91,12 @@ pub trait NodeInterface<N: Network>: Routing<N> {
         tokio::task::spawn(async move {
             match signal_listener().await {
                 Ok(()) => {
+                    warn!("==========================================================================================");
+                    warn!("⚠️  Attention - Starting the graceful shutdown procedure (ETA: 30 seconds)...");
+                    warn!("⚠️  Attention - To avoid DATA CORRUPTION, do NOT interrupt snarkOS (or press Ctrl+C again)");
+                    warn!("⚠️  Attention - Please wait until the shutdown gracefully completes (ETA: 30 seconds)");
+                    warn!("==========================================================================================");
+
                     match node_clone.get() {
                         // If the node is already initialized, then shut it down.
                         Some(node) => node.shut_down().await,

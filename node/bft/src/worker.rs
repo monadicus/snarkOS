@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024-2025 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -13,13 +14,13 @@
 // limitations under the License.
 
 use crate::{
-    events::{Event, TransmissionRequest, TransmissionResponse},
-    helpers::{fmt_id, max_redundant_requests, Pending, Ready, Storage, WorkerReceiver},
-    spawn_blocking,
-    ProposedBatch,
-    Transport,
     MAX_FETCH_TIMEOUT_IN_MS,
     MAX_WORKERS,
+    ProposedBatch,
+    Transport,
+    events::{Event, TransmissionRequest, TransmissionResponse},
+    helpers::{Pending, Ready, Storage, WorkerReceiver, fmt_id, max_redundant_requests},
+    spawn_blocking,
 };
 use snarkos_node_bft_ledger_service::LedgerService;
 use snarkvm::{
@@ -31,8 +32,10 @@ use snarkvm::{
     },
 };
 
+use colored::Colorize;
 use indexmap::{IndexMap, IndexSet};
 use parking_lot::Mutex;
+use rand::seq::IteratorRandom;
 use std::{future::Future, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{sync::oneshot, task::JoinHandle, time::timeout};
 
@@ -151,6 +154,13 @@ impl<N: Network> Worker<N> {
 }
 
 impl<N: Network> Worker<N> {
+    /// Clears the solutions from the ready queue.
+    pub(super) fn clear_solutions(&self) {
+        self.ready.clear_solutions()
+    }
+}
+
+impl<N: Network> Worker<N> {
     /// Returns `true` if the transmission ID exists in the ready queue, proposed batch, storage, or ledger.
     pub fn contains_transmission(&self, transmission_id: impl Into<TransmissionID<N>>) -> bool {
         let transmission_id = transmission_id.into();
@@ -223,7 +233,8 @@ impl<N: Network> Worker<N> {
             .ready
             .transmission_ids()
             .into_iter()
-            .take(Self::MAX_TRANSMISSIONS_PER_WORKER_PING)
+            .choose_multiple(&mut rand::thread_rng(), Self::MAX_TRANSMISSIONS_PER_WORKER_PING)
+            .into_iter()
             .collect::<IndexSet<_>>();
 
         // Broadcast the ping event.
@@ -263,9 +274,10 @@ impl<N: Network> Worker<N> {
                 // If the transmission was not fetched, then attempt to fetch it again.
                 Err(e) => {
                     warn!(
-                        "Worker {} - Failed to fetch transmission '{}' from '{peer_ip}' (ping) - {e}",
+                        "Worker {} - Failed to fetch transmission '{}.{}' from '{peer_ip}' (ping) - {e}",
                         self_.id,
-                        fmt_id(transmission_id)
+                        fmt_id(transmission_id),
+                        fmt_id(transmission_id.checksum().unwrap_or_default()).dimmed()
                     );
                 }
             }
@@ -285,17 +297,34 @@ impl<N: Network> Worker<N> {
         }
         // Ensure the transmission ID and transmission type matches.
         let is_well_formed = match (&transmission_id, &transmission) {
-            (TransmissionID::Solution(_), Transmission::Solution(_)) => true,
-            (TransmissionID::Transaction(_), Transmission::Transaction(_)) => true,
+            (TransmissionID::Solution(_, _), Transmission::Solution(_)) => true,
+            (TransmissionID::Transaction(_, _), Transmission::Transaction(_)) => true,
             // Note: We explicitly forbid inserting ratifications into the ready queue,
             // as the protocol currently does not support ratifications.
             (TransmissionID::Ratification, Transmission::Ratification) => false,
             // All other combinations are clearly invalid.
             _ => false,
         };
+        // If the transmission is a deserialized execution, verify it immediately.
+        // This takes heavy transaction verification out of the hot path during block generation.
+        if let (TransmissionID::Transaction(tx_id, _), Transmission::Transaction(tx)) = (transmission_id, &transmission)
+        {
+            if let Data::Object(Transaction::Execute(..)) = tx {
+                let self_ = self.clone();
+                let tx_ = tx.clone();
+                tokio::spawn(async move {
+                    let _ = self_.ledger.check_transaction_basic(tx_id, tx_).await;
+                });
+            }
+        }
         // If the transmission ID and transmission type matches, then insert the transmission into the ready queue.
         if is_well_formed && self.ready.insert(transmission_id, transmission) {
-            trace!("Worker {} - Added transmission '{}' from '{peer_ip}'", self.id, fmt_id(transmission_id));
+            trace!(
+                "Worker {} - Added transmission '{}.{}' from '{peer_ip}'",
+                self.id,
+                fmt_id(transmission_id),
+                fmt_id(transmission_id.checksum().unwrap_or_default()).dimmed()
+            );
         }
     }
 
@@ -308,17 +337,26 @@ impl<N: Network> Worker<N> {
     ) -> Result<()> {
         // Construct the transmission.
         let transmission = Transmission::Solution(solution.clone());
+        // Compute the checksum.
+        let checksum = solution.to_checksum::<N>()?;
+        // Construct the transmission ID.
+        let transmission_id = TransmissionID::Solution(solution_id, checksum);
         // Remove the solution ID from the pending queue.
-        self.pending.remove(solution_id, Some(transmission.clone()));
+        self.pending.remove(transmission_id, Some(transmission.clone()));
         // Check if the solution exists.
-        if self.contains_transmission(solution_id) {
-            bail!("Solution '{}' already exists.", fmt_id(solution_id));
+        if self.contains_transmission(transmission_id) {
+            bail!("Solution '{}.{}' already exists.", fmt_id(solution_id), fmt_id(checksum).dimmed());
         }
         // Check that the solution is well-formed and unique.
         self.ledger.check_solution_basic(solution_id, solution).await?;
         // Adds the solution to the ready queue.
-        if self.ready.insert(solution_id, transmission) {
-            trace!("Worker {} - Added unconfirmed solution '{}'", self.id, fmt_id(solution_id));
+        if self.ready.insert(transmission_id, transmission) {
+            trace!(
+                "Worker {} - Added unconfirmed solution '{}.{}'",
+                self.id,
+                fmt_id(solution_id),
+                fmt_id(checksum).dimmed()
+            );
         }
         Ok(())
     }
@@ -331,17 +369,26 @@ impl<N: Network> Worker<N> {
     ) -> Result<()> {
         // Construct the transmission.
         let transmission = Transmission::Transaction(transaction.clone());
+        // Compute the checksum.
+        let checksum = transaction.to_checksum::<N>()?;
+        // Construct the transmission ID.
+        let transmission_id = TransmissionID::Transaction(transaction_id, checksum);
         // Remove the transaction from the pending queue.
-        self.pending.remove(&transaction_id, Some(transmission.clone()));
+        self.pending.remove(transmission_id, Some(transmission.clone()));
         // Check if the transaction ID exists.
-        if self.contains_transmission(&transaction_id) {
-            bail!("Transaction '{}' already exists.", fmt_id(transaction_id));
+        if self.contains_transmission(transmission_id) {
+            bail!("Transaction '{}.{}' already exists.", fmt_id(transaction_id), fmt_id(checksum).dimmed());
         }
         // Check that the transaction is well-formed and unique.
         self.ledger.check_transaction_basic(transaction_id, transaction).await?;
         // Adds the transaction to the ready queue.
-        if self.ready.insert(&transaction_id, transmission) {
-            trace!("Worker {} - Added unconfirmed transaction '{}'", self.id, fmt_id(transaction_id));
+        if self.ready.insert(transmission_id, transmission) {
+            trace!(
+                "Worker {}.{} - Added unconfirmed transaction '{}'",
+                self.id,
+                fmt_id(transaction_id),
+                fmt_id(checksum).dimmed()
+            );
         }
         Ok(())
     }
@@ -351,6 +398,22 @@ impl<N: Network> Worker<N> {
     /// Starts the worker handlers.
     fn start_handlers(&self, receiver: WorkerReceiver<N>) {
         let WorkerReceiver { mut rx_worker_ping, mut rx_transmission_request, mut rx_transmission_response } = receiver;
+
+        // Start the pending queue expiration loop.
+        let self_ = self.clone();
+        self.spawn(async move {
+            loop {
+                // Sleep briefly.
+                tokio::time::sleep(Duration::from_millis(MAX_FETCH_TIMEOUT_IN_MS)).await;
+
+                // Remove the expired pending certificate requests.
+                let self__ = self_.clone();
+                let _ = spawn_blocking!({
+                    self__.pending.clear_expired_callbacks();
+                    Ok(())
+                });
+            }
+        });
 
         // Process the ping events.
         let self_ = self.clone();
@@ -392,10 +455,13 @@ impl<N: Network> Worker<N> {
         let (callback_sender, callback_receiver) = oneshot::channel();
         // Determine how many sent requests are pending.
         let num_sent_requests = self.pending.num_sent_requests(transmission_id);
+        // Determine if we've already sent a request to the peer.
+        let contains_peer_with_sent_request = self.pending.contains_peer_with_sent_request(transmission_id, peer_ip);
         // Determine the maximum number of redundant requests.
-        let num_redundant_requests = max_redundant_requests(self.ledger.clone(), self.storage.current_round());
+        let num_redundant_requests = max_redundant_requests(self.ledger.clone(), self.storage.current_round())?;
         // Determine if we should send a transmission request to the peer.
-        let should_send_request = num_sent_requests < num_redundant_requests;
+        // We send at most `num_redundant_requests` requests and each peer can only receive one request at a time.
+        let should_send_request = num_sent_requests < num_redundant_requests && !contains_peer_with_sent_request;
 
         // Insert the transmission ID into the pending queue.
         self.pending.insert(transmission_id, peer_ip, Some((callback_sender, should_send_request)));
@@ -408,8 +474,9 @@ impl<N: Network> Worker<N> {
             }
         } else {
             debug!(
-                "Skipped sending request for transmission {} to '{peer_ip}' ({num_sent_requests} redundant requests)",
-                fmt_id(transmission_id)
+                "Skipped sending request for transmission {}.{} to '{peer_ip}' ({num_sent_requests} redundant requests)",
+                fmt_id(transmission_id),
+                fmt_id(transmission_id.checksum().unwrap_or_default()).dimmed()
             );
         }
         // Wait for the transmission to be fetched.
@@ -426,7 +493,7 @@ impl<N: Network> Worker<N> {
     fn finish_transmission_request(&self, peer_ip: SocketAddr, response: TransmissionResponse<N>) {
         let TransmissionResponse { transmission_id, mut transmission } = response;
         // Check if the peer IP exists in the pending queue for the given transmission ID.
-        let exists = self.pending.get(transmission_id).unwrap_or_default().contains(&peer_ip);
+        let exists = self.pending.get_peers(transmission_id).unwrap_or_default().contains(&peer_ip);
         // If the peer IP exists, finish the pending request.
         if exists {
             // Ensure the transmission is not a fee and matches the transmission ID.
@@ -469,6 +536,7 @@ impl<N: Network> Worker<N> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::helpers::CALLBACK_EXPIRATION_IN_SECS;
     use snarkos_node_bft_ledger_service::LedgerService;
     use snarkos_node_bft_storage_service::BFTMemoryService;
     use snarkvm::{
@@ -507,6 +575,7 @@ mod tests {
             fn latest_round(&self) -> u64;
             fn latest_block_height(&self) -> u32;
             fn latest_block(&self) -> Block<N>;
+            fn latest_restrictions_id(&self) -> Field<N>;
             fn latest_leader(&self) -> Option<(u64, Address<N>)>;
             fn update_latest_leader(&self, round: u64, leader: Address<N>);
             fn contains_block_height(&self, height: u32) -> bool;
@@ -550,12 +619,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_max_redundant_requests() {
-        const NUM_NODES: u16 = Committee::<CurrentNetwork>::MAX_COMMITTEE_SIZE;
+        let num_nodes: u16 = CurrentNetwork::MAX_CERTIFICATES.first().unwrap().1;
 
         let rng = &mut TestRng::default();
         // Sample a committee.
         let committee =
-            snarkvm::ledger::committee::test_helpers::sample_committee_for_round_and_size(0, NUM_NODES, rng);
+            snarkvm::ledger::committee::test_helpers::sample_committee_for_round_and_size(0, num_nodes, rng);
         let committee_clone = committee.clone();
         // Setup the mock ledger.
         let mut mock_ledger = MockLedger::default();
@@ -566,7 +635,7 @@ mod tests {
         let ledger: Arc<dyn LedgerService<CurrentNetwork>> = Arc::new(mock_ledger);
 
         // Ensure the maximum number of redundant requests is correct and consistent across iterations.
-        assert_eq!(max_redundant_requests(ledger, 0), 34, "Update me if the formula changes");
+        assert_eq!(max_redundant_requests(ledger, 0).unwrap(), 6, "Update me if the formula changes");
     }
 
     #[tokio::test]
@@ -589,7 +658,10 @@ mod tests {
         // Create the Worker.
         let worker = Worker::new(0, Arc::new(gateway), storage, ledger, Default::default()).unwrap();
         let data = |rng: &mut TestRng| Data::Buffer(Bytes::from((0..512).map(|_| rng.gen::<u8>()).collect::<Vec<_>>()));
-        let transmission_id = TransmissionID::Solution(rng.gen::<u64>().into());
+        let transmission_id = TransmissionID::Solution(
+            rng.gen::<u64>().into(),
+            rng.gen::<<CurrentNetwork as Network>::TransmissionChecksum>(),
+        );
         let peer_ip = SocketAddr::from(([127, 0, 0, 1], 1234));
         let transmission = Transmission::Solution(data(rng));
 
@@ -626,7 +698,10 @@ mod tests {
 
         // Create the Worker.
         let worker = Worker::new(0, Arc::new(gateway), storage, ledger, Default::default()).unwrap();
-        let transmission_id = TransmissionID::Solution(rng.gen::<u64>().into());
+        let transmission_id = TransmissionID::Solution(
+            rng.gen::<u64>().into(),
+            rng.gen::<<CurrentNetwork as Network>::TransmissionChecksum>(),
+        );
         let worker_ = worker.clone();
         let peer_ip = SocketAddr::from(([127, 0, 0, 1], 1234));
         let _ = worker_.send_transmission_request(peer_ip, transmission_id).await;
@@ -664,21 +739,18 @@ mod tests {
 
         // Create the Worker.
         let worker = Worker::new(0, Arc::new(gateway), storage, ledger, Default::default()).unwrap();
+        let solution = Data::Buffer(Bytes::from((0..512).map(|_| rng.gen::<u8>()).collect::<Vec<_>>()));
         let solution_id = rng.gen::<u64>().into();
-        let transmission_id = TransmissionID::Solution(solution_id);
+        let solution_checksum = solution.to_checksum::<CurrentNetwork>().unwrap();
+        let transmission_id = TransmissionID::Solution(solution_id, solution_checksum);
         let worker_ = worker.clone();
         let peer_ip = SocketAddr::from(([127, 0, 0, 1], 1234));
         let _ = worker_.send_transmission_request(peer_ip, transmission_id).await;
         assert!(worker.pending.contains(transmission_id));
-        let result = worker
-            .process_unconfirmed_solution(
-                solution_id,
-                Data::Buffer(Bytes::from((0..512).map(|_| rng.gen::<u8>()).collect::<Vec<_>>())),
-            )
-            .await;
+        let result = worker.process_unconfirmed_solution(solution_id, solution).await;
         assert!(result.is_ok());
         assert!(!worker.pending.contains(transmission_id));
-        assert!(worker.ready.contains(solution_id));
+        assert!(worker.ready.contains(transmission_id));
     }
 
     #[tokio::test]
@@ -705,20 +777,17 @@ mod tests {
         // Create the Worker.
         let worker = Worker::new(0, Arc::new(gateway), storage, ledger, Default::default()).unwrap();
         let solution_id = rng.gen::<u64>().into();
-        let transmission_id = TransmissionID::Solution(solution_id);
+        let solution = Data::Buffer(Bytes::from((0..512).map(|_| rng.gen::<u8>()).collect::<Vec<_>>()));
+        let checksum = solution.to_checksum::<CurrentNetwork>().unwrap();
+        let transmission_id = TransmissionID::Solution(solution_id, checksum);
         let worker_ = worker.clone();
         let peer_ip = SocketAddr::from(([127, 0, 0, 1], 1234));
         let _ = worker_.send_transmission_request(peer_ip, transmission_id).await;
         assert!(worker.pending.contains(transmission_id));
-        let result = worker
-            .process_unconfirmed_solution(
-                solution_id,
-                Data::Buffer(Bytes::from((0..512).map(|_| rng.gen::<u8>()).collect::<Vec<_>>())),
-            )
-            .await;
+        let result = worker.process_unconfirmed_solution(solution_id, solution).await;
         assert!(result.is_err());
-        assert!(!worker.pending.contains(solution_id));
-        assert!(!worker.ready.contains(solution_id));
+        assert!(!worker.pending.contains(transmission_id));
+        assert!(!worker.ready.contains(transmission_id));
     }
 
     #[tokio::test]
@@ -745,17 +814,14 @@ mod tests {
         // Create the Worker.
         let worker = Worker::new(0, Arc::new(gateway), storage, ledger, Default::default()).unwrap();
         let transaction_id: <CurrentNetwork as Network>::TransactionID = Field::<CurrentNetwork>::rand(&mut rng).into();
-        let transmission_id = TransmissionID::Transaction(transaction_id);
+        let transaction = Data::Buffer(Bytes::from((0..512).map(|_| rng.gen::<u8>()).collect::<Vec<_>>()));
+        let checksum = transaction.to_checksum::<CurrentNetwork>().unwrap();
+        let transmission_id = TransmissionID::Transaction(transaction_id, checksum);
         let worker_ = worker.clone();
         let peer_ip = SocketAddr::from(([127, 0, 0, 1], 1234));
         let _ = worker_.send_transmission_request(peer_ip, transmission_id).await;
         assert!(worker.pending.contains(transmission_id));
-        let result = worker
-            .process_unconfirmed_transaction(
-                transaction_id,
-                Data::Buffer(Bytes::from((0..512).map(|_| rng.gen::<u8>()).collect::<Vec<_>>())),
-            )
-            .await;
+        let result = worker.process_unconfirmed_transaction(transaction_id, transaction).await;
         assert!(result.is_ok());
         assert!(!worker.pending.contains(transmission_id));
         assert!(worker.ready.contains(transmission_id));
@@ -785,17 +851,14 @@ mod tests {
         // Create the Worker.
         let worker = Worker::new(0, Arc::new(gateway), storage, ledger, Default::default()).unwrap();
         let transaction_id: <CurrentNetwork as Network>::TransactionID = Field::<CurrentNetwork>::rand(&mut rng).into();
-        let transmission_id = TransmissionID::Transaction(transaction_id);
+        let transaction = Data::Buffer(Bytes::from((0..512).map(|_| rng.gen::<u8>()).collect::<Vec<_>>()));
+        let checksum = transaction.to_checksum::<CurrentNetwork>().unwrap();
+        let transmission_id = TransmissionID::Transaction(transaction_id, checksum);
         let worker_ = worker.clone();
         let peer_ip = SocketAddr::from(([127, 0, 0, 1], 1234));
         let _ = worker_.send_transmission_request(peer_ip, transmission_id).await;
         assert!(worker.pending.contains(transmission_id));
-        let result = worker
-            .process_unconfirmed_transaction(
-                transaction_id,
-                Data::Buffer(Bytes::from((0..512).map(|_| rng.gen::<u8>()).collect::<Vec<_>>())),
-            )
-            .await;
+        let result = worker.process_unconfirmed_transaction(transaction_id, transaction).await;
         assert!(result.is_err());
         assert!(!worker.pending.contains(transmission_id));
         assert!(!worker.ready.contains(transmission_id));
@@ -825,15 +888,22 @@ mod tests {
         // Create the Worker.
         let worker = Worker::new(0, Arc::new(gateway), storage, ledger, Default::default()).unwrap();
         let transaction_id: <CurrentNetwork as Network>::TransactionID = Field::<CurrentNetwork>::rand(&mut rng).into();
-        let transmission_id = TransmissionID::Transaction(transaction_id);
-        let peer_ip = SocketAddr::from(([127, 0, 0, 1], 1234));
+        let transaction = Data::Buffer(Bytes::from((0..512).map(|_| rng.gen::<u8>()).collect::<Vec<_>>()));
+        let checksum = transaction.to_checksum::<CurrentNetwork>().unwrap();
+        let transmission_id = TransmissionID::Transaction(transaction_id, checksum);
 
         // Determine the number of redundant requests are sent.
-        let num_redundant_requests = max_redundant_requests(worker.ledger.clone(), worker.storage.current_round());
+        let num_redundant_requests =
+            max_redundant_requests(worker.ledger.clone(), worker.storage.current_round()).unwrap();
         let num_flood_requests = num_redundant_requests * 10;
+        let mut peer_ips =
+            (0..num_flood_requests).map(|i| SocketAddr::from(([127, 0, 0, 1], 1234 + i as u16))).collect_vec();
+        let first_peer_ip = peer_ips[0];
+
         // Flood the pending queue with transmission requests.
         for i in 1..=num_flood_requests {
             let worker_ = worker.clone();
+            let peer_ip = peer_ips.pop().unwrap();
             tokio::spawn(async move {
                 let _ = worker_.send_transmission_request(peer_ip, transmission_id).await;
             });
@@ -847,31 +917,26 @@ mod tests {
         assert_eq!(worker.pending.num_callbacks(transmission_id), num_flood_requests);
 
         // Let all the requests expire.
-        tokio::time::sleep(Duration::from_millis(MAX_FETCH_TIMEOUT_IN_MS + 1000)).await;
+        tokio::time::sleep(Duration::from_secs(CALLBACK_EXPIRATION_IN_SECS as u64 + 1)).await;
         assert_eq!(worker.pending.num_sent_requests(transmission_id), 0);
         assert_eq!(worker.pending.num_callbacks(transmission_id), 0);
 
-        // Flood the pending queue with transmission requests again.
+        // Flood the pending queue with transmission requests again, this time to a single peer
         for i in 1..=num_flood_requests {
             let worker_ = worker.clone();
             tokio::spawn(async move {
-                let _ = worker_.send_transmission_request(peer_ip, transmission_id).await;
+                let _ = worker_.send_transmission_request(first_peer_ip, transmission_id).await;
             });
             tokio::time::sleep(Duration::from_millis(10)).await;
             assert!(worker.pending.num_sent_requests(transmission_id) <= num_redundant_requests);
             assert_eq!(worker.pending.num_callbacks(transmission_id), i);
         }
         // Check that the number of sent requests does not exceed the maximum number of redundant requests.
-        assert_eq!(worker.pending.num_sent_requests(transmission_id), num_redundant_requests);
+        assert_eq!(worker.pending.num_sent_requests(transmission_id), 1);
         assert_eq!(worker.pending.num_callbacks(transmission_id), num_flood_requests);
 
         // Check that fulfilling a transmission request clears the pending queue.
-        let result = worker
-            .process_unconfirmed_transaction(
-                transaction_id,
-                Data::Buffer(Bytes::from((0..512).map(|_| rng.gen::<u8>()).collect::<Vec<_>>())),
-            )
-            .await;
+        let result = worker.process_unconfirmed_transaction(transaction_id, transaction).await;
         assert!(result.is_ok());
         assert_eq!(worker.pending.num_sent_requests(transmission_id), 0);
         assert_eq!(worker.pending.num_callbacks(transmission_id), 0);
@@ -930,7 +995,7 @@ mod prop_tests {
             let rng = &mut TestRng::fixed(i as u64);
             let address = Address::new(rng.gen());
             info!("Validator {i}: {address}");
-            members.insert(address, (MIN_VALIDATOR_STAKE, false));
+            members.insert(address, (MIN_VALIDATOR_STAKE, false, rng.gen_range(0..100)));
         }
         // Initialize the committee.
         Committee::<CurrentNetwork>::new(1u64, members).unwrap()
