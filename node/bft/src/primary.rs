@@ -579,7 +579,9 @@ impl<N: Network> Primary<N> {
 
                         if N::CONSENSUS_VERSION(block_height)? >= ConsensusVersion::V4 {
                             match self.ledger.compute_cost(transaction_id, transaction) {
-                                Ok(cost) if proposal_cost + cost <= N::BATCH_SPEND_LIMIT => proposal_cost += cost,
+                                Ok(cost) if proposal_cost + cost <= BatchHeader::<N>::BATCH_SPEND_LIMIT => {
+                                    proposal_cost += cost
+                                }
                                 _ => {
                                     trace!(
                                         "Proposing - Skipping transaction '{}' - Batch spend limit surpassed",
@@ -833,7 +835,7 @@ impl<N: Network> Primary<N> {
                 }
             }
 
-            if proposal_cost > N::BATCH_SPEND_LIMIT {
+            if proposal_cost > BatchHeader::<N>::BATCH_SPEND_LIMIT {
                 bail!(
                     "Malicious peer - batch proposal from '{peer_ip}' exceeds the spend limit: '{proposal_cost}' microcredits"
                 );
@@ -2544,7 +2546,7 @@ mod tests {
 
         // Create a valid proposal with an author that isn't the primary.
         let round = 1;
-        let peer_account = &accounts[1];
+        let peer_account = &accounts[2];
         let peer_ip = peer_account.0;
         let timestamp = now() + MIN_BATCH_DELAY_IN_SECS as i64;
         let proposal = create_test_proposal(

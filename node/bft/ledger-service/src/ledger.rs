@@ -23,9 +23,10 @@ use snarkvm::{
         puzzle::{Solution, SolutionID},
         store::ConsensusStorage,
     },
-    prelude::{Address, Field, FromBytes, Network, Result, bail, cfg_into_iter},
+    prelude::{Address, Field, FromBytes, Network, Result, bail, cfg_into_iter, deployment_cost, execution_cost_v2},
 };
 
+use anyhow::anyhow;
 use indexmap::IndexMap;
 use parking_lot::RwLock;
 use rayon::prelude::*;
@@ -375,8 +376,25 @@ impl<N: Network, C: ConsensusStorage<N>> LedgerService<N> for CoreLedgerService<
         Ok(())
     }
 
-    /// Computes the execution cost in microcredits for a transaction.
+    /// Returns the storage and compute cost for a transaction in microcredits.
+    /// This is used to limit the amount of compute in the block generation hot
+    /// path. This does NOT represent the full costs which a user has to pay.
     fn compute_cost(&self, _transaction_id: N::TransactionID, transaction: Transaction<N>) -> Result<u64> {
-        self.ledger.vm().compute_cost(&transaction)
+        match &transaction {
+            // Include the synthesis cost and storage cost for deployments.
+            Transaction::Deploy(_, _, _, deployment, _) => {
+                let (_, (storage_cost, synthesis_cost, _)) = deployment_cost(deployment)?;
+                storage_cost
+                    .checked_add(synthesis_cost)
+                    .ok_or(anyhow!("The storage and synthesis cost computation overflowed for a deployment"))
+            }
+            // Include the finalize cost and storage cost for executions.
+            Transaction::Execute(_, _, execution, _) => {
+                let (total_cost, (_, _)) = execution_cost_v2(&self.ledger.vm().process().read(), execution)?;
+                Ok(total_cost)
+            }
+            // Fee transactions are internal to the VM, they do not have a compute cost.
+            Transaction::Fee(..) => Ok(0),
+        }
     }
 }
