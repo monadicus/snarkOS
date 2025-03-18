@@ -37,6 +37,6 @@ pub trait CommunicationService: Send + Sync {
     /// This function returns as soon as the message is queued to be sent,
     /// without waiting for the actual delivery; instead, the caller is provided with a [`oneshot::Receiver`]
     /// which can be used to determine when and whether the message has been delivered.
-    /// If no peer with the given IP exists, this will function returns None.
+    /// If no peer with the given IP exists, this function returns None.
     async fn send(&self, peer_ip: SocketAddr, message: Self::Message) -> Option<oneshot::Receiver<io::Result<()>>>;
 }
