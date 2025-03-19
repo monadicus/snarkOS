@@ -379,7 +379,11 @@ impl<N: Network, C: ConsensusStorage<N>> LedgerService<N> for CoreLedgerService<
     /// Returns the storage and compute cost for a transaction in microcredits.
     /// This is used to limit the amount of compute in the block generation hot
     /// path. This does NOT represent the full costs which a user has to pay.
-    fn compute_cost(&self, _transaction_id: N::TransactionID, transaction: Transaction<N>) -> Result<u64> {
+    fn transaction_spent_cost_in_microcredits(
+        &self,
+        _transaction_id: N::TransactionID,
+        transaction: Transaction<N>,
+    ) -> Result<u64> {
         match &transaction {
             // Include the synthesis cost and storage cost for deployments.
             Transaction::Deploy(_, _, _, deployment, _) => {

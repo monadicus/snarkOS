@@ -578,7 +578,7 @@ impl<N: Network> Primary<N> {
                             .saturating_add((BatchHeader::<N>::MAX_GC_ROUNDS as u32).saturating_div(2));
 
                         if N::CONSENSUS_VERSION(block_height)? >= ConsensusVersion::V4 {
-                            match self.ledger.compute_cost(transaction_id, transaction) {
+                            match self.ledger.transaction_spent_cost_in_microcredits(transaction_id, transaction) {
                                 Ok(cost) if proposal_cost + cost <= BatchHeader::<N>::BATCH_SPEND_LIMIT => {
                                     proposal_cost += cost
                                 }

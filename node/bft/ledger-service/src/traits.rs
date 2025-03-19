@@ -122,5 +122,9 @@ pub trait LedgerService<N: Network>: Debug + Send + Sync {
     fn advance_to_next_block(&self, block: &Block<N>) -> Result<()>;
 
     /// Computes the execution cost in microcredits for a transaction.
-    fn compute_cost(&self, transaction_id: N::TransactionID, transaction: Transaction<N>) -> Result<u64>;
+    fn transaction_spent_cost_in_microcredits(
+        &self,
+        transaction_id: N::TransactionID,
+        transaction: Transaction<N>,
+    ) -> Result<u64>;
 }

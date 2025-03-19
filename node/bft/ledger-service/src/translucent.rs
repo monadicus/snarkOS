@@ -197,7 +197,11 @@ impl<N: Network, C: ConsensusStorage<N>> LedgerService<N> for TranslucentLedgerS
     }
 
     /// Computes the execution cost in microcredits for a transaction.
-    fn compute_cost(&self, transaction_id: N::TransactionID, transaction: Transaction<N>) -> Result<u64> {
-        self.inner.compute_cost(transaction_id, transaction)
+    fn transaction_spent_cost_in_microcredits(
+        &self,
+        transaction_id: N::TransactionID,
+        transaction: Transaction<N>,
+    ) -> Result<u64> {
+        self.inner.transaction_spent_cost_in_microcredits(transaction_id, transaction)
     }
 }
