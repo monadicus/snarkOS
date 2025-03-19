@@ -12,6 +12,25 @@ min_height=$4
 : "${network_id:=0}"
 : "${min_height:=45}"
 
+# Determine network name based on network_id
+case $network_id in
+  0)
+    network_name="mainnet"
+    ;;
+  1)
+    network_name="testnet"
+    ;;
+  2)
+    network_name="canary"
+    ;;
+  *)
+    echo "Unknown network ID: $network_id, defaulting to mainnet"
+    network_name="mainnet"
+    ;;
+esac
+
+echo "Using network: $network_name (ID: $network_id)"
+
 # Create log directory
 log_dir=".logs-$(date +"%Y%m%d%H%M%S")"
 mkdir -p "$log_dir"
@@ -47,7 +66,7 @@ check_heights() {
   highest_height=0
   for ((node_index = 0; node_index < $((total_validators + total_clients)); node_index++)); do
     port=$((3030 + node_index))
-    height=$(curl -s http://127.0.0.1:$port/mainnet/block/height/latest || echo "0")
+    height=$(curl -s "http://127.0.0.1:$port/$network_name/block/height/latest" || echo "0")
     echo "Node $node_index block height: $height"
     
     # Track highest height for reporting
