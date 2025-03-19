@@ -444,7 +444,7 @@ mod tests {
 
     type CurrentNetwork = MainnetV0;
 
-    const TEST_BASE_URL: &str = "https://blocks.aleo.org/mainnet/v0";
+    const TEST_BASE_URL: &str = "https://blocks.provable.org/v0/mainnet";
 
     fn check_load_blocks(start: u32, end: Option<u32>, expected: usize) {
         let blocks = Arc::new(RwLock::new(Vec::new()));
