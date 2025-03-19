@@ -938,7 +938,7 @@ mod tests {
         (committee, account, ledger, storage)
     }
 
-    // Helperfunction to set up BFT for testing
+    // Helper function to set up BFT for testing.
     fn initialize_bft(
         account: Account<CurrentNetwork>,
         storage: Storage<CurrentNetwork>,

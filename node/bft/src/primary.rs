@@ -79,10 +79,10 @@ use tokio::{
 pub type ProposedBatch<N> = RwLock<Option<Proposal<N>>>;
 
 /// The primary logic of a node.
-/// AleoBFT adapts a primary-worker architecture as described in the Narwhal and Tusk paper (Section 4.2).
+/// AleoBFT adopts a primary-worker architecture as described in the Narwhal and Tusk paper (Section 4.2).
 #[derive(Clone)]
 pub struct Primary<N: Network> {
-    /// The sync modules enables fetching data from other validators.
+    /// The sync module enables fetching data from other validators.
     sync: Sync<N>,
     /// The gateway allows talking to other nodes in the validator set.
     gateway: Gateway<N>,

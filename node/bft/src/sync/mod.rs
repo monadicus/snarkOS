@@ -61,7 +61,7 @@ pub struct Sync<N: Network> {
     handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
     /// The response lock.
     response_lock: Arc<TMutex<()>>,
-    /// The sync lock. Ensures that only one tasks syncs the ledger at a time.
+    /// The sync lock. Ensures that only one task syncs the ledger at a time.
     sync_lock: Arc<TMutex<()>>,
     /// The latest block responses.
     latest_block_responses: Arc<TMutex<HashMap<u32, Block<N>>>>,
