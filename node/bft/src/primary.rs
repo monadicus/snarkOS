@@ -569,7 +569,7 @@ impl<N: Network> Primary<N> {
                         // Note: We purposefully discard this transaction if we are unable to compute the spent cost.
                         let Ok(cost) = self.ledger.transaction_spent_cost_in_microcredits(transaction_id, transaction)
                         else {
-                            trace!(
+                            debug!(
                                 "Proposing - Skipping and discarding transaction '{}' - Unable to compute transaction spent cost",
                                 fmt_id(transaction_id)
                             );
@@ -579,7 +579,7 @@ impl<N: Network> Primary<N> {
                         // Compute the next proposal cost.
                         // Note: We purposefully discard this transaction if the proposal cost overflows.
                         let Some(next_proposal_cost) = proposal_cost.checked_add(cost) else {
-                            trace!(
+                            debug!(
                                 "Proposing - Skipping and discarding transaction '{}' - Proposal cost overflowed",
                                 fmt_id(transaction_id)
                             );
@@ -839,16 +839,37 @@ impl<N: Network> Primary<N> {
                         }
                     })?;
 
-                    proposal_cost = proposal_cost.saturating_add(
-                        self.ledger.transaction_spent_cost_in_microcredits(*transaction_id, transaction)?,
-                    )
-                }
-            }
+                    // Compute the transaction spent cost (in microcredits).
+                    // Note: We purposefully discard this transaction if we are unable to compute the spent cost.
+                    let Ok(cost) = self.ledger.transaction_spent_cost_in_microcredits(*transaction_id, transaction)
+                    else {
+                        bail!(
+                            "Invalid batch proposal - Unable to compute transaction spent cost on transaction '{}'",
+                            fmt_id(transaction_id)
+                        )
+                    };
 
-            if proposal_cost > BatchHeader::<N>::BATCH_SPEND_LIMIT {
-                bail!(
-                    "Malicious peer - batch proposal from '{peer_ip}' exceeds the spend limit: '{proposal_cost}' microcredits"
-                );
+                    // Compute the next proposal cost.
+                    // Note: We purposefully discard this transaction if the proposal cost overflows.
+                    let Some(next_proposal_cost) = proposal_cost.checked_add(cost) else {
+                        bail!(
+                            "Invalid batch proposal - Batch proposal overflowed on transaction '{}'",
+                            fmt_id(transaction_id)
+                        )
+                    };
+
+                    // Check if the next proposal cost exceeds the batch proposal spend limit.
+                    if next_proposal_cost > BatchHeader::<N>::BATCH_SPEND_LIMIT {
+                        bail!(
+                            "Malicious peer - Batch proposal from '{peer_ip}' exceeds the spend limit on transaction '{}' ({next_proposal_cost} > {})",
+                            fmt_id(transaction_id),
+                            BatchHeader::<N>::BATCH_SPEND_LIMIT
+                        );
+                    }
+
+                    // Update the proposal cost.
+                    proposal_cost = next_proposal_cost;
+                }
             }
         }
 
