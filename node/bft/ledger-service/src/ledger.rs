@@ -376,7 +376,7 @@ impl<N: Network, C: ConsensusStorage<N>> LedgerService<N> for CoreLedgerService<
         Ok(())
     }
 
-    /// Returns the storage and compute cost for a transaction in microcredits.
+    /// Returns the spent cost for a transaction in microcredits.
     /// This is used to limit the amount of compute in the block generation hot
     /// path. This does NOT represent the full costs which a user has to pay.
     fn transaction_spent_cost_in_microcredits(

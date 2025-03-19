@@ -236,7 +236,7 @@ impl<N: Network> LedgerService<N> for MockLedgerService<N> {
         Ok(())
     }
 
-    /// Computes the execution cost in microcredits for a transaction.
+    /// Returns the spent cost for a transaction in microcredits.
     fn transaction_spent_cost_in_microcredits(
         &self,
         _transaction_id: N::TransactionID,
