@@ -604,7 +604,7 @@ impl<N: Network> Primary<N> {
 
                 // If the transmission is valid, insert it into the proposal's transmission list.
                 transmissions.insert(id, transmission);
-                num_worker_transmissions += 1;
+                num_worker_transmissions = num_worker_transmissions.saturating_add(1);
             }
         }
 
@@ -831,7 +831,9 @@ impl<N: Network> Primary<N> {
                         }
                     })?;
 
-                    proposal_cost += self.ledger.compute_cost(*transaction_id, transaction)?
+                    proposal_cost = proposal_cost.saturating_add(
+                        self.ledger.transaction_spent_cost_in_microcredits(*transaction_id, transaction)?,
+                    )
                 }
             }
 
