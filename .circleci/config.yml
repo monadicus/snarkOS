@@ -166,7 +166,7 @@ commands:
           cache_key: << parameters.cache_key >>
 
   run_devnet:
-    description: "Build and run devnet for integration testing"
+    description: "Run devnet for integration testing"
     parameters:
       workspace_member:
         type: string
