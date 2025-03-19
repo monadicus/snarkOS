@@ -3810,7 +3810,7 @@ dependencies = [
 [[package]]
 name = "snarkvm"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "anstyle",
  "anyhow",
@@ -3841,7 +3841,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-algorithms"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "aleo-std",
  "anyhow",
@@ -3871,7 +3871,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-circuit"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "snarkvm-circuit-account",
  "snarkvm-circuit-algorithms",
@@ -3885,7 +3885,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-circuit-account"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "snarkvm-circuit-algorithms",
  "snarkvm-circuit-network",
@@ -3896,7 +3896,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-circuit-algorithms"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "snarkvm-circuit-types",
  "snarkvm-console-algorithms",
@@ -3906,7 +3906,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-circuit-collections"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "snarkvm-circuit-algorithms",
  "snarkvm-circuit-types",
@@ -3916,7 +3916,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-circuit-environment"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "indexmap 2.8.0",
  "itertools 0.11.0",
@@ -3935,12 +3935,12 @@ dependencies = [
 [[package]]
 name = "snarkvm-circuit-environment-witness"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 
 [[package]]
 name = "snarkvm-circuit-network"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "snarkvm-circuit-algorithms",
  "snarkvm-circuit-collections",
@@ -3951,7 +3951,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-circuit-program"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "paste",
  "snarkvm-circuit-account",
@@ -3966,7 +3966,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-circuit-types"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "snarkvm-circuit-environment",
  "snarkvm-circuit-types-address",
@@ -3981,7 +3981,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-circuit-types-address"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "snarkvm-circuit-environment",
  "snarkvm-circuit-types-boolean",
@@ -3994,7 +3994,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-circuit-types-boolean"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "snarkvm-circuit-environment",
  "snarkvm-console-types-boolean",
@@ -4003,7 +4003,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-circuit-types-field"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "snarkvm-circuit-environment",
  "snarkvm-circuit-types-boolean",
@@ -4013,7 +4013,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-circuit-types-group"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "snarkvm-circuit-environment",
  "snarkvm-circuit-types-boolean",
@@ -4025,7 +4025,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-circuit-types-integers"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "snarkvm-circuit-environment",
  "snarkvm-circuit-types-boolean",
@@ -4037,7 +4037,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-circuit-types-scalar"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "snarkvm-circuit-environment",
  "snarkvm-circuit-types-boolean",
@@ -4048,7 +4048,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-circuit-types-string"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "snarkvm-circuit-environment",
  "snarkvm-circuit-types-boolean",
@@ -4060,7 +4060,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-console"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "snarkvm-console-account",
  "snarkvm-console-algorithms",
@@ -4073,7 +4073,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-console-account"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "bs58",
  "snarkvm-console-network",
@@ -4084,7 +4084,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-console-algorithms"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "blake2s_simd",
  "smallvec",
@@ -4097,7 +4097,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-console-collections"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "aleo-std",
  "rayon",
@@ -4108,7 +4108,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-console-network"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "anyhow",
  "indexmap 2.8.0",
@@ -4131,7 +4131,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-console-network-environment"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "anyhow",
  "bech32",
@@ -4149,7 +4149,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-console-program"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "enum-iterator",
  "enum_index",
@@ -4171,7 +4171,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-console-types"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "snarkvm-console-network-environment",
  "snarkvm-console-types-address",
@@ -4186,7 +4186,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-console-types-address"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "snarkvm-console-network-environment",
  "snarkvm-console-types-boolean",
@@ -4197,7 +4197,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-console-types-boolean"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "snarkvm-console-network-environment",
 ]
@@ -4205,7 +4205,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-console-types-field"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "snarkvm-console-network-environment",
  "snarkvm-console-types-boolean",
@@ -4215,7 +4215,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-console-types-group"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "snarkvm-console-network-environment",
  "snarkvm-console-types-boolean",
@@ -4226,7 +4226,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-console-types-integers"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "snarkvm-console-network-environment",
  "snarkvm-console-types-boolean",
@@ -4237,7 +4237,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-console-types-scalar"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "snarkvm-console-network-environment",
  "snarkvm-console-types-boolean",
@@ -4248,7 +4248,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-console-types-string"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "snarkvm-console-network-environment",
  "snarkvm-console-types-boolean",
@@ -4259,7 +4259,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-curves"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "rand",
  "rayon",
@@ -4273,7 +4273,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-fields"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "aleo-std",
  "anyhow",
@@ -4290,7 +4290,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-ledger"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "aleo-std",
  "anyhow",
@@ -4316,7 +4316,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-ledger-authority"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "anyhow",
  "rand",
@@ -4328,7 +4328,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-ledger-block"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "indexmap 2.8.0",
  "rayon",
@@ -4348,7 +4348,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-ledger-committee"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "anyhow",
  "indexmap 2.8.0",
@@ -4367,7 +4367,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-ledger-narwhal"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "snarkvm-ledger-narwhal-batch-certificate",
  "snarkvm-ledger-narwhal-batch-header",
@@ -4380,7 +4380,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-ledger-narwhal-batch-certificate"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "indexmap 2.8.0",
  "rayon",
@@ -4393,7 +4393,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-ledger-narwhal-batch-header"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "indexmap 2.8.0",
  "rayon",
@@ -4406,7 +4406,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-ledger-narwhal-data"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "bytes",
  "serde_json",
@@ -4417,7 +4417,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-ledger-narwhal-subdag"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "indexmap 2.8.0",
  "rayon",
@@ -4432,7 +4432,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-ledger-narwhal-transmission"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "bytes",
  "serde_json",
@@ -4445,7 +4445,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-ledger-narwhal-transmission-id"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "snarkvm-console",
  "snarkvm-ledger-puzzle",
@@ -4454,7 +4454,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-ledger-puzzle"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "aleo-std",
  "anyhow",
@@ -4474,7 +4474,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-ledger-puzzle-epoch"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "aleo-std",
  "anyhow",
@@ -4495,7 +4495,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-ledger-query"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "async-trait",
  "reqwest 0.11.27",
@@ -4508,7 +4508,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-ledger-store"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "aleo-std-storage",
  "anyhow",
@@ -4535,7 +4535,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-ledger-test-helpers"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "once_cell",
  "snarkvm-circuit",
@@ -4550,7 +4550,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-metrics"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "metrics",
  "metrics-exporter-prometheus",
@@ -4559,7 +4559,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-parameters"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "aleo-std",
  "anyhow",
@@ -4584,7 +4584,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-synthesizer"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "aleo-std",
  "anyhow",
@@ -4616,7 +4616,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-synthesizer-process"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "aleo-std",
  "colored",
@@ -4640,7 +4640,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-synthesizer-program"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "indexmap 2.8.0",
  "paste",
@@ -4655,7 +4655,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-synthesizer-snark"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "bincode",
  "once_cell",
@@ -4668,7 +4668,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-utilities"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "aleo-std",
  "anyhow",
@@ -4689,7 +4689,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-utilities-derives"
 version = "1.3.0"
-source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#bbcb34d562d1965b95a4df50d9a8d3811746cb8f"
+source = "git+https://github.com/niklaslong/snarkVM.git?branch=feat%2Fspend-limits#6f6f6a326243c6c6a2c5ad7515069e4618f16841"
 dependencies = [
  "proc-macro2",
  "quote 1.0.40",
