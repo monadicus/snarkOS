@@ -1411,7 +1411,7 @@ impl<N: Network> Primary<N> {
             // Ensure that the previous certificate was created at least `MIN_BATCH_DELAY_IN_MS` seconds ago.
             Some(certificate) => certificate.timestamp(),
             None => match self.gateway.account().address() == author {
-                // If we are the author, then ensure the previous proposal was created at least `MIN_BATCH_DELAY_IN_MS` seconds ago.
+                // If we are the author, then ensure the previous proposal was created at least `MIN_BATCH_DELAY_IN_SECS` seconds ago.
                 true => *self.latest_proposed_batch_timestamp.read(),
                 // If we do not see a previous certificate for the author, then proceed optimistically.
                 false => return Ok(()),
@@ -1422,7 +1422,7 @@ impl<N: Network> Primary<N> {
         let elapsed = timestamp
             .checked_sub(previous_timestamp)
             .ok_or_else(|| anyhow!("Timestamp cannot be before the previous certificate at round {previous_round}"))?;
-        // Ensure that the previous certificate was created at least `MIN_BATCH_DELAY_IN_MS` seconds ago.
+        // Ensure that the previous certificate was created at least `MIN_BATCH_DELAY_IN_SECS` seconds ago.
         match elapsed < MIN_BATCH_DELAY_IN_SECS as i64 {
             true => bail!("Timestamp is too soon after the previous certificate at round {previous_round}"),
             false => Ok(()),
@@ -1982,7 +1982,7 @@ mod tests {
         (certificate, transmissions)
     }
 
-    // Create a certificate chain up to round in primary storage.
+    // Create a certificate chain up to, but not including, the specified round in the primary storage.
     fn store_certificate_chain(
         primary: &Primary<CurrentNetwork>,
         accounts: &[(SocketAddr, Account<CurrentNetwork>)],
@@ -2341,6 +2341,7 @@ mod tests {
         );
     }
 
+    /// Tests that the minimum batch delay is enforced as expected, i.e., that proposals with timestamps that are too close to the previous proposal are rejected.
     #[tokio::test]
     async fn test_batch_propose_from_peer_with_invalid_timestamp() {
         let round = 2;
@@ -2353,7 +2354,17 @@ mod tests {
         // Create a valid proposal with an author that isn't the primary.
         let peer_account = &accounts[1];
         let peer_ip = peer_account.0;
-        let invalid_timestamp = now(); // Use a timestamp that is too early.
+
+        // Use a timestamp that is too early.
+        // Set it to something that is less than the minimum batch delay
+        // Note, that the minimum delay is currently 1, so this will be equal to the last timestamp
+        let last_timestamp = primary
+            .storage
+            .get_certificate_for_round_with_author(round - 1, peer_account.1.address())
+            .expect("No previous proposal exists")
+            .timestamp();
+        let invalid_timestamp = last_timestamp + (MIN_BATCH_DELAY_IN_SECS as i64) - 1;
+
         let proposal = create_test_proposal(
             &peer_account.1,
             primary.ledger.current_committee().unwrap(),
@@ -2379,6 +2390,7 @@ mod tests {
         );
     }
 
+    /// Check that proposals rejected that have timestamps older than the previous proposal.
     #[tokio::test]
     async fn test_batch_propose_from_peer_with_past_timestamp() {
         let round = 2;
@@ -2391,7 +2403,15 @@ mod tests {
         // Create a valid proposal with an author that isn't the primary.
         let peer_account = &accounts[1];
         let peer_ip = peer_account.0;
-        let past_timestamp = now() - 5; // Use a timestamp that is in the past.
+
+        // Use a timestamp that is before the last timestamp.
+        let last_timestamp = primary
+            .storage
+            .get_certificate_for_round_with_author(round - 1, peer_account.1.address())
+            .expect("No previous proposal exists")
+            .timestamp();
+        let past_timestamp = last_timestamp - 5;
+
         let proposal = create_test_proposal(
             &peer_account.1,
             primary.ledger.current_committee().unwrap(),
