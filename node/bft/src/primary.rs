@@ -501,11 +501,13 @@ impl<N: Network> Primary<N> {
             let mut num_worker_transmissions = 0usize;
 
             while let Some((id, transmission)) = worker.remove_front() {
-                if transmissions.len() == BatchHeader::<N>::MAX_TRANSMISSIONS_PER_BATCH {
+                // Check the selected transmissions are below the batch limit.
+                if transmissions.len() >= BatchHeader::<N>::MAX_TRANSMISSIONS_PER_BATCH {
                     break 'outer;
                 }
 
-                if num_worker_transmissions == Worker::<N>::MAX_TRANSMISSIONS_PER_WORKER {
+                // Check the max transmissions per worker is not exceeded.
+                if num_worker_transmissions >= Worker::<N>::MAX_TRANSMISSIONS_PER_WORKER {
                     continue 'outer;
                 }
 
@@ -563,38 +565,44 @@ impl<N: Network> Primary<N> {
                             continue;
                         }
 
-                        // Ensure the transaction doesn't bring the proposal above the spend limit.
-                        //
-                        // Validators start following the new consensus rules early to guarantee a smooth transition.
-                        // The activation height is offset by the maximum number of blocks that can be produced within gc to
-                        // ensure honest validators can't mismatch due to differing views of the dag.
-                        let block_height = self
-                            .ledger
-                            .latest_block_height()
-                            // Add one to get the next block height.
-                            .saturating_add(1)
-                            // Estimate and upper bound the block height for the number of rounds within gc.
-                            // Blocks contain at least two dag rounds and in max_gc_rounds we'll produce max_gc_rounds / 2 blocks. 
-                            .saturating_add((BatchHeader::<N>::MAX_GC_ROUNDS as u32).saturating_div(2));
+                        // Compute the transaction spent cost (in microcredits).
+                        // Note: We purposefully discard this transaction if we are unable to compute the spent cost.
+                        let Ok(cost) = self.ledger.transaction_spent_cost_in_microcredits(transaction_id, transaction)
+                        else {
+                            trace!(
+                                "Proposing - Skipping and discarding transaction '{}' - Unable to compute transaction spent cost",
+                                fmt_id(transaction_id)
+                            );
+                            continue;
+                        };
 
-                        if N::CONSENSUS_VERSION(block_height)? >= ConsensusVersion::V4 {
-                            match self.ledger.transaction_spent_cost_in_microcredits(transaction_id, transaction) {
-                                Ok(cost) if proposal_cost + cost <= BatchHeader::<N>::BATCH_SPEND_LIMIT => {
-                                    proposal_cost += cost
-                                }
-                                _ => {
-                                    trace!(
-                                        "Proposing - Skipping transaction '{}' - Batch spend limit surpassed",
-                                        fmt_id(transaction_id)
-                                    );
+                        // Compute the next proposal cost.
+                        // Note: We purposefully discard this transaction if the proposal cost overflows.
+                        let Some(next_proposal_cost) = proposal_cost.checked_add(cost) else {
+                            trace!(
+                                "Proposing - Skipping and discarding transaction '{}' - Proposal cost overflowed",
+                                fmt_id(transaction_id)
+                            );
+                            continue;
+                        };
 
-                                    // Reinsert the transmission into the worker.
-                                    worker.insert_front(id, transmission);
-                                    break 'outer;
-                                }
-                            }
+                        // Check if the next proposal cost exceeds the batch proposal spend limit.
+                        if next_proposal_cost > BatchHeader::<N>::BATCH_SPEND_LIMIT {
+                            trace!(
+                                "Proposing - Skipping transaction '{}' - Batch spend limit surpassed ({next_proposal_cost} > {})",
+                                fmt_id(transaction_id),
+                                BatchHeader::<N>::BATCH_SPEND_LIMIT
+                            );
+
+                            // Reinsert the transmission into the worker.
+                            worker.insert_front(id, transmission);
+                            break 'outer;
                         }
+
+                        // Update the proposal cost.
+                        proposal_cost = next_proposal_cost;
                     }
+
                     // Note: We explicitly forbid including ratifications,
                     // as the protocol currently does not support ratifications.
                     (TransmissionID::Ratification, Transmission::Ratification) => continue,
