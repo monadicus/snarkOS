@@ -16,7 +16,7 @@
 use crate::{
     Gateway,
     MAX_FETCH_TIMEOUT_IN_MS,
-    PRIMARY_PING_INTERVAL,
+    PRIMARY_PING_IN_MS,
     Transport,
     events::DataBlocks,
     helpers::{BFTSender, Pending, Storage, SyncReceiver, fmt_id, max_redundant_requests},
@@ -137,10 +137,10 @@ impl<N: Network> Sync<N> {
             // Ideally, a node does not consider itself synced when it has not received
             // any block locators from peers. However, in the initial bootup of validators,
             // this needs to happen, so we use this additional sleep as a grace period.
-            tokio::time::sleep(PRIMARY_PING_INTERVAL).await;
+            tokio::time::sleep(Duration::from_millis(PRIMARY_PING_IN_MS)).await;
             loop {
                 // Sleep briefly to avoid triggering spam detection.
-                tokio::time::sleep(PRIMARY_PING_INTERVAL).await;
+                tokio::time::sleep(Duration::from_millis(PRIMARY_PING_IN_MS)).await;
                 // let communication = &node.router;
                 self_.try_block_sync().await;
 
