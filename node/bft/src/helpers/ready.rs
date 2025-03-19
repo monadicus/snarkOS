@@ -29,12 +29,12 @@ use std::collections::{HashMap, VecDeque, hash_map::Entry::Vacant};
 pub struct Ready<N: Network> {
     /// Maps each transmission ID to its logical index (physical index + offset)
     /// in `transmissions`.
-    transmission_ids: HashMap<TransmissionID<N>, isize>,
+    transmission_ids: HashMap<TransmissionID<N>, i64>,
     /// An ordered collection of (transmission ID, transmission).
     transmissions: VecDeque<(TransmissionID<N>, Transmission<N>)>,
     /// An offset used to adjust logical indices when elements are inserted or
     /// removed at the front.
-    offset: isize,
+    offset: i64,
 }
 
 impl<N: Network> Default for Ready<N> {
@@ -129,7 +129,7 @@ impl<N: Network> Ready<N> {
         let transmission_id = transmission_id.into();
 
         if let Vacant(entry) = self.transmission_ids.entry(transmission_id) {
-            entry.insert(physical_index as isize + self.offset);
+            entry.insert(physical_index as i64 + self.offset);
             self.transmissions.push_back((transmission_id, transmission));
             true
         } else {
@@ -184,7 +184,7 @@ impl<N: Network> Ready<N> {
         self.transmission_ids.clear();
         self.offset = 0;
         for (i, (id, _)) in self.transmissions.iter().enumerate() {
-            self.transmission_ids.insert(*id, i as isize);
+            self.transmission_ids.insert(*id, i as i64);
         }
     }
 }
