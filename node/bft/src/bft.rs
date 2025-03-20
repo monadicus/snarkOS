@@ -509,7 +509,7 @@ impl<N: Network> BFT<N> {
         // Retrieve the committee lookback for the certificate round (i.e. the round just after the commit round).
         let Ok(certificate_committee_lookback) = self.ledger().get_committee_lookback_for_round(certificate_round)
         else {
-            bail!("BFT failed to retrieve the committee with lag for certificate round {certificate_round}");
+            bail!("BFT failed to retrieve the committee lookback for certificate round {certificate_round}");
         };
         // Construct a set over the authors who included the leader's certificate in the certificate round.
         let authors = certificates
