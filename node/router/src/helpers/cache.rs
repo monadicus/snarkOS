@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright 2024-2025 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -125,7 +125,7 @@ impl<N: Network> Cache<N> {
 }
 
 impl<N: Network> Cache<N> {
-    /// Returns `true` if the cache contains the block request for the given peer.
+    /// Returns `true` if the cache contains any inbound block requests for the given peer.
     pub fn contains_inbound_block_request(&self, peer_ip: &SocketAddr) -> bool {
         Self::retain(&self.seen_inbound_block_requests, *peer_ip, Self::INBOUND_BLOCK_REQUEST_INTERVAL) > 0
     }
@@ -135,7 +135,7 @@ impl<N: Network> Cache<N> {
         self.seen_outbound_block_requests.read().get(peer_ip).map(|r| r.len()).unwrap_or(0)
     }
 
-    /// Returns `true` if the cache contains the block request for the given peer.
+    /// Returns `true` if the cache contains the given block request for the specified peer.
     pub fn contains_outbound_block_request(&self, peer_ip: &SocketAddr, request: &BlockRequest) -> bool {
         self.seen_outbound_block_requests.read().get(peer_ip).map(|r| r.contains(request)).unwrap_or(false)
     }
