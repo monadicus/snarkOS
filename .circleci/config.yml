@@ -32,7 +32,7 @@ commands:
           command: |
             $ProgressPreference = "SilentlyContinue"
             # Remove the circleci installed rustc.
-            choco uninstall rust
+            choco uninstall rust -yv
             # Install llvm (libclang for rocksdb).
             choco install llvm -y 
             refreshenv
