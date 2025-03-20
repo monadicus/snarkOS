@@ -1518,7 +1518,9 @@ mod tests {
         }
 
         // Duplicate a new sync module with a different height to simulate block advancement.
-        let ledger_height = rng.gen_range(0..locator_height);
+        // This range needs to be inclusive, so that the range is never empty,
+        // even with a locator height of 0.
+        let ledger_height = rng.gen_range(0..=locator_height);
         let new_sync = duplicate_sync_at_new_height(&sync, ledger_height);
 
         // Check that the number of requests is the same.

@@ -60,7 +60,7 @@ pub fn initialize_logger<P: AsRef<Path>>(
             .add_directive("hyper=off".parse().unwrap())
             .add_directive("reqwest=off".parse().unwrap())
             .add_directive("want=off".parse().unwrap())
-            .add_directive("warp=off".parse().unwrap());
+            .add_directive("h2=off".parse().unwrap());
 
         let filter = if verbosity >= 2 {
             filter.add_directive("snarkos_node_sync=trace".parse().unwrap())
