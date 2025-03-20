@@ -58,6 +58,17 @@ path = "snarkos/main.rs"
 [features]
 default = [ "snarkos-node-metrics", "snarkos-node/metrics", "snarkos-cli/metrics" ]
 history = [ "snarkos-node/history" ]
+cuda = [
+  "snarkos-account/cuda",
+  "snarkos-cli/cuda",
+  "snarkos-node/cuda",
+  "snarkos-node-bft/cuda",
+  "snarkos-node-cdn/cuda",
+  "snarkos-node-consensus/cuda",
+  "snarkos-node-rest/cuda",
+  "snarkos-node-router/cuda",
+  "snarkos-node-sync/cuda"
+]
 test_targets = [ "snarkos-cli/test_targets" ]
 
 [dependencies.anyhow]

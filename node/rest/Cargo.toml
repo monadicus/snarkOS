@@ -20,6 +20,7 @@ edition = "2021"
 default = [ "parallel" ]
 parallel = [ "rayon" ]
 history = [ "snarkvm-synthesizer/history" ]
+cuda = [ "snarkvm/cuda", "snarkos-node-consensus/cuda", "snarkos-node-router/cuda" ]
 test_targets = [ "snarkvm/test_targets" ]
 
 [dependencies.anyhow]

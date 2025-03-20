@@ -18,7 +18,8 @@
   * [2.2 Installation](#22-installation)
 * [3. Run an Aleo Node](#3-run-an-aleo-node)
   * [3.1 Run an Aleo Client](#31-run-an-aleo-client)
-  * [3.2 Run an Aleo Prover](#32-run-an-aleo-prover)
+  * [3.2 Run an Aleo Validator](#32-run-an-aleo-validator)
+  * [3.3 Run an Aleo Prover](#33-run-an-aleo-prover)
 * [4. FAQs](#4-faqs)
 * [5. Command Line Interface](#5-command-line-interface)
 * [6. Development Guide](#6-development-guide)
@@ -199,6 +200,28 @@ When prompted, enter your Aleo private key:
 ```
 Enter the Aleo Prover account private key:
 APrivateKey1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+### 3.3.1 Enable CUDA Acceleration (Optional)
+
+If a supported Nvidia GPU is available, CUDA-based acceleration can be enabled using the following command:
+
+```
+./run-prover.sh --cuda
+```
+
+**Note:** If CUDA is not explicitly enabled or a compatible GPU is not detected, the prover will automatically run on the CPU.
+
+#### Requirements for CUDA Acceleration
+To use the `--cuda` flag, ensure your system meets the following requirements:
+
+- SM_70 (Volta) or later
+- [CUDA Toolkit (nvcc)](https://docs.nvidia.com/cuda/index.html#installation-guides)
+
+You can check the respective versions with the following commands:
+```
+nvidia-smi       # Check GPU model and driver
+nvcc --version   # Check installed CUDA version
 ```
 
 ## 4. FAQs
