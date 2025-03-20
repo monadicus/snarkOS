@@ -26,7 +26,10 @@ use snarkvm::{
 };
 
 use indexmap::{IndexMap, IndexSet, map::Entry};
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::RwLock;
 use lru::LruCache;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::{

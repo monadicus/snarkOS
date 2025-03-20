@@ -17,6 +17,13 @@ license = "Apache-2.0"
 edition = "2021"
 
 [features]
+locktick = [
+  "dep:locktick",
+  "snarkos-node/locktick",
+  "snarkos-node-cdn/locktick",
+  "snarkos-node-rest/locktick",
+  "snarkvm/locktick"
+]
 metrics = [ "dep:metrics", "snarkos-node/metrics" ]
 cuda = [
   "snarkvm/cuda",
@@ -52,6 +59,11 @@ version = "0.27"
 [dependencies.indexmap]
 version = "2.1"
 features = [ "serde", "rayon" ]
+
+[dependencies.locktick]
+version = "0.3"
+features = [ "parking_lot" ]
+optional = true
 
 [dependencies.metrics]
 package = "snarkos-node-metrics"

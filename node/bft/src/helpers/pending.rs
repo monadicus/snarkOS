@@ -21,6 +21,9 @@ use snarkvm::{
 };
 
 use anyhow::anyhow;
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::RwLock;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
 use std::{
     collections::{HashMap, HashSet},

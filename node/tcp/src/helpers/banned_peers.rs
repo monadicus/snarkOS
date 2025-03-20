@@ -15,6 +15,9 @@
 
 use std::{collections::HashMap, net::IpAddr, time::Instant};
 
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::RwLock;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
 
 /// Contains the ban details for a banned peer.

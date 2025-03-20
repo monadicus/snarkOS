@@ -44,6 +44,9 @@ use snarkvm::prelude::{
 use aleo_std::StorageMode;
 use anyhow::Result;
 use core::future::Future;
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::Mutex;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::Mutex;
 use std::{
     net::SocketAddr,
