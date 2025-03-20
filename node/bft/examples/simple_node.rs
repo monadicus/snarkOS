@@ -129,7 +129,7 @@ pub async fn start_bft(
         Arc::new(BFTMemoryService::new()),
         BatchHeader::<CurrentNetwork>::MAX_GC_ROUNDS as u64,
     );
-    // Initialize the gateway IP and dev mode.
+    // Initialize the gateway's storage mode.
     let (ip, storage_mode) = match peers.get(&node_id) {
         Some(ip) => (Some(*ip), StorageMode::Production),
         None => (None, StorageMode::Development(node_id)),
