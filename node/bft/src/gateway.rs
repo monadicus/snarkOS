@@ -157,7 +157,7 @@ impl<N: Network> Gateway<N> {
             (Some(ip), _) => ip,
         };
         // Initialize the TCP stack.
-        let tcp = Tcp::new(Config::new(ip, Committee::<N>::MAX_COMMITTEE_SIZE));
+        let tcp = Tcp::new(Config::new(ip, Committee::<N>::max_committee_size()?));
         // Return the gateway.
         Ok(Self {
             account,
@@ -217,9 +217,10 @@ impl<N: Network> Gateway<N> {
 impl<N: Network> Gateway<N> {
     /// The current maximum committee size.
     fn max_committee_size(&self) -> usize {
-        self.ledger
-            .current_committee()
-            .map_or_else(|_e| Committee::<N>::MAX_COMMITTEE_SIZE as usize, |committee| committee.num_members())
+        self.ledger.current_committee().map_or_else(
+            |_e| Committee::<N>::max_committee_size().unwrap() as usize,
+            |committee| committee.num_members(),
+        )
     }
 
     /// The maximum number of events to cache.
@@ -509,7 +510,7 @@ impl<N: Network> Gateway<N> {
 
     /// Removes the connected peer and adds them to the candidate peers.
     fn remove_connected_peer(&self, peer_ip: SocketAddr) {
-        // If a sync sender was provided, remove the peer from the sync module.
+        // Remove the peer from the sync module. Except for some tests, there is always a sync sender.
         if let Some(sync_sender) = self.sync_sender.get() {
             let tx_block_sync_remove_peer_ = sync_sender.tx_block_sync_remove_peer.clone();
             tokio::spawn(async move {
@@ -653,16 +654,30 @@ impl<N: Network> Gateway<N> {
                 Ok(())
             }
             Event::BlockResponse(block_response) => {
-                // If a sync sender was provided, then process the block response.
+                // Process the block response. Except for some tests, there is always a sync sender.
                 if let Some(sync_sender) = self.sync_sender.get() {
                     // Retrieve the block response.
                     let BlockResponse { request, blocks } = block_response;
+
                     // Check the response corresponds to a request.
                     if !self.cache.remove_outbound_block_request(peer_ip, &request) {
                         bail!("Unsolicited block response from '{peer_ip}'")
                     }
+
                     // Perform the deferred non-blocking deserialization of the blocks.
-                    let blocks = blocks.deserialize().await.map_err(|error| anyhow!("[BlockResponse] {error}"))?;
+                    // The deserialization can take a long time (minutes). We should not be running
+                    // this on a blocking task, but on a rayon thread pool.
+                    let (send, recv) = tokio::sync::oneshot::channel();
+                    rayon::spawn_fifo(move || {
+                        let blocks = blocks.deserialize_blocking().map_err(|error| anyhow!("[BlockResponse] {error}"));
+                        let _ = send.send(blocks);
+                    });
+                    let blocks = match recv.await {
+                        Ok(Ok(blocks)) => blocks,
+                        Ok(Err(error)) => bail!("Peer '{peer_ip}' sent an invalid block response - {error}"),
+                        Err(error) => bail!("Peer '{peer_ip}' sent an invalid block response - {error}"),
+                    };
+
                     // Ensure the block response is well-formed.
                     blocks.ensure_response_is_well_formed(peer_ip, request.start_height, request.end_height)?;
                     // Send the blocks to the sync module.
@@ -673,7 +688,8 @@ impl<N: Network> Gateway<N> {
                 Ok(())
             }
             Event::CertificateRequest(certificate_request) => {
-                // If a sync sender was provided, send the certificate request to the sync module.
+                // Send the certificate request to the sync module.
+                // Except for some tests, there is always a sync sender.
                 if let Some(sync_sender) = self.sync_sender.get() {
                     // Send the certificate request to the sync module.
                     let _ = sync_sender.tx_certificate_request.send((peer_ip, certificate_request)).await;
@@ -681,7 +697,8 @@ impl<N: Network> Gateway<N> {
                 Ok(())
             }
             Event::CertificateResponse(certificate_response) => {
-                // If a sync sender was provided, send the certificate response to the sync module.
+                // Send the certificate response to the sync module.
+                // Except for some tests, there is always a sync sender.
                 if let Some(sync_sender) = self.sync_sender.get() {
                     // Send the certificate response to the sync module.
                     let _ = sync_sender.tx_certificate_response.send((peer_ip, certificate_response)).await;
@@ -703,7 +720,7 @@ impl<N: Network> Gateway<N> {
                     bail!("Dropping '{peer_ip}' on event version {version} (outdated)");
                 }
 
-                // If a sync sender was provided, update the peer locators.
+                // Update the peer locators. Except for some tests, there is always a sync sender.
                 if let Some(sync_sender) = self.sync_sender.get() {
                     // Check the block locators are valid, and update the validators in the sync module.
                     if let Err(error) = sync_sender.update_peer_locators(peer_ip, block_locators).await {
@@ -912,21 +929,41 @@ impl<N: Network> Gateway<N> {
     /// Logs the connected validators.
     fn log_connected_validators(&self) {
         // Log the connected validators.
-        let validators = self.connected_peers().read().clone();
+        let connected_validators = self.connected_peers().read().clone();
         // Resolve the total number of connectable validators.
         let validators_total = self.ledger.current_committee().map_or(0, |c| c.num_members().saturating_sub(1));
         // Format the total validators message.
         let total_validators = format!("(of {validators_total} bonded validators)").dimmed();
         // Construct the connections message.
-        let connections_msg = match validators.len() {
+        let connections_msg = match connected_validators.len() {
             0 => "No connected validators".to_string(),
             num_connected => format!("Connected to {num_connected} validators {total_validators}"),
         };
+        // Collect the connected validator addresses.
+        let mut connected_validator_addresses = IndexSet::with_capacity(connected_validators.len());
+        connected_validator_addresses.insert(self.account.address());
         // Log the connected validators.
         info!("{connections_msg}");
-        for peer_ip in validators {
-            let address = self.resolver.get_address(peer_ip).map_or("Unknown".to_string(), |a| a.to_string());
+        for peer_ip in &connected_validators {
+            let address = self.resolver.get_address(*peer_ip).map_or("Unknown".to_string(), |a| {
+                connected_validator_addresses.insert(a);
+                a.to_string()
+            });
             debug!("{}", format!("  {peer_ip} - {address}").dimmed());
+        }
+
+        // Log the validators that are not connected.
+        let num_not_connected = validators_total.saturating_sub(connected_validators.len());
+        if num_not_connected > 0 {
+            info!("Not connected to {num_not_connected} validators {total_validators}");
+            // Collect the committee members.
+            let committee_members: IndexSet<_> =
+                self.ledger.current_committee().map(|c| c.members().keys().copied().collect()).unwrap_or_default();
+
+            // Log the validators that are not connected.
+            for address in committee_members.difference(&connected_validator_addresses) {
+                debug!("{}", format!("  Not connected to {address}").dimmed());
+            }
         }
     }
 
@@ -983,6 +1020,22 @@ impl<N: Network> Gateway<N> {
                     self_.cache.increment_outbound_validators_requests(validator_ip);
                     // Send a `ValidatorsRequest` to the validator.
                     let _ = Transport::send(&self_, validator_ip, Event::ValidatorsRequest(ValidatorsRequest)).await;
+                });
+            }
+        }
+    }
+
+    /// Processes a message received from the network.
+    async fn process_message_inner(&self, peer_addr: SocketAddr, message: Event<N>) {
+        // Process the message. Disconnect if the peer violated the protocol.
+        if let Err(error) = self.inbound(peer_addr, message).await {
+            if let Some(peer_ip) = self.resolver.get_listener(peer_addr) {
+                warn!("{CONTEXT} Disconnecting from '{peer_ip}' - {error}");
+                let self_ = self.clone();
+                tokio::spawn(async move {
+                    Transport::send(&self_, peer_ip, DisconnectReason::ProtocolViolation.into()).await;
+                    // Disconnect from this peer.
+                    self_.disconnect(peer_ip);
                 });
             }
         }
@@ -1075,10 +1128,7 @@ impl<N: Network> Reading for Gateway<N> {
     type Message = Event<N>;
 
     /// The maximum queue depth of incoming messages for a single peer.
-    const MESSAGE_QUEUE_DEPTH: usize = 2
-        * BatchHeader::<N>::MAX_GC_ROUNDS
-        * Committee::<N>::MAX_COMMITTEE_SIZE as usize
-        * BatchHeader::<N>::MAX_TRANSMISSIONS_PER_BATCH;
+    const MESSAGE_QUEUE_DEPTH: usize = 256_000;
 
     /// Creates a [`Decoder`] used to interpret messages from the network.
     /// The `side` param indicates the connection side **from the node's perspective**.
@@ -1088,17 +1138,15 @@ impl<N: Network> Reading for Gateway<N> {
 
     /// Processes a message received from the network.
     async fn process_message(&self, peer_addr: SocketAddr, message: Self::Message) -> io::Result<()> {
-        // Process the message. Disconnect if the peer violated the protocol.
-        if let Err(error) = self.inbound(peer_addr, message).await {
-            if let Some(peer_ip) = self.resolver.get_listener(peer_addr) {
-                warn!("{CONTEXT} Disconnecting from '{peer_ip}' - {error}");
-                let self_ = self.clone();
-                tokio::spawn(async move {
-                    Transport::send(&self_, peer_ip, DisconnectReason::ProtocolViolation.into()).await;
-                    // Disconnect from this peer.
-                    self_.disconnect(peer_ip);
-                });
-            }
+        if matches!(message, Event::BlockRequest(_) | Event::BlockResponse(_)) {
+            let self_ = self.clone();
+            // Handle BlockRequest and BlockResponse messages in a separate task to not block the
+            // inbound queue.
+            tokio::spawn(async move {
+                self_.process_message_inner(peer_addr, message).await;
+            });
+        } else {
+            self.process_message_inner(peer_addr, message).await;
         }
         Ok(())
     }
@@ -1110,10 +1158,7 @@ impl<N: Network> Writing for Gateway<N> {
     type Message = Event<N>;
 
     /// The maximum queue depth of outgoing messages for a single peer.
-    const MESSAGE_QUEUE_DEPTH: usize = 2
-        * BatchHeader::<N>::MAX_GC_ROUNDS
-        * Committee::<N>::MAX_COMMITTEE_SIZE as usize
-        * BatchHeader::<N>::MAX_TRANSMISSIONS_PER_BATCH;
+    const MESSAGE_QUEUE_DEPTH: usize = 256_000;
 
     /// Creates an [`Encoder`] used to write the outbound messages to the target stream.
     /// The `side` parameter indicates the connection side **from the node's perspective**.
@@ -1257,7 +1302,7 @@ impl<N: Network> Gateway<N> {
         peer_ip: Option<SocketAddr>,
         restrictions_id: Field<N>,
         stream: &'a mut TcpStream,
-    ) -> io::Result<(SocketAddr, Framed<&mut TcpStream, EventCodec<N>>)> {
+    ) -> io::Result<(SocketAddr, Framed<&'a mut TcpStream, EventCodec<N>>)> {
         // This value is immediately guaranteed to be present, so it can be unwrapped.
         let peer_ip = peer_ip.unwrap();
 
@@ -1322,7 +1367,7 @@ impl<N: Network> Gateway<N> {
         peer_ip: &mut Option<SocketAddr>,
         restrictions_id: Field<N>,
         stream: &'a mut TcpStream,
-    ) -> io::Result<(SocketAddr, Framed<&mut TcpStream, EventCodec<N>>)> {
+    ) -> io::Result<(SocketAddr, Framed<&'a mut TcpStream, EventCodec<N>>)> {
         // Construct the stream.
         let mut framed = Framed::new(stream, EventCodec::<N>::handshake());
 
@@ -1456,7 +1501,10 @@ mod prop_tests {
     use snarkos_account::Account;
     use snarkos_node_bft_ledger_service::MockLedgerService;
     use snarkos_node_bft_storage_service::BFTMemoryService;
-    use snarkos_node_tcp::P2P;
+    use snarkos_node_tcp::{
+        P2P,
+        protocols::{Reading, Writing},
+    };
     use snarkvm::{
         ledger::{
             committee::{
@@ -1466,7 +1514,7 @@ mod prop_tests {
             },
             narwhal::{BatchHeader, batch_certificate::test_helpers::sample_batch_certificate_for_round},
         },
-        prelude::{MainnetV0, PrivateKey},
+        prelude::{MainnetV0, Network, PrivateKey},
         utilities::TestRng,
     };
 
@@ -1579,7 +1627,7 @@ mod prop_tests {
         assert_eq!(tcp_config.desired_listening_port, Some(MEMORY_POOL_PORT + dev.port().unwrap()));
 
         let tcp_config = gateway.tcp().config();
-        assert_eq!(tcp_config.max_connections, Committee::<CurrentNetwork>::MAX_COMMITTEE_SIZE);
+        assert_eq!(tcp_config.max_connections, Committee::<CurrentNetwork>::max_committee_size().unwrap());
         assert_eq!(gateway.account().address(), account.address());
     }
 
@@ -1601,7 +1649,7 @@ mod prop_tests {
         }
 
         let tcp_config = gateway.tcp().config();
-        assert_eq!(tcp_config.max_connections, Committee::<CurrentNetwork>::MAX_COMMITTEE_SIZE);
+        assert_eq!(tcp_config.max_connections, Committee::<CurrentNetwork>::max_committee_size().unwrap());
         assert_eq!(gateway.account().address(), account.address());
     }
 
@@ -1695,5 +1743,21 @@ mod prop_tests {
                 assert!(!is_authorized);
             }
         }
+    }
+
+    // This test is used to ensure that the Reading and Writing network queues are sufficient to
+    // process the maximum expected load at any givent moment. Due to the number of certificates
+    // not being const, those values are currently hardcoded, and the test below will alert us
+    // if they need to be increased.
+    #[test]
+    fn ensure_sufficient_rw_queue_depth() {
+        let desired_rw_queue_depth = 2
+            * BatchHeader::<MainnetV0>::MAX_GC_ROUNDS
+            * MainnetV0::LATEST_MAX_CERTIFICATES().unwrap() as usize
+            * BatchHeader::<MainnetV0>::MAX_TRANSMISSIONS_PER_BATCH;
+
+        // The queue depths may be larger than the calculated maximum needed capacity.
+        assert!(<Gateway<MainnetV0> as Reading>::MESSAGE_QUEUE_DEPTH >= desired_rw_queue_depth);
+        assert!(<Gateway<MainnetV0> as Writing>::MESSAGE_QUEUE_DEPTH >= desired_rw_queue_depth);
     }
 }
