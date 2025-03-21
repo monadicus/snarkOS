@@ -44,6 +44,9 @@ use std::{sync::Arc, time::Duration};
 
 use ::bytes::Bytes;
 use indexmap::IndexMap;
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::RwLock;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
 use rand::Rng;
 use tokio::{sync::oneshot, task::JoinHandle, time::sleep};

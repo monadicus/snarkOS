@@ -26,7 +26,10 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::Mutex;
 use once_cell::sync::OnceCell;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::Mutex;
 use tokio::{
     io::split,

@@ -34,6 +34,9 @@ use snarkvm::{
 
 use colored::Colorize;
 use indexmap::{IndexMap, IndexSet};
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::{Mutex, RwLock};
+#[cfg(not(feature = "locktick"))]
 use parking_lot::{Mutex, RwLock};
 use rand::seq::IteratorRandom;
 use std::{future::Future, net::SocketAddr, sync::Arc, time::Duration};

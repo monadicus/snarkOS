@@ -36,7 +36,10 @@ use snarkvm::{
 use aleo_std::StorageMode;
 use anyhow::anyhow;
 use indexmap::{IndexSet, indexset};
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::Mutex;
 use lru::LruCache;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::Mutex;
 use std::{
     borrow::Cow,

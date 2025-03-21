@@ -195,32 +195,37 @@ pub async fn load_blocks<N: Network>(
         let next_blocks = std::mem::replace(&mut *candidate_blocks, retained_blocks);
         drop(candidate_blocks);
 
+        // Initialize a temporary threadpool that can use the full CPU.
+        let threadpool = rayon::ThreadPoolBuilder::new().build().unwrap();
+
         // Attempt to advance the ledger using the CDN block bundle.
         let mut process_clone = process.clone();
         let shutdown_clone = shutdown.clone();
         current_height = tokio::task::spawn_blocking(move || {
-            for block in next_blocks.into_iter().filter(|b| (start_height..end_height).contains(&b.height())) {
-                // If we are instructed to shut down, abort.
-                if shutdown_clone.load(Ordering::Relaxed) {
-                    info!("Stopping block sync at {} - the node is shutting down", current_height);
-                    // We can shut down cleanly from here, as the node hasn't been started yet.
-                    std::process::exit(0);
+            threadpool.install(|| {
+                for block in next_blocks.into_iter().filter(|b| (start_height..end_height).contains(&b.height())) {
+                    // If we are instructed to shut down, abort.
+                    if shutdown_clone.load(Ordering::Relaxed) {
+                        info!("Stopping block sync at {} - the node is shutting down", current_height);
+                        // We can shut down cleanly from here, as the node hasn't been started yet.
+                        std::process::exit(0);
+                    }
+
+                    // Register the next block's height, as the block gets consumed next.
+                    let block_height = block.height();
+
+                    // Insert the block into the ledger.
+                    process_clone(block)?;
+
+                    // Update the current height.
+                    current_height = block_height;
+
+                    // Log the progress.
+                    log_progress::<BLOCKS_PER_FILE>(timer, current_height, cdn_start, cdn_end, "block");
                 }
 
-                // Register the next block's height, as the block gets consumed next.
-                let block_height = block.height();
-
-                // Insert the block into the ledger.
-                process_clone(block)?;
-
-                // Update the current height.
-                current_height = block_height;
-
-                // Log the progress.
-                log_progress::<BLOCKS_PER_FILE>(timer, current_height, cdn_start, cdn_end, "block");
-            }
-
-            Ok(current_height)
+                Ok(current_height)
+            })
         })
         .await
         .map_err(|e| (current_height, e.into()))?
@@ -429,7 +434,7 @@ fn log_progress<const OBJECTS_PER_FILE: u32>(
 #[cfg(test)]
 mod tests {
     use crate::{
-        blocks::{BLOCKS_PER_FILE, cdn_get, cdn_height, log_progress},
+        blocks::{BLOCKS_PER_FILE, cdn_height, log_progress},
         load_blocks,
     };
     use snarkvm::prelude::{MainnetV0, block::Block};
@@ -439,7 +444,7 @@ mod tests {
 
     type CurrentNetwork = MainnetV0;
 
-    const TEST_BASE_URL: &str = "https://blocks.aleo.org/mainnet/v0";
+    const TEST_BASE_URL: &str = "https://cdn.provable.com/v0/blocks/mainnet";
 
     fn check_load_blocks(start: u32, end: Option<u32>, expected: usize) {
         let blocks = Arc::new(RwLock::new(Vec::new()));
@@ -497,17 +502,6 @@ mod tests {
         let client = reqwest::Client::builder().use_rustls_tls().build().unwrap();
         rt.block_on(async {
             let height = cdn_height::<BLOCKS_PER_FILE>(&client, TEST_BASE_URL).await.unwrap();
-            assert!(height > 0);
-        });
-    }
-
-    #[test]
-    fn test_cdn_get() {
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async {
-            let client = reqwest::Client::builder().use_rustls_tls().build().unwrap();
-            let height =
-                cdn_get::<u32>(client, &format!("{TEST_BASE_URL}/mainnet/latest/height"), "height").await.unwrap();
             assert!(height > 0);
         });
     }
