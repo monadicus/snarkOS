@@ -73,7 +73,7 @@ pub const DUMMY_SELF_IP: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(1
 ///   the `request_timestamps` map remains unchanged.
 /// - When a response is removed/completed, the `requests` map and `request_timestamps` map also remove the entry for the request height.
 /// - When a request is timed out, the `requests`, `request_timestamps`, and `responses` map remove the entry for the request height.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct BlockSync<N: Network> {
     /// The ledger.
     ledger: Arc<dyn LedgerService<N>>,
@@ -81,25 +81,25 @@ pub struct BlockSync<N: Network> {
     tcp: Tcp,
     /// The map of peer IP to their block locators.
     /// The block locators are consistent with the ledger and every other peer's block locators.
-    locators: Arc<RwLock<HashMap<SocketAddr, BlockLocators<N>>>>,
+    locators: RwLock<HashMap<SocketAddr, BlockLocators<N>>>,
     /// The map of peer-to-peer to their common ancestor.
     /// This map is used to determine which peers to request blocks from.
-    common_ancestors: Arc<RwLock<IndexMap<PeerPair, u32>>>,
+    common_ancestors: RwLock<IndexMap<PeerPair, u32>>,
     /// The map of block height to the expected block hash and peer IPs.
     /// Each entry is removed when its corresponding entry in the responses map is removed.
-    requests: Arc<RwLock<BTreeMap<u32, SyncRequest<N>>>>,
+    requests: RwLock<BTreeMap<u32, SyncRequest<N>>>,
     /// The map of block height to the received blocks.
     /// Removing an entry from this map must remove the corresponding entry from the requests map.
-    responses: Arc<RwLock<BTreeMap<u32, Block<N>>>>,
+    responses: RwLock<BTreeMap<u32, Block<N>>>,
     /// The map of block height to the timestamp of the last time the block was requested.
     /// This map is used to determine which requests to remove if they have been pending for too long.
-    request_timestamps: Arc<RwLock<BTreeMap<u32, Instant>>>,
+    request_timestamps: RwLock<BTreeMap<u32, Instant>>,
     /// The boolean indicator of whether the node is synced up to the latest block (within the given tolerance).
-    is_block_synced: Arc<AtomicBool>,
+    is_block_synced: AtomicBool,
     /// The number of blocks the peer is behind the greatest peer height.
-    num_blocks_behind: Arc<AtomicU32>,
+    num_blocks_behind: AtomicU32,
     /// The lock to guarantee advance_with_sync_blocks() is called only once at a time.
-    advance_with_sync_blocks_lock: Arc<Mutex<()>>,
+    advance_with_sync_blocks_lock: Mutex<()>,
 }
 
 impl<N: Network> BlockSync<N> {
@@ -927,18 +927,18 @@ mod tests {
         BlockSync::<CurrentNetwork>::new(Arc::new(sample_ledger_service(height)), sample_tcp())
     }
 
-    /// Returns a duplicate sync pool with a different ledger height.
+    /// Returns a duplicate (deep copy) of the sync pool with a different ledger height.
     fn duplicate_sync_at_new_height(sync: &BlockSync<CurrentNetwork>, height: u32) -> BlockSync<CurrentNetwork> {
         BlockSync::<CurrentNetwork> {
             ledger: Arc::new(sample_ledger_service(height)),
             tcp: sync.tcp.clone(),
-            locators: sync.locators.clone(),
-            common_ancestors: sync.common_ancestors.clone(),
-            requests: sync.requests.clone(),
-            responses: sync.responses.clone(),
-            request_timestamps: sync.request_timestamps.clone(),
-            is_block_synced: sync.is_block_synced.clone(),
-            num_blocks_behind: sync.num_blocks_behind.clone(),
+            locators: RwLock::new(sync.locators.read().clone()),
+            common_ancestors: RwLock::new(sync.common_ancestors.read().clone()),
+            requests: RwLock::new(sync.requests.read().clone()),
+            responses: RwLock::new(sync.responses.read().clone()),
+            request_timestamps: RwLock::new(sync.request_timestamps.read().clone()),
+            is_block_synced: AtomicBool::new(sync.is_block_synced.load(Ordering::SeqCst)),
+            num_blocks_behind: AtomicU32::new(sync.num_blocks_behind.load(Ordering::SeqCst)),
             advance_with_sync_blocks_lock: Default::default(),
         }
     }
