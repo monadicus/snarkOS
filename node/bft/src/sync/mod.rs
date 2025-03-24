@@ -111,7 +111,7 @@ impl<N: Network> Sync<N> {
         let (block_requests, sync_peers) = self.block_sync.prepare_block_requests();
         trace!("Prepared {} block requests", block_requests.len());
 
-        // Process the block requests.
+        // Sends the block requests to the sync peers.
         for requests in block_requests.chunks(DataBlocks::<N>::MAXIMUM_NUMBER_OF_BLOCKS as usize) {
             if !self.block_sync.send_block_requests(&self.gateway, &sync_peers, requests).await {
                 // Stop if we fail to process a batch of requests.

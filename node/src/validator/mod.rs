@@ -63,7 +63,7 @@ pub struct Validator<N: Network, C: ConsensusStorage<N>> {
     router: Router<N>,
     /// The REST server of the node.
     rest: Option<Rest<N, C, Self>>,
-    /// The block synchronization logic.
+    /// The block synchronization logic (used in the Router impl).
     sync: Arc<BlockSync<N>>,
     /// The spawned handles.
     handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
