@@ -492,7 +492,7 @@ impl Start {
             }
 
             // Construct the genesis block.
-            load_or_compute_genesis(dev_keys[0], committee, public_balances, bonded_balances, self.dev, &mut rng)
+            load_or_compute_genesis(dev_keys[0], committee, public_balances, bonded_balances, &mut rng)
         } else {
             // If the `dev_num_validators` flag is set, inform the user that it is ignored.
             if self.dev_num_validators.is_some() {
@@ -596,7 +596,10 @@ impl Start {
         // Initialize the storage mode.
         let storage_mode = match &self.storage {
             Some(path) => StorageMode::Custom(path.clone()),
-            None => StorageMode::from(self.dev),
+            None => match self.dev {
+                Some(id) => StorageMode::Development(id),
+                None => StorageMode::Production,
+            },
         };
 
         // Determine whether to generate background transactions in dev mode.
@@ -666,7 +669,6 @@ fn load_or_compute_genesis<N: Network>(
     committee: Committee<N>,
     public_balances: indexmap::IndexMap<Address<N>, u64>,
     bonded_balances: indexmap::IndexMap<Address<N>, (Address<N>, Address<N>, u64)>,
-    dev_id: Option<u16>,
     rng: &mut ChaChaRng,
 ) -> Result<Block<N>> {
     // Construct the preimage.
@@ -768,7 +770,7 @@ fn load_or_compute_genesis<N: Network>(
     /* Otherwise, compute the genesis block and store it. */
 
     // Initialize a new VM.
-    let vm = VM::from(ConsensusStore::<N, ConsensusMemory<N>>::open(dev_id)?)?;
+    let vm = VM::from(ConsensusStore::<N, ConsensusMemory<N>>::open(StorageMode::new_test(None))?)?;
     // Initialize the genesis block.
     let block = vm.genesis_quorum(&genesis_private_key, committee, public_balances, bonded_balances, rng)?;
     // Write the genesis block to the file.
