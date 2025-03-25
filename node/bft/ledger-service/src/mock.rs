@@ -25,6 +25,9 @@ use snarkvm::{
 };
 
 use indexmap::IndexMap;
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::Mutex;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::Mutex;
 use std::{collections::BTreeMap, ops::Range};
 use tracing::*;

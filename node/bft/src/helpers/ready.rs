@@ -23,6 +23,9 @@ use snarkvm::{
 };
 
 use indexmap::{IndexMap, IndexSet};
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::RwLock;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
 use std::sync::Arc;
 

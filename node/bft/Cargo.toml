@@ -18,10 +18,24 @@ edition = "2021"
 
 [features]
 default = [ ]
+locktick = [
+  "dep:locktick",
+  "snarkos-node-bft-ledger-service/locktick",
+  "snarkos-node-bft-storage-service/locktick",
+  "snarkos-node-sync/locktick",
+  "snarkos-node-tcp/locktick",
+  "snarkvm/locktick"
+]
 metrics = [
   "dep:metrics",
   "snarkos-node-bft-events/metrics",
   "snarkos-node-bft-ledger-service/metrics"
+]
+cuda = [
+  "snarkvm/cuda",
+  "snarkos-account/cuda",
+  "snarkos-node-bft-ledger-service/cuda",
+  "snarkos-node-sync/cuda"
 ]
 test_targets = [ "snarkvm/test_targets" ]
 
@@ -50,6 +64,11 @@ features = [ "thread-pool" ]
 [dependencies.indexmap]
 version = "2.1"
 features = [ "serde", "rayon" ]
+
+[dependencies.locktick]
+version = "0.3"
+features = [ "parking_lot", "tokio" ]
+optional = true
 
 [dependencies.lru]
 version = "0.12.1"

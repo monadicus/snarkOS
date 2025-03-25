@@ -62,6 +62,12 @@ use aleo_std::StorageMode;
 use colored::Colorize;
 use futures::stream::{FuturesUnordered, StreamExt};
 use indexmap::{IndexMap, IndexSet};
+#[cfg(feature = "locktick")]
+use locktick::{
+    parking_lot::{Mutex, RwLock},
+    tokio::Mutex as TMutex,
+};
+#[cfg(not(feature = "locktick"))]
 use parking_lot::{Mutex, RwLock};
 use rayon::prelude::*;
 use std::{
@@ -71,10 +77,9 @@ use std::{
     sync::Arc,
     time::Duration,
 };
-use tokio::{
-    sync::{Mutex as TMutex, OnceCell},
-    task::JoinHandle,
-};
+#[cfg(not(feature = "locktick"))]
+use tokio::sync::Mutex as TMutex;
+use tokio::{sync::OnceCell, task::JoinHandle};
 
 /// A helper type for an optional proposed batch.
 pub type ProposedBatch<N> = RwLock<Option<Proposal<N>>>;
