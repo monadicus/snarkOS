@@ -2,6 +2,7 @@
 # USAGE examples: 
   # CLI with env vars: PROVER_PRIVATE_KEY=APrivateKey1...  ./run-prover.sh
   # CLI with prompts for vars:  ./run-prover.sh
+  # CLI with CUDA enabled ./run-prover.sh --cuda
 
 # If the env var PROVER_PRIVATE_KEY is not set, prompt for it
 if [ -z "${PROVER_PRIVATE_KEY}" ]
@@ -16,11 +17,24 @@ then
   exit
 fi
 
-COMMAND="cargo run --release -- start --nodisplay --prover --private-key ${PROVER_PRIVATE_KEY}"
+for word in "$@"; do
+  if [ "$word" == "--cuda" ]; then
+    ENABLE_CUDA=true
+  else
+    ARGS+=("$word")
+  fi
+done
 
-for word in $*;
-do
-  COMMAND="${COMMAND} ${word}"
+# Build the command with optional CUDA feature
+if [ "$ENABLE_CUDA" == "true" ]; then
+  COMMAND="cargo run --release --features cuda -- start --nodisplay --prover --private-key ${PROVER_PRIVATE_KEY}"
+else
+  COMMAND="cargo run --release -- start --nodisplay --prover --private-key ${PROVER_PRIVATE_KEY}"
+fi
+
+# Append other arguments (excluding --cuda)
+for arg in "${ARGS[@]}"; do
+  COMMAND="${COMMAND} ${arg}"
 done
 
 function exit_node()

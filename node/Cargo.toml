@@ -20,6 +20,17 @@ edition = "2021"
 default = [ "parallel" ]
 parallel = [ "rayon" ]
 timer = [ "aleo-std/timer" ]
+locktick = [
+  "dep:locktick",
+  "snarkos-node-bft/locktick",
+  "snarkos-node-cdn/locktick",
+  "snarkos-node-consensus/locktick",
+  "snarkos-node-rest/locktick",
+  "snarkos-node-router/locktick",
+  "snarkos-node-sync/locktick",
+  "snarkos-node-tcp/locktick",
+  "snarkvm/locktick"
+]
 metrics = [
   "dep:metrics",
   "snarkos-node-bft/metrics",
@@ -28,6 +39,16 @@ metrics = [
   "snarkos-node-tcp/metrics"
 ]
 history = [ "snarkos-node-rest/history" ]
+cuda = [
+  "snarkvm/cuda",
+  "snarkos-account/cuda",
+  "snarkos-node-bft/cuda",
+  "snarkos-node-cdn/cuda",
+  "snarkos-node-consensus/cuda",
+  "snarkos-node-rest/cuda",
+  "snarkos-node-router/cuda",
+  "snarkos-node-sync/cuda"
+]
 test_targets = [ "snarkvm/test_targets" ]
 
 [dependencies.aleo-std]
@@ -48,6 +69,11 @@ features = [ "sink" ]
 
 [dependencies.indexmap]
 version = "2.1"
+
+[dependencies.locktick]
+version = "0.3"
+features = [ "parking_lot" ]
+optional = true
 
 [dependencies.lru]
 version = "0.12.1"

@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright 2024-2025 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -46,6 +46,9 @@ use snarkvm::{
 use aleo_std::StorageMode;
 use indexmap::IndexMap;
 use itertools::Itertools;
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::Mutex;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::Mutex;
 use std::{
     collections::HashMap,
@@ -363,7 +366,7 @@ pub fn genesis_block(
     rng: &mut (impl Rng + CryptoRng),
 ) -> Block<CurrentNetwork> {
     // Initialize the store.
-    let store = ConsensusStore::<_, ConsensusMemory<_>>::open(None).unwrap();
+    let store = ConsensusStore::<_, ConsensusMemory<_>>::open(StorageMode::new_test(None)).unwrap();
     // Initialize a new VM.
     let vm = VM::from(store).unwrap();
     // Initialize the genesis block.
