@@ -1131,7 +1131,7 @@ impl<N: Network> Reading for Gateway<N> {
     type Message = Event<N>;
 
     /// The maximum queue depth of incoming messages for a single peer.
-    const MESSAGE_QUEUE_DEPTH: usize = 256_000;
+    const MESSAGE_QUEUE_DEPTH: usize = 300_000;
 
     /// Creates a [`Decoder`] used to interpret messages from the network.
     /// The `side` param indicates the connection side **from the node's perspective**.
@@ -1161,7 +1161,7 @@ impl<N: Network> Writing for Gateway<N> {
     type Message = Event<N>;
 
     /// The maximum queue depth of outgoing messages for a single peer.
-    const MESSAGE_QUEUE_DEPTH: usize = 256_000;
+    const MESSAGE_QUEUE_DEPTH: usize = 300_000;
 
     /// Creates an [`Encoder`] used to write the outbound messages to the target stream.
     /// The `side` parameter indicates the connection side **from the node's perspective**.
@@ -1760,7 +1760,15 @@ mod prop_tests {
             * BatchHeader::<MainnetV0>::MAX_TRANSMISSIONS_PER_BATCH;
 
         // The queue depths may be larger than the calculated maximum needed capacity.
-        assert!(<Gateway<MainnetV0> as Reading>::MESSAGE_QUEUE_DEPTH >= desired_rw_queue_depth);
-        assert!(<Gateway<MainnetV0> as Writing>::MESSAGE_QUEUE_DEPTH >= desired_rw_queue_depth);
+        assert!(
+            <Gateway<MainnetV0> as Reading>::MESSAGE_QUEUE_DEPTH >= desired_rw_queue_depth,
+            "{}",
+            desired_rw_queue_depth
+        );
+        assert!(
+            <Gateway<MainnetV0> as Writing>::MESSAGE_QUEUE_DEPTH >= desired_rw_queue_depth,
+            "{}",
+            desired_rw_queue_depth
+        );
     }
 }
