@@ -1132,7 +1132,7 @@ pub(crate) mod tests {
         // Check that the underlying storage representation remains unchanged.
         assert_storage(&storage, &rounds, &certificates, &batch_ids, &transmissions);
 
-        // Insert the certificatef  again - with all of the original missing transmissions.
+        // Insert the certificate again - with all of the original missing transmissions.
         storage.insert_certificate_atomic(certificate, Default::default(), missing_transmissions);
         // Ensure the certificate exists in storage.
         assert!(storage.contains_certificate(certificate_id));
@@ -1140,6 +1140,7 @@ pub(crate) mod tests {
         assert_storage(&storage, &rounds, &certificates, &batch_ids, &transmissions);
     }
 
+    /// Test that `check_incoming_certificate` does not reject a valid cert.
     #[test]
     fn test_valid_incoming_certificate() {
         let rng = &mut TestRng::default();
@@ -1181,7 +1182,7 @@ pub(crate) mod tests {
         }
     }
 
-    // Make sure that we reject all certificates early, that do not contain enough signatures
+    /// Make sure that we reject all certificates without sufficient signatures early.
     #[test]
     fn test_invalid_incoming_certificate_missing_signature() {
         let rng = &mut TestRng::default();
