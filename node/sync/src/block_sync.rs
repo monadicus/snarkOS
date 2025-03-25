@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright 2024-2025 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,6 +27,9 @@ use snarkvm::prelude::{Network, block::Block};
 use anyhow::{Result, bail, ensure};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::{Mutex, RwLock};
+#[cfg(not(feature = "locktick"))]
 use parking_lot::{Mutex, RwLock};
 use rand::{CryptoRng, Rng, prelude::IteratorRandom};
 use std::{
@@ -1518,7 +1521,9 @@ mod tests {
         }
 
         // Duplicate a new sync module with a different height to simulate block advancement.
-        let ledger_height = rng.gen_range(0..locator_height);
+        // This range needs to be inclusive, so that the range is never empty,
+        // even with a locator height of 0.
+        let ledger_height = rng.gen_range(0..=locator_height);
         let new_sync = duplicate_sync_at_new_height(&sync, ledger_height);
 
         // Check that the number of requests is the same.

@@ -1,6 +1,6 @@
 [package]
 name = "snarkos-node-bft"
-version = "3.3.1"
+version = "3.3.2"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A memory pool for a decentralized operating system"
 homepage = "https://aleo.org"
@@ -18,10 +18,24 @@ edition = "2021"
 
 [features]
 default = [ ]
+locktick = [
+  "dep:locktick",
+  "snarkos-node-bft-ledger-service/locktick",
+  "snarkos-node-bft-storage-service/locktick",
+  "snarkos-node-sync/locktick",
+  "snarkos-node-tcp/locktick",
+  "snarkvm/locktick"
+]
 metrics = [
   "dep:metrics",
   "snarkos-node-bft-events/metrics",
   "snarkos-node-bft-ledger-service/metrics"
+]
+cuda = [
+  "snarkvm/cuda",
+  "snarkos-account/cuda",
+  "snarkos-node-bft-ledger-service/cuda",
+  "snarkos-node-sync/cuda"
 ]
 test_targets = [ "snarkvm/test_targets" ]
 
@@ -51,13 +65,18 @@ features = [ "thread-pool" ]
 version = "2.1"
 features = [ "serde", "rayon" ]
 
+[dependencies.locktick]
+version = "0.3"
+features = [ "parking_lot", "tokio" ]
+optional = true
+
 [dependencies.lru]
 version = "0.12.1"
 
 [dependencies.metrics]
 package = "snarkos-node-metrics"
 path = "../metrics"
-version = "=3.3.1"
+version = "=3.3.2"
 optional = true
 
 [dependencies.parking_lot]
@@ -78,29 +97,29 @@ default-features = false
 
 [dependencies.snarkos-account]
 path = "../../account"
-version = "=3.3.1"
+version = "=3.3.2"
 
 [dependencies.snarkos-node-bft-events]
 path = "./events"
-version = "=3.3.1"
+version = "=3.3.2"
 
 [dependencies.snarkos-node-bft-ledger-service]
 path = "./ledger-service"
-version = "=3.3.1"
+version = "=3.3.2"
 features = [ "ledger", "prover" ]
 
 [dependencies.snarkos-node-bft-storage-service]
 path = "./storage-service"
-version = "=3.3.1"
+version = "=3.3.2"
 features = [ "memory" ]
 
 [dependencies.snarkos-node-sync]
 path = "../sync"
-version = "=3.3.1"
+version = "=3.3.2"
 
 [dependencies.snarkos-node-tcp]
 path = "../tcp"
-version = "=3.3.1"
+version = "=3.3.2"
 
 [dependencies.snarkvm]
 workspace = true

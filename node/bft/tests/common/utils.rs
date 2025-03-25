@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright 2024-2025 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -44,6 +44,9 @@ use std::{sync::Arc, time::Duration};
 
 use ::bytes::Bytes;
 use indexmap::IndexMap;
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::RwLock;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
 use rand::Rng;
 use tokio::{sync::oneshot, task::JoinHandle, time::sleep};
@@ -71,7 +74,7 @@ pub fn initialize_logger(verbosity: u8) {
             .add_directive("hyper=off".parse().unwrap())
             .add_directive("reqwest=off".parse().unwrap())
             .add_directive("want=off".parse().unwrap())
-            .add_directive("warp=off".parse().unwrap());
+            .add_directive("h2=off".parse().unwrap());
 
         if verbosity > 3 {
             filter.add_directive("snarkos_node_tcp=trace".parse().unwrap())

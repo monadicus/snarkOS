@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright 2024-2025 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -60,7 +60,7 @@ pub fn initialize_logger<P: AsRef<Path>>(
             .add_directive("hyper=off".parse().unwrap())
             .add_directive("reqwest=off".parse().unwrap())
             .add_directive("want=off".parse().unwrap())
-            .add_directive("warp=off".parse().unwrap());
+            .add_directive("h2=off".parse().unwrap());
 
         let filter = if verbosity >= 2 {
             filter.add_directive("snarkos_node_sync=trace".parse().unwrap())
@@ -98,8 +98,9 @@ pub fn initialize_logger<P: AsRef<Path>>(
     // Create the directories tree for a logfile if it doesn't exist.
     let logfile_dir = logfile.as_ref().parent().expect("Root directory passed as a logfile");
     if !logfile_dir.exists() {
-        std::fs::create_dir_all(logfile_dir)
-            .expect("Failed to create a directories: '{logfile_dir}', please check if user has permissions");
+        std::fs::create_dir_all(logfile_dir).unwrap_or_else(|e| {
+            panic!("Failed to create a directory: '{}' ({e})", logfile_dir.display());
+        });
     }
     // Create a file to write logs to.
     let logfile =

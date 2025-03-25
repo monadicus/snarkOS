@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright 2024-2025 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -146,7 +146,7 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
     ) {
         // Process the message. Disconnect if the peer violated the protocol.
         if let Err(error) = self.inbound(peer_addr, message).await {
-            error!("Failed to process inbound message from '{peer_addr}' - {error}");
+            warn!("Failed to process inbound message from '{peer_addr}' - {error}");
             if let Some(peer_ip) = self.router().resolve_to_listener(&peer_addr) {
                 warn!("Disconnecting from '{peer_ip}' for protocol violation");
                 Outbound::send(self, peer_ip, Message::Disconnect(DisconnectReason::ProtocolViolation.into()));

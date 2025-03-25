@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright 2024-2025 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -46,6 +46,9 @@ use snarkos_node_tcp::{Config, P2P, Tcp, is_bogon_ip, is_unspecified_or_broadcas
 use snarkvm::prelude::{Address, Network, PrivateKey, ViewKey};
 
 use anyhow::{Result, bail};
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::{Mutex, RwLock};
+#[cfg(not(feature = "locktick"))]
 use parking_lot::{Mutex, RwLock};
 #[cfg(not(any(test)))]
 use std::net::IpAddr;
@@ -476,11 +479,16 @@ impl<N: Network> Router<N> {
     /// Inserts the given peer into the connected peers.
     pub fn insert_connected_peer(&self, peer_ip: SocketAddr) {
         // Move the peer from "connecting" to "connected".
-        let peer = if let Some(Some(peer)) = self.connecting_peers.lock().remove(&peer_ip) {
-            peer
-        } else {
-            warn!("Couldn't promote {peer_ip} from \"connecting\" to \"connected\"");
-            return;
+        let peer = match self.connecting_peers.lock().remove(&peer_ip) {
+            Some(Some(peer)) => peer,
+            Some(None) => {
+                warn!("Couldn't promote {peer_ip} from \"connecting\" to \"connected\": Handshake not completed");
+                return;
+            }
+            None => {
+                warn!("Couldn't promote {peer_ip} from \"connecting\" to \"connected\": Public/listen address unkown");
+                return;
+            }
         };
         // Add an entry for this `Peer` in the connected peers.
         self.connected_peers.write().insert(peer_ip, peer);
