@@ -30,16 +30,16 @@ pub struct Clean {
     /// Enables development mode, specify the unique ID of the local node to clean.
     #[clap(long)]
     pub dev: Option<u16>,
-    /// Specify the path to a directory containing the storage database for the ledger.
-    #[clap(long = "storage")]
-    pub storage: Option<PathBuf>,
+    /// Specify the path to a directory containing the ledger
+    #[clap(long = "path")]
+    pub path: Option<PathBuf>,
 }
 
 impl Clean {
     /// Cleans the snarkOS node storage.
     pub fn parse(self) -> Result<String> {
         // Initialize the storage mode.
-        let storage_mode = match self.storage {
+        let storage_mode = match self.path {
             Some(path) => StorageMode::Custom(path),
             None => match self.dev {
                 Some(id) => StorageMode::Development(id),
