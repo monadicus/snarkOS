@@ -960,7 +960,20 @@ impl<N: Network> Primary<N> {
             bail!("Received a batch certificate for myself ({author})");
         }
 
-        // Store the certificate, after ensuring it is valid.
+        // Ensure that the incoming certificate is valid.
+        self.storage.check_incoming_certificate(&certificate)?;
+
+        // Store the certificate, after ensuring it is valid above.
+        // The following call recursively fetches and stores
+        // the previous certificates referenced from this certificate.
+        // It is critical to make the following call this after validating the certificate above.
+        // The reason is that a sequence of malformed certificates,
+        // with references to previous certificates with non-decreasing rounds,
+        // cause the recursive fetching of certificates to crash the validator due to resource exhaustion.
+        // Note that if the following call, if not returning an error, guarantees the backward closure of the DAG
+        // (i.e. that all the referenced previous certificates are in the DAG before storing this one),
+        // then all the validity checks in [`Storage::check_certificate`] should be redundant.
+        // TODO: eliminate those redundant checks
         self.sync_with_certificate_from_peer::<false>(peer_ip, certificate).await?;
 
         // If there are enough certificates to reach quorum threshold for the certificate round,
@@ -968,6 +981,7 @@ impl<N: Network> Primary<N> {
 
         // Retrieve the committee lookback.
         let committee_lookback = self.ledger.get_committee_lookback_for_round(certificate_round)?;
+
         // Retrieve the certificate authors.
         let authors = self.storage.get_certificate_authors_for_round(certificate_round);
         // Check if the certificates have reached the quorum threshold.
