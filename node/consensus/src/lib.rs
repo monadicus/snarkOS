@@ -49,7 +49,10 @@ use aleo_std::StorageMode;
 use anyhow::Result;
 use colored::Colorize;
 use indexmap::IndexMap;
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::Mutex;
 use lru::LruCache;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::Mutex;
 use std::{future::Future, net::SocketAddr, num::NonZeroUsize, sync::Arc, time::Duration};
 use tokio::{
@@ -123,7 +126,7 @@ impl<N: Network> Consensus<N> {
         // Recover the development ID, if it is present.
         let dev = match storage_mode {
             StorageMode::Development(id) => Some(id),
-            StorageMode::Production | StorageMode::Custom(..) => None,
+            StorageMode::Production | StorageMode::Custom(..) | StorageMode::Test(_) => None,
         };
         // Initialize the Narwhal transmissions.
         let transmissions = Arc::new(BFTPersistentStorage::open(storage_mode)?);

@@ -46,6 +46,9 @@ use aleo_std::StorageMode;
 use anyhow::Result;
 use colored::Colorize;
 use core::{marker::PhantomData, time::Duration};
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::{Mutex, RwLock};
+#[cfg(not(feature = "locktick"))]
 use parking_lot::{Mutex, RwLock};
 use rand::{CryptoRng, Rng, rngs::OsRng};
 use snarkos_node_bft::helpers::fmt_id;
@@ -119,7 +122,7 @@ impl<N: Network, C: ConsensusStorage<N>> Prover<N, C> {
         .await?;
 
         // Initialize the sync module.
-        let sync = BlockSync::new(ledger_service.clone(), router.tcp().clone());
+        let sync = BlockSync::new(ledger_service.clone());
 
         // Compute the maximum number of puzzle instances.
         let max_puzzle_instances = num_cpus::get().saturating_sub(2).clamp(1, 6);

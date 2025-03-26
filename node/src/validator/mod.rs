@@ -44,6 +44,9 @@ use snarkvm::prelude::{
 use aleo_std::StorageMode;
 use anyhow::Result;
 use core::future::Future;
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::Mutex;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::Mutex;
 use std::{
     net::SocketAddr,
@@ -125,7 +128,7 @@ impl<N: Network, C: ConsensusStorage<N>> Validator<N, C> {
         .await?;
 
         // Initialize the block synchronization logic.
-        let sync = Arc::new(BlockSync::new(ledger_service.clone(), router.tcp().clone()));
+        let sync = Arc::new(BlockSync::new(ledger_service.clone()));
 
         // Initialize the consensus layer.
         let mut consensus = Consensus::new(
@@ -480,7 +483,9 @@ mod tests {
         // Initialize the account.
         let account = Account::<CurrentNetwork>::new(&mut rng).unwrap();
         // Initialize a new VM.
-        let vm = VM::from(ConsensusStore::<CurrentNetwork, ConsensusMemory<CurrentNetwork>>::open(None)?)?;
+        let vm = VM::from(ConsensusStore::<CurrentNetwork, ConsensusMemory<CurrentNetwork>>::open(
+            StorageMode::new_test(None),
+        )?)?;
         // Initialize the genesis block.
         let genesis = vm.genesis_beacon(account.private_key(), &mut rng)?;
 

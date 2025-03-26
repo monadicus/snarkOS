@@ -58,6 +58,9 @@ pub fn log_clean_error(storage_mode: &StorageMode) {
         StorageMode::Custom(path) => {
             error!("Storage corruption detected! Run `snarkos clean --path {}` to reset storage", path.display())
         }
+        StorageMode::Test(_) => {
+            // Ephemeral location - no need for cleanups.
+        }
     }
 }
 

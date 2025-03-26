@@ -16,10 +16,10 @@
 #[macro_use]
 extern crate tracing;
 
+use aleo_std::StorageMode;
 use snarkos_account::Account;
 use snarkos_node_bft::{
     BFT,
-    Gateway,
     MEMORY_POOL_PORT,
     Primary,
     helpers::{ConsensusReceiver, PrimarySender, Storage, init_consensus_channels, init_primary_channels},
@@ -27,7 +27,6 @@ use snarkos_node_bft::{
 use snarkos_node_bft_ledger_service::TranslucentLedgerService;
 use snarkos_node_bft_storage_service::BFTMemoryService;
 use snarkos_node_sync::BlockSync;
-use snarkos_node_tcp::P2P;
 use snarkvm::{
     console::{account::PrivateKey, algorithms::BHP256, types::Address},
     ledger::{
@@ -142,9 +141,8 @@ pub async fn start_bft(
     let (consensus_sender, consensus_receiver) = init_consensus_channels::<CurrentNetwork>();
     // Initialize the consensus receiver handler.
     consensus_handler(consensus_receiver);
-    let gateway = Gateway::new(account.clone(), storage.clone(), ledger.clone(), None, &[], None)?;
-    let block_sync = Arc::new(BlockSync::new(ledger.clone(), gateway.tcp().clone()));
     // Initialize the BFT instance.
+    let block_sync = Arc::new(BlockSync::new(ledger.clone()));
     let mut bft = BFT::<CurrentNetwork>::new(block_sync, account, storage, ledger, ip, &trusted_validators, dev)?;
     // Run the BFT instance.
     bft.run(Some(consensus_sender), sender.clone(), receiver).await?;
@@ -182,8 +180,7 @@ pub async fn start_primary(
     // Initialize the trusted validators.
     let trusted_validators = trusted_validators(node_id, num_nodes, peers);
     // Initialize the primary instance.
-    let gateway = Gateway::new(account.clone(), storage.clone(), ledger.clone(), None, &[], None).unwrap();
-    let block_sync = Arc::new(BlockSync::new(ledger.clone(), gateway.tcp().clone()));
+    let block_sync = Arc::new(BlockSync::new(ledger.clone()));
     let mut primary =
         Primary::<CurrentNetwork>::new(block_sync, account, storage, ledger, ip, &trusted_validators, dev)?;
     // Run the primary instance.
@@ -227,7 +224,7 @@ fn genesis_block(
     rng: &mut (impl Rng + CryptoRng),
 ) -> Block<CurrentNetwork> {
     // Initialize the store.
-    let store = ConsensusStore::<_, ConsensusMemory<_>>::open(None).unwrap();
+    let store = ConsensusStore::<_, ConsensusMemory<_>>::open(StorageMode::new_test(None)).unwrap();
     // Initialize a new VM.
     let vm = VM::from(store).unwrap();
     // Initialize the genesis block.

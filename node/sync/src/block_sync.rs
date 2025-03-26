@@ -21,12 +21,14 @@ use snarkos_node_bft_ledger_service::LedgerService;
 use snarkos_node_router::messages::DataBlocks;
 use snarkos_node_sync_communication_service::CommunicationService;
 use snarkos_node_sync_locators::{CHECKPOINT_INTERVAL, NUM_RECENT_BLOCKS};
-use snarkos_node_tcp::Tcp;
 use snarkvm::prelude::{Network, block::Block};
 
 use anyhow::{Result, bail, ensure};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::{Mutex, RwLock};
+#[cfg(not(feature = "locktick"))]
 use parking_lot::{Mutex, RwLock};
 use rand::seq::{IteratorRandom, SliceRandom};
 use std::{
@@ -77,8 +79,6 @@ pub const DUMMY_SELF_IP: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(1
 pub struct BlockSync<N: Network> {
     /// The ledger.
     ledger: Arc<dyn LedgerService<N>>,
-    /// The TCP stack.
-    tcp: Tcp,
     /// The map of peer IP to their block locators.
     /// The block locators are consistent with the ledger and every other peer's block locators.
     locators: RwLock<HashMap<SocketAddr, BlockLocators<N>>>,
@@ -104,10 +104,9 @@ pub struct BlockSync<N: Network> {
 
 impl<N: Network> BlockSync<N> {
     /// Initializes a new block sync module.
-    pub fn new(ledger: Arc<dyn LedgerService<N>>, tcp: Tcp) -> Self {
+    pub fn new(ledger: Arc<dyn LedgerService<N>>) -> Self {
         Self {
             ledger,
-            tcp,
             locators: Default::default(),
             common_ancestors: Default::default(),
             requests: Default::default(),
@@ -164,6 +163,7 @@ impl<N: Network> BlockSync<N> {
         let latest_height = self.ledger.latest_block_height();
 
         // Initialize the recents map.
+        // TODO: generalize this for RECENT_INTERVAL > 1, or remove this comment if we hardwire that to 1
         let mut recents = IndexMap::with_capacity(NUM_RECENT_BLOCKS);
         // Retrieve the recent block hashes.
         for height in latest_height.saturating_sub((NUM_RECENT_BLOCKS - 1) as u32)..=latest_height {
@@ -340,16 +340,18 @@ impl<N: Network> BlockSync<N> {
     }
 
     /// Updates the block locators and common ancestors for the given peer IP.
-    /// This function checks that the given block locators are well-formed, however it does **not** check
-    /// that the block locators are consistent the peer's previous block locators or other peers' block locators.
+    ///
+    /// This function does not need to check that the block locators are well-formed,
+    /// because that is already done in [`BlockLocators::new()`], as noted in [`BlockLocators`].
+    ///
+    /// This function does **not** check
+    /// that the block locators are consistent with the peer's previous block locators or other peers' block locators.
     pub fn update_peer_locators(&self, peer_ip: SocketAddr, locators: BlockLocators<N>) -> Result<()> {
         // If the locators match the existing locators for the peer, return early.
         if self.locators.read().get(&peer_ip) == Some(&locators) {
             return Ok(());
         }
 
-        // Ensure the given block locators are well-formed.
-        locators.ensure_is_valid()?;
         // Update the locators entry for the given peer IP.
         self.locators.write().insert(peer_ip, locators.clone());
 
@@ -408,9 +410,9 @@ type BlockRequestBatch<N> = (Vec<(u32, PrepareSyncRequest<N>)>, IndexMap<SocketA
 
 impl<N: Network> BlockSync<N> {
     /// Returns a list of block requests and the sync peers, if the node needs to sync.
+    ///
+    /// You usually want to call `remove_timed_out_block_requests` before invoking this function.
     pub fn prepare_block_requests(&self) -> BlockRequestBatch<N> {
-        // Remove timed out block requests.
-        self.remove_timed_out_block_requests();
         // Prepare the block requests.
         if let Some((sync_peers, min_common_ancestor)) = self.find_sync_peers_inner() {
             // Retrieve the highest block height.
@@ -604,9 +606,10 @@ impl<N: Network> BlockSync<N> {
         });
     }
 
-    /// Removes block requests that have timed out. This also removes the corresponding block responses,
-    /// and adds the timed out sync IPs to a map for tracking. Returns the number of timed out block requests.
-    fn remove_timed_out_block_requests(&self) -> usize {
+    /// Removes block requests that have timed out, i.e, requests we sent that did not receive a response in time.
+    ///
+    /// This removes the corresponding block responses and returns the set of peers/addresses that timed out.
+    pub fn remove_timed_out_block_requests(&self) -> HashSet<SocketAddr> {
         // Acquire the write lock on the requests map.
         let mut requests = self.requests.write();
         // Acquire the write lock on the responses map.
@@ -663,18 +666,7 @@ impl<N: Network> BlockSync<N> {
             !is_timeout && !is_obsolete
         });
 
-        // After the retain loop, handle the banning of peers
-        for peer_ip in peers_to_ban {
-            trace!("Banning peer {peer_ip} for timing out on block requests");
-            self.tcp.banned_peers().update_ip_ban(peer_ip.ip());
-
-            let tcp = self.tcp.clone();
-            tokio::spawn(async move {
-                tcp.disconnect(peer_ip).await;
-            });
-        }
-
-        num_timed_out_block_requests
+        peers_to_ban
     }
 
     /// Returns the sync peers and their minimum common ancestor, if the node needs to sync.
@@ -893,7 +885,6 @@ mod tests {
     };
 
     use snarkos_node_bft_ledger_service::MockLedgerService;
-    use snarkos_node_tcp::Config;
     use snarkvm::{
         ledger::committee::Committee,
         prelude::{Field, TestRng},
@@ -924,14 +915,13 @@ mod tests {
 
     /// Returns the sync pool, with the ledger initialized to the given height.
     fn sample_sync_at_height(height: u32) -> BlockSync<CurrentNetwork> {
-        BlockSync::<CurrentNetwork>::new(Arc::new(sample_ledger_service(height)), sample_tcp())
+        BlockSync::<CurrentNetwork>::new(Arc::new(sample_ledger_service(height)))
     }
 
     /// Returns a duplicate (deep copy) of the sync pool with a different ledger height.
     fn duplicate_sync_at_new_height(sync: &BlockSync<CurrentNetwork>, height: u32) -> BlockSync<CurrentNetwork> {
         BlockSync::<CurrentNetwork> {
             ledger: Arc::new(sample_ledger_service(height)),
-            tcp: sync.tcp.clone(),
             locators: RwLock::new(sync.locators.read().clone()),
             common_ancestors: RwLock::new(sync.common_ancestors.read().clone()),
             requests: RwLock::new(sync.requests.read().clone()),
@@ -941,14 +931,6 @@ mod tests {
             num_blocks_behind: AtomicU32::new(sync.num_blocks_behind.load(Ordering::SeqCst)),
             advance_with_sync_blocks_lock: Default::default(),
         }
-    }
-
-    fn sample_tcp() -> Tcp {
-        Tcp::new(Config {
-            listener_ip: Some(IpAddr::V4(Ipv4Addr::LOCALHOST)),
-            max_connections: 200,
-            ..Default::default()
-        })
     }
 
     /// Checks that the sync pool (starting at genesis) returns the correct requests.

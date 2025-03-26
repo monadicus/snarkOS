@@ -44,6 +44,12 @@ use snarkvm::{
 
 use colored::Colorize;
 use indexmap::{IndexMap, IndexSet};
+#[cfg(feature = "locktick")]
+use locktick::{
+    parking_lot::{Mutex, RwLock},
+    tokio::Mutex as TMutex,
+};
+#[cfg(not(feature = "locktick"))]
 use parking_lot::{Mutex, RwLock};
 use std::{
     collections::{BTreeMap, HashSet},
@@ -54,8 +60,10 @@ use std::{
         atomic::{AtomicI64, Ordering},
     },
 };
+#[cfg(not(feature = "locktick"))]
+use tokio::sync::Mutex as TMutex;
 use tokio::{
-    sync::{Mutex as TMutex, OnceCell, oneshot},
+    sync::{OnceCell, oneshot},
     task::JoinHandle,
 };
 
@@ -894,12 +902,11 @@ impl<N: Network> BFT<N> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{BFT, Gateway, MAX_LEADER_CERTIFICATE_DELAY_IN_SECS, helpers::Storage};
+    use crate::{BFT, MAX_LEADER_CERTIFICATE_DELAY_IN_SECS, helpers::Storage};
     use snarkos_account::Account;
     use snarkos_node_bft_ledger_service::MockLedgerService;
     use snarkos_node_bft_storage_service::BFTMemoryService;
     use snarkos_node_sync::BlockSync;
-    use snarkos_node_tcp::P2P;
     use snarkvm::{
         console::account::{Address, PrivateKey},
         ledger::{
@@ -944,10 +951,8 @@ mod tests {
         storage: Storage<CurrentNetwork>,
         ledger: Arc<MockLedgerService<CurrentNetwork>>,
     ) -> anyhow::Result<BFT<CurrentNetwork>> {
-        // Initialize the gateway.
-        let gateway = Gateway::new(account.clone(), storage.clone(), ledger.clone(), None, &[], None)?;
         // Create the block synchronization logic.
-        let block_sync = Arc::new(BlockSync::new(ledger.clone(), gateway.tcp().clone()));
+        let block_sync = Arc::new(BlockSync::new(ledger.clone()));
         // Initialize the BFT.
         BFT::new(block_sync, account.clone(), storage.clone(), ledger.clone(), None, &[], None)
     }

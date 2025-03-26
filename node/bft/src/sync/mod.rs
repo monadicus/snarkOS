@@ -25,6 +25,7 @@ use crate::{
 use snarkos_node_bft_events::{CertificateRequest, CertificateResponse, Event};
 use snarkos_node_bft_ledger_service::LedgerService;
 use snarkos_node_sync::{BLOCK_REQUEST_BATCH_DELAY, BlockSync, locators::BlockLocators};
+use snarkos_node_tcp::P2P;
 use snarkvm::{
     console::{network::Network, types::Field},
     ledger::{authority::Authority, block::Block, narwhal::BatchCertificate},
@@ -32,11 +33,16 @@ use snarkvm::{
 };
 
 use anyhow::{Result, bail};
+#[cfg(feature = "locktick")]
+use locktick::{parking_lot::Mutex, tokio::Mutex as TMutex};
+#[cfg(not(feature = "locktick"))]
 use parking_lot::Mutex;
 use rayon::prelude::*;
 use std::{collections::HashMap, future::Future, net::SocketAddr, sync::Arc, time::Duration};
+#[cfg(not(feature = "locktick"))]
+use tokio::sync::Mutex as TMutex;
 use tokio::{
-    sync::{Mutex as TMutex, OnceCell, oneshot},
+    sync::{OnceCell, oneshot},
     task::JoinHandle,
 };
 
@@ -64,6 +70,9 @@ pub struct Sync<N: Network> {
     /// The sync lock. Ensures that only one task syncs the ledger at a time.
     sync_lock: Arc<TMutex<()>>,
     /// The latest block responses.
+    ///
+    /// This is used in [`Sync::sync_storage_with_block()`] to accumulate blocks
+    /// whose addition to the ledger is deferred until certain checks pass.
     latest_block_responses: Arc<TMutex<HashMap<u32, Block<N>>>>,
 }
 
@@ -106,6 +115,19 @@ impl<N: Network> Sync<N> {
     /// Performs one iteration of the block synchronization.
     #[inline]
     pub async fn try_block_sync(&self) {
+        // First see if any peers need removal
+        let peers_to_ban = self.block_sync.remove_timed_out_block_requests();
+        for peer_ip in peers_to_ban {
+            trace!("Banning peer {peer_ip} for timing out on block requests");
+
+            let tcp = self.gateway.tcp().clone();
+            tcp.banned_peers().update_ip_ban(peer_ip.ip());
+
+            tokio::spawn(async move {
+                tcp.disconnect(peer_ip).await;
+            });
+        }
+
         // Prepare the block requests, if any.
         // In the process, we update the state of `is_block_synced` for the sync module.
         let (block_requests, sync_peers) = self.block_sync.prepare_block_requests();
@@ -451,6 +473,15 @@ impl<N: Network> Sync<N> {
     }
 
     /// Syncs the storage with the given block.
+    ///
+    /// This also updates the DAG, and uses the DAG to ensure that the block's leader certificate
+    /// meets the voter availability threshold (i.e. > f voting stake)
+    /// or is reachable via a DAG path from a later leader certificate that does.
+    /// Since performing this check requires DAG certificates from later blocks,
+    /// the block is stored in `Sync::latest_block_responses`,
+    /// and its addition to the ledger is deferred until the check passes.
+    /// Several blocks may be stored in `Sync::latest_block_responses`
+    /// before they can be all checked and added to the ledger.
     pub async fn sync_storage_with_block(&self, block: Block<N>) -> Result<()> {
         // Acquire the sync lock.
         let _lock = self.sync_lock.lock().await;
@@ -508,10 +539,15 @@ impl<N: Network> Sync<N> {
             .filter_map(|k| latest_block_responses.get(&k).cloned())
             .collect();
 
-        // Check if the block response is ready to be added to the ledger.
-        // Ensure that the previous block's leader certificate meets the availability threshold
-        // based on the certificates in the current block.
-        // If the availability threshold is not met, process the next block and check if it is linked to the current block.
+        // Check if each block response, from the contiguous sequence just constructed,
+        // is ready to be added to the ledger.
+        // Ensure that the block's leader certificate meets the availability threshold
+        // based on the certificates in the DAG just after the block's round.
+        // If the availability threshold is not met,
+        // process the next block and check if it is linked to the current block,
+        // in the sense that there is a path in the DAG
+        // from the next block's leader certificate
+        // to the current block's leader certificate.
         // Note: We do not advance to the most recent block response because we would be unable to
         // validate if the leader certificate in the block has been certified properly.
         for next_block in contiguous_blocks.into_iter() {
@@ -553,7 +589,7 @@ impl<N: Network> Sync<N> {
                     let Some(previous_block) = latest_block_responses.get(&height) else {
                         bail!("Block {height} is missing from the latest block responses.");
                     };
-                    // Retrieve the previous certificate.
+                    // Retrieve the previous block's leader certificate.
                     let previous_certificate = match previous_block.authority() {
                         Authority::Quorum(subdag) => subdag.leader_certificate().clone(),
                         _ => bail!("Received a block with an unexpected authority type."),
@@ -748,7 +784,6 @@ mod tests {
 
     use snarkos_account::Account;
     use snarkos_node_sync::BlockSync;
-    use snarkos_node_tcp::P2P;
     use snarkvm::{
         console::{
             account::{Address, PrivateKey},
@@ -780,7 +815,7 @@ mod tests {
         let commit_round = 2;
 
         // Initialize the store.
-        let store = CurrentConsensusStore::open(None).unwrap();
+        let store = CurrentConsensusStore::open(StorageMode::new_test(None)).unwrap();
         let account: Account<CurrentNetwork> = Account::new(rng)?;
 
         // Create a genesis block with a seeded RNG to reproduce the same genesis private keys.
@@ -978,7 +1013,7 @@ mod tests {
         // Initialize the gateway.
         let gateway = Gateway::new(account.clone(), storage.clone(), syncing_ledger.clone(), None, &[], None)?;
         // Initialize the block synchronization logic.
-        let block_sync = Arc::new(BlockSync::new(syncing_ledger.clone(), gateway.tcp().clone()));
+        let block_sync = Arc::new(BlockSync::new(syncing_ledger.clone()));
         // Initialize the sync module.
         let sync = Sync::new(block_sync, gateway.clone(), storage.clone(), syncing_ledger.clone());
         // Try to sync block 1.
@@ -1006,7 +1041,7 @@ mod tests {
         let commit_round = 2;
 
         // Initialize the store.
-        let store = CurrentConsensusStore::open(None).unwrap();
+        let store = CurrentConsensusStore::open(StorageMode::new_test(None)).unwrap();
         let account: Account<CurrentNetwork> = Account::new(rng)?;
 
         // Create a genesis block with a seeded RNG to reproduce the same genesis private keys.
