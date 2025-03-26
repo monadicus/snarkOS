@@ -17,6 +17,9 @@
 
 use std::{collections::HashMap, net::SocketAddr, ops::Not};
 
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::RwLock;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
 use tokio::{
     io::{AsyncRead, AsyncWrite},

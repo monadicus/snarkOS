@@ -434,7 +434,7 @@ fn log_progress<const OBJECTS_PER_FILE: u32>(
 #[cfg(test)]
 mod tests {
     use crate::{
-        blocks::{BLOCKS_PER_FILE, cdn_get, cdn_height, log_progress},
+        blocks::{BLOCKS_PER_FILE, cdn_height, log_progress},
         load_blocks,
     };
     use snarkvm::prelude::{MainnetV0, block::Block};
@@ -444,7 +444,7 @@ mod tests {
 
     type CurrentNetwork = MainnetV0;
 
-    const TEST_BASE_URL: &str = "https://blocks.aleo.org/mainnet/v0";
+    const TEST_BASE_URL: &str = "https://cdn.provable.com/v0/blocks/mainnet";
 
     fn check_load_blocks(start: u32, end: Option<u32>, expected: usize) {
         let blocks = Arc::new(RwLock::new(Vec::new()));
@@ -502,17 +502,6 @@ mod tests {
         let client = reqwest::Client::builder().use_rustls_tls().build().unwrap();
         rt.block_on(async {
             let height = cdn_height::<BLOCKS_PER_FILE>(&client, TEST_BASE_URL).await.unwrap();
-            assert!(height > 0);
-        });
-    }
-
-    #[test]
-    fn test_cdn_get() {
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async {
-            let client = reqwest::Client::builder().use_rustls_tls().build().unwrap();
-            let height =
-                cdn_get::<u32>(client, &format!("{TEST_BASE_URL}/mainnet/latest/height"), "height").await.unwrap();
             assert!(height > 0);
         });
     }

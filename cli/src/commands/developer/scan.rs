@@ -23,6 +23,9 @@ use snarkvm::{
 
 use anyhow::{Result, bail, ensure};
 use clap::Parser;
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::RwLock;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
 use std::{
     io::{Write, stdout},
