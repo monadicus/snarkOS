@@ -129,7 +129,7 @@ pub async fn start_bft(
         Arc::new(BFTMemoryService::new()),
         BatchHeader::<CurrentNetwork>::MAX_GC_ROUNDS as u64,
     );
-    // Initialize the gateway's storage mode.
+    // Initialize the gateway IP and storage mode.
     let ip = match peers.get(&node_id) {
         Some(ip) => Some(*ip),
         None => Some(SocketAddr::from_str(&format!("127.0.0.1:{}", MEMORY_POOL_PORT + node_id)).unwrap()),
@@ -171,7 +171,7 @@ pub async fn start_primary(
         Arc::new(BFTMemoryService::new()),
         BatchHeader::<CurrentNetwork>::MAX_GC_ROUNDS as u64,
     );
-    // Initialize the gateway IP and dev mode.
+    // Initialize the gateway IP and storage mode.
     let ip = match peers.get(&node_id) {
         Some(ip) => Some(*ip),
         None => Some(SocketAddr::from_str(&format!("127.0.0.1:{}", MEMORY_POOL_PORT + node_id)).unwrap()),
