@@ -172,6 +172,8 @@ impl<N: Network> Sync<N> {
             }
         });
 
+        /* Set up callbacks for events from the Gateway */
+
         // Retrieve the sync receiver.
         let SyncReceiver {
             mut rx_block_sync_advance_with_sync_blocks,
@@ -190,25 +192,7 @@ impl<N: Network> Sync<N> {
         let self_ = self.clone();
         self.spawn(async move {
             while let Some((peer_ip, blocks, callback)) = rx_block_sync_advance_with_sync_blocks.recv().await {
-                // Verify that the response is valid.
-                if let Err(e) = self_.block_sync.insert_block_responses(peer_ip, blocks) {
-                    // Send the error to the callback.
-                    callback.send(Err(e)).ok();
-                    continue;
-                }
-
-                // Advance block synchronization
-                self_.block_sync.try_advancing_block_synchronization();
-
-                // Sync the storage with the blocks.
-                if let Err(e) = self_.sync_storage_with_blocks().await {
-                    // Send the error to the callback.
-                    callback.send(Err(e)).ok();
-                    continue;
-                }
-
-                // Send the result to the callback.
-                callback.send(Ok(())).ok();
+                callback.send(self_.advance_with_sync_blocks(peer_ip, blocks).await).ok();
             }
         });
 
@@ -216,7 +200,7 @@ impl<N: Network> Sync<N> {
         let self_ = self.clone();
         self.spawn(async move {
             while let Some(peer_ip) = rx_block_sync_remove_peer.recv().await {
-                self_.block_sync.remove_peer(&peer_ip);
+                self_.remove_peer(peer_ip);
             }
         });
 
@@ -231,10 +215,7 @@ impl<N: Network> Sync<N> {
             while let Some((peer_ip, locators, callback)) = rx_block_sync_update_peer_locators.recv().await {
                 let self_clone = self_.clone();
                 tokio::spawn(async move {
-                    // Update the peer locators.
-                    let result = self_clone.block_sync.update_peer_locators(peer_ip, locators);
-                    // Send the result to the callback.
-                    callback.send(result).ok();
+                    callback.send(self_clone.update_peer_locators(peer_ip, locators)).ok();
                 });
             }
         });
@@ -259,11 +240,37 @@ impl<N: Network> Sync<N> {
         let self_ = self.clone();
         self.spawn(async move {
             while let Some((peer_ip, certificate_response)) = rx_certificate_response.recv().await {
-                self_.finish_certificate_request(peer_ip, certificate_response)
+                self_.finish_certificate_request(peer_ip, certificate_response);
             }
         });
 
         Ok(())
+    }
+}
+
+// Callbacks used when receiving messages from the Gateway
+impl<N: Network> Sync<N> {
+    /// We received a block response and can (possibly) advance synchronization.
+    async fn advance_with_sync_blocks(&self, peer_ip: SocketAddr, blocks: Vec<Block<N>>) -> Result<()> {
+        // Verify that the response is valid.
+        self.block_sync.insert_block_responses(peer_ip, blocks)?;
+
+        // Advance block synchronization
+        self.block_sync.try_advancing_block_synchronization();
+
+        // Sync the storage with the blocks.
+        self.sync_storage_with_blocks().await?;
+        Ok(())
+    }
+
+    /// We received new peer locators during a Ping.
+    fn update_peer_locators(&self, peer_ip: SocketAddr, locators: BlockLocators<N>) -> Result<()> {
+        self.block_sync.update_peer_locators(peer_ip, locators)
+    }
+
+    /// A peer disconnected.
+    fn remove_peer(&self, peer_ip: SocketAddr) {
+        self.block_sync.remove_peer(&peer_ip);
     }
 }
 
@@ -732,6 +739,7 @@ impl<N: Network> Sync<N> {
         self.handles.lock().iter().for_each(|handle| handle.abort());
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
