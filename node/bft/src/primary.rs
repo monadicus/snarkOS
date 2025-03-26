@@ -2579,12 +2579,6 @@ mod tests {
     /// Check that proposals rejected that have timestamps older than the previous proposal.
     #[tokio::test]
     async fn test_batch_propose_from_peer_over_spend_limit() {
-        use tracing_subscriber::prelude::*;
-
-        // Initialize tracing.
-        let _ =
-            tracing_subscriber::registry().with(tracing_subscriber::fmt::Layer::default().with_target(true)).try_init();
-
         let mut rng = TestRng::default();
 
         // Create two primaries to test spend limit activation on V4.

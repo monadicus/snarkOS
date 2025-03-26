@@ -206,9 +206,10 @@ impl<N: Network, C: ConsensusStorage<N>> Inbound<N> for Validator<N, C> {
         }
     }
 
-    /// Processes the ping and sends back a `Pong` message.
+    /// Processes a ping message from a client (or prover) and sends back a `Pong` message.
     fn ping(&self, peer_ip: SocketAddr, _message: Ping<N>) -> bool {
-        // In gateway mode, we do not need to process block locators
+        // In gateway/validator mode, we do not need to process client block locators.
+        // Instead, locators are fetched from other validators in `Gateway` using `PrimaryPing` messages.
 
         // Send a `Pong` message to the peer.
         Outbound::send(self, peer_ip, Message::Pong(Pong { is_fork: Some(false) }));

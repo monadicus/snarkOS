@@ -181,7 +181,7 @@ impl<N: Network> BlockSync<N> {
         BlockLocators::new(recents, checkpoints)
     }
 
-    /// Are there any pending responses to bock requests that need to be processed?
+    /// Returns true if there are pending responses to block requests that need to be processed.
     pub fn has_pending_responses(&self) -> bool {
         !self.responses.read().is_empty()
     }

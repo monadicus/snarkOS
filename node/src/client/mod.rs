@@ -251,7 +251,7 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
         }));
     }
 
-    /// Client-side version of `snarkvm_node_bft::sync::Sync::try_block_sync()`.
+    /// Client-side version of `snarkvm_node_bft::Sync::try_block_sync()`.
     async fn try_block_sync(&self) {
         // First see if any peers need removal.
         let peers_to_ban = self.sync.remove_timed_out_block_requests();
