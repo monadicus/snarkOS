@@ -159,6 +159,8 @@ To start an outer client node, you can also run the following command from the `
 ./run-outer-client.sh
 ```
 
+For bootstrap clients, we also recommend the use of `--rotate-external-peers` to avoid the bootstrap peerlist from filling up.
+
 ## 3.2 Run an Aleo Validator
 
 Start by following the instructions in the [Build Guide](#2-build-guide).
