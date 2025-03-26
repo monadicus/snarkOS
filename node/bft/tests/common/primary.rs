@@ -22,6 +22,7 @@ use snarkos_account::Account;
 use snarkos_node_bft::{
     BFT,
     MAX_BATCH_DELAY_IN_MS,
+    MEMORY_POOL_PORT,
     Primary,
     helpers::{PrimarySender, Storage, init_primary_channels},
 };
@@ -52,7 +53,9 @@ use locktick::parking_lot::Mutex;
 use parking_lot::Mutex;
 use std::{
     collections::HashMap,
+    net::SocketAddr,
     ops::RangeBounds,
+    str::FromStr,
     sync::{Arc, OnceLock},
     time::Duration,
 };
@@ -168,9 +171,9 @@ impl TestNetwork {
                     account,
                     storage,
                     ledger,
-                    None,
+                    Some(SocketAddr::from_str(&format!("127.0.0.1:{}", MEMORY_POOL_PORT + id as u16)).unwrap()),
                     &[],
-                    StorageMode::Development(id as u16),
+                    StorageMode::new_test(None),
                 )
                 .unwrap();
                 (bft.primary().clone(), Some(bft))
@@ -179,9 +182,9 @@ impl TestNetwork {
                     account,
                     storage,
                     ledger,
-                    None,
+                    Some(SocketAddr::from_str(&format!("127.0.0.1:{}", MEMORY_POOL_PORT + id as u16)).unwrap()),
                     &[],
-                    StorageMode::Development(id as u16),
+                    StorageMode::new_test(None),
                 )
                 .unwrap();
                 (primary, None)
@@ -417,5 +420,5 @@ pub fn genesis_ledger(
         })
         .clone();
     // Initialize the ledger with the genesis block.
-    CurrentLedger::load(block, StorageMode::Production).unwrap()
+    CurrentLedger::load(block, StorageMode::new_test(None)).unwrap()
 }

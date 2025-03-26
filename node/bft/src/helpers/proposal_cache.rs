@@ -107,6 +107,11 @@ impl<N: Network> ProposalCache<N> {
 
     /// Store the proposal cache to the file system.
     pub fn store(&self, storage_mode: &StorageMode) -> Result<()> {
+        // Do not write the proposal cache to the filesystem when in test mode.
+        if matches!(storage_mode, StorageMode::Test(_)) {
+            return Ok(());
+        }
+
         let path = proposal_cache_path(N::ID, storage_mode);
         info!("Storing the proposal cache to {}...", path.display());
 

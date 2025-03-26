@@ -130,10 +130,11 @@ pub async fn start_bft(
         BatchHeader::<CurrentNetwork>::MAX_GC_ROUNDS as u64,
     );
     // Initialize the gateway's storage mode.
-    let (ip, storage_mode) = match peers.get(&node_id) {
-        Some(ip) => (Some(*ip), StorageMode::Production),
-        None => (None, StorageMode::Development(node_id)),
+    let ip = match peers.get(&node_id) {
+        Some(ip) => Some(*ip),
+        None => Some(SocketAddr::from_str(&format!("127.0.0.1:{}", MEMORY_POOL_PORT + node_id as u16)).unwrap()),
     };
+    let storage_mode = StorageMode::new_test(None);
     // Initialize the trusted validators.
     let trusted_validators = trusted_validators(node_id, num_nodes, peers);
     // Initialize the consensus channels.
@@ -171,10 +172,11 @@ pub async fn start_primary(
         BatchHeader::<CurrentNetwork>::MAX_GC_ROUNDS as u64,
     );
     // Initialize the gateway IP and dev mode.
-    let (ip, storage_mode) = match peers.get(&node_id) {
-        Some(ip) => (Some(*ip), StorageMode::Production),
-        None => (None, StorageMode::Development(node_id)),
+    let ip = match peers.get(&node_id) {
+        Some(ip) => Some(*ip),
+        None => Some(SocketAddr::from_str(&format!("127.0.0.1:{}", MEMORY_POOL_PORT + node_id as u16)).unwrap()),
     };
+    let storage_mode = StorageMode::new_test(None);
     // Initialize the trusted validators.
     let trusted_validators = trusted_validators(node_id, num_nodes, peers);
     // Initialize the primary instance.

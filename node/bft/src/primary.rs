@@ -1812,7 +1812,7 @@ mod tests {
         let storage = Storage::new(ledger.clone(), Arc::new(BFTMemoryService::new()), 10);
 
         // Initialize the primary.
-        let mut primary = Primary::new(account, storage, ledger, None, &[], StorageMode::Production).unwrap();
+        let mut primary = Primary::new(account, storage, ledger, None, &[], StorageMode::new_test(None)).unwrap();
 
         // Construct a worker instance.
         primary.workers = Arc::from([Worker::new(
