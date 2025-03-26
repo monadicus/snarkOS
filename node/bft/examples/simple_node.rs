@@ -132,7 +132,7 @@ pub async fn start_bft(
     // Initialize the gateway's storage mode.
     let ip = match peers.get(&node_id) {
         Some(ip) => Some(*ip),
-        None => Some(SocketAddr::from_str(&format!("127.0.0.1:{}", MEMORY_POOL_PORT + node_id as u16)).unwrap()),
+        None => Some(SocketAddr::from_str(&format!("127.0.0.1:{}", MEMORY_POOL_PORT + node_id)).unwrap()),
     };
     let storage_mode = StorageMode::new_test(None);
     // Initialize the trusted validators.
@@ -174,7 +174,7 @@ pub async fn start_primary(
     // Initialize the gateway IP and dev mode.
     let ip = match peers.get(&node_id) {
         Some(ip) => Some(*ip),
-        None => Some(SocketAddr::from_str(&format!("127.0.0.1:{}", MEMORY_POOL_PORT + node_id as u16)).unwrap()),
+        None => Some(SocketAddr::from_str(&format!("127.0.0.1:{}", MEMORY_POOL_PORT + node_id)).unwrap()),
     };
     let storage_mode = StorageMode::new_test(None);
     // Initialize the trusted validators.
