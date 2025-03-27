@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright 2024-2025 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,7 +14,10 @@
 // limitations under the License.
 
 use snarkvm::{
-    ledger::narwhal::{BatchCertificate, Subdag},
+    ledger::{
+        committee::Committee,
+        narwhal::{BatchCertificate, BatchHeader, Subdag},
+    },
     prelude::{Address, Field, Network, cfg_iter},
 };
 
@@ -22,6 +25,16 @@ use indexmap::{IndexMap, IndexSet};
 use parking_lot::RwLock;
 use rayon::prelude::*;
 use std::sync::Arc;
+
+// TODO: Consider other metrics to track:
+//  - Response time
+//  - Sync rate
+//  - Latest height of each validator
+//  - Percentage of proposals that are converted into certificates
+//  - Fullness of proposals
+//  - Connectivity (how many other validators are they connected to)
+//  - Various stake weight considerations
+//  - The latest seen IP address of each validator (useful for debugging purposes)
 
 /// Tracker for the participation metrics of validators.
 #[derive(Clone, Debug)]
@@ -37,10 +50,14 @@ pub struct Telemetry<N: Network> {
     /// The total number of certificates seen for a validator.
     /// A mapping of `address` to a list of rounds.
     validator_certificates: Arc<RwLock<IndexMap<Address<N>, IndexSet<u64>>>>,
-    // TODO (raychu86): Consider adding dedicated metric variable for quick lookup.
-    //  For instance making `participation_scores` a getter, and all other functions update
-    //  final metric numbers.
+
+    /// The certificate and signature participation scores for each validator.
+    participation_scores: Arc<RwLock<IndexMap<Address<N>, (f64, f64)>>>,
 }
+
+// TODO (raychu86): Insert subdags on startup.
+
+// TODO (raychu86): Expose data via logs -> Rest -> prometheus.
 
 impl<N: Network> Default for Telemetry<N> {
     /// Initializes a new instance of telemetry.
@@ -56,18 +73,47 @@ impl<N: Network> Telemetry<N> {
             tracked_certificates: Default::default(),
             validator_signatures: Default::default(),
             validator_certificates: Default::default(),
+            participation_scores: Default::default(),
         }
     }
 
-    // TODO: Determine if this should be pending signatures/certificates, or only certificates included in a fully formed subdag.
+    /// Fetch the participation scores for each validator in the committee set.
+    pub fn get_participation_scores(&self, committee: &Committee<N>) -> IndexMap<Address<N>, f64> {
+        let participation_scores = self.participation_scores.read();
+
+        // Calculate the combined score with custom weights:
+        // - 90% certificate participation score
+        // - 10% signature participation score
+        committee
+            .members()
+            .iter()
+            .map(|(address, _)| {
+                let score = participation_scores
+                    .get(address)
+                    .map(|(certificate_score, signature_score)| (0.9 * certificate_score) + (0.1 * signature_score))
+                    .unwrap_or(0.0);
+                (*address, score)
+            })
+            .collect()
+    }
+
+    /// Insert a subdag to the telemetry tracker.
+    /// Note: This currently assumes the subdag is fully formed and included in the block.
     pub fn insert_subdag(&self, subdag: &Subdag<N>) {
-        // Insert the subdag certificates
+        // Garbage collect the old certificates.
+        let next_gc_round = subdag.anchor_round().saturating_sub(BatchHeader::<N>::MAX_GC_ROUNDS as u64);
+        self.garbage_collect_certificates(next_gc_round);
+
+        // Insert the subdag certificates.
         cfg_iter!(subdag).for_each(|(_round, certificates)| {
             cfg_iter!(certificates).for_each(|certificate| {
                 // TODO (raychu86): Can be greatly optimized by doing a one-shot update instead of individual certificates.
                 self.insert_certificate(certificate);
             })
         });
+
+        // Calculate the participation scores.
+        self.update_participation_scores();
     }
 
     /// Insert a certificate to the telemetry tracker.
@@ -126,9 +172,57 @@ impl<N: Network> Telemetry<N> {
             .or_insert_with(|| IndexSet::from([certificate_round]));
     }
 
+    /// Calculate and update the participation scores for each validator.
+    pub fn update_participation_scores(&self) {
+        // Fetch the certificates and signatures.
+        let tracked_certificates = self.tracked_certificates.read();
+        let validator_signatures = self.validator_signatures.read();
+        let validator_certificates = self.validator_certificates.read();
+
+        // Fetch the total number of certificates.
+        let num_certificate_rounds = tracked_certificates.len();
+        let total_certificates = validator_certificates.values().map(|rounds| rounds.len()).sum::<usize>();
+
+        // Calculate the signature participation scores for each validator.
+        let signature_participation_scores = Arc::new(RwLock::new(IndexMap::new()));
+        cfg_iter!(validator_signatures).for_each(|(address, signatures)| {
+            // Fetch the total number of signatures seen by the validator.
+            let total_signatures = signatures.values().sum::<u32>() as f64;
+
+            // Calculate a rough score for the validator based on the number of signatures seen.
+            let score = total_signatures / total_certificates as f64 * 100.0;
+            signature_participation_scores.write().insert(*address, score as u16);
+        });
+
+        // Calculate the certificate participation scores for each validator.
+        let certificate_participation_scores = Arc::new(RwLock::new(IndexMap::new()));
+        cfg_iter!(validator_certificates).for_each(|(address, rounds)| {
+            // Fetch the number of certificate created by the validator.
+            let num_certificates = rounds.len() as f64;
+            // Calculate a rough score for the validator based on the number of certificates seen.
+            let score = num_certificates / num_certificate_rounds as f64 * 100.0;
+            certificate_participation_scores.write().insert(*address, score as u16);
+        });
+
+        // Calculate the final participation scores for each validator.
+        let signature_participation_scores = signature_participation_scores.read();
+        let certificate_participation_scores = certificate_participation_scores.read();
+        let validator_addresses: IndexSet<_> =
+            signature_participation_scores.keys().chain(certificate_participation_scores.keys()).copied().collect();
+        let mut new_participation_scores = IndexMap::new();
+        for address in validator_addresses {
+            let signature_score = *signature_participation_scores.get(&address).unwrap_or(&0) as f64;
+            let certificate_score = *certificate_participation_scores.get(&address).unwrap_or(&0) as f64;
+            new_participation_scores.insert(address, (certificate_score, signature_score));
+        }
+
+        // Update the participation scores.
+        *self.participation_scores.write() = new_participation_scores;
+    }
+
     /// Remove the certificates from the telemetry tracker that are no longer relevant based on gc.
     pub fn garbage_collect_certificates(&self, gc_round: u64) {
-        // Aquire the locks.
+        // Acquire the locks.
         let mut tracked_certificates = self.tracked_certificates.write();
         let mut validator_signatures = self.validator_signatures.write();
         let mut validator_certificates = self.validator_certificates.write();
@@ -150,11 +244,136 @@ impl<N: Network> Telemetry<N> {
             !rounds.is_empty()
         });
     }
+}
 
-    // TODO (raychu86): Add functions to determine which validator is not participating based on committee lookbacks.
-    // pub fn participation_scores(&self) -> IndexMap<Address<N>, u8> {
-    //
-    // }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use snarkvm::{
+        ledger::{
+            committee::test_helpers::sample_committee_for_round_and_members,
+            narwhal::batch_certificate::test_helpers::sample_batch_certificate_for_round,
+        },
+        prelude::MainnetV0,
+        utilities::TestRng,
+    };
 
-    // TODO (raychu86): Determine how to perform calculations for incoming and outgoing validators.
+    use rand::Rng;
+
+    type CurrentNetwork = MainnetV0;
+
+    #[test]
+    fn test_insert_certificates() {
+        let rng = &mut TestRng::default();
+
+        // Initialize the telemetry tracker.
+        let telemetry = Telemetry::<CurrentNetwork>::new();
+
+        // Set the current round.
+        let current_round = 2;
+
+        // Sample the certificates.
+        let mut certificates = IndexSet::new();
+        for _ in 0..10 {
+            certificates.insert(sample_batch_certificate_for_round(current_round, rng));
+        }
+
+        // Insert the certificates.
+        assert!(telemetry.tracked_certificates.read().is_empty());
+        for certificate in &certificates {
+            telemetry.insert_certificate(certificate);
+        }
+        assert_eq!(telemetry.tracked_certificates.read().get(&current_round).unwrap().len(), certificates.len());
+    }
+
+    #[test]
+    fn test_participation_scores() {
+        let rng = &mut TestRng::default();
+
+        // Initialize the telemetry tracker.
+        let telemetry = Telemetry::<CurrentNetwork>::new();
+
+        // Set the current round.
+        let current_round = 2;
+
+        // Sample the certificates.
+        let mut certificates = IndexSet::new();
+        certificates.insert(sample_batch_certificate_for_round(current_round, rng));
+        certificates.insert(sample_batch_certificate_for_round(current_round, rng));
+        certificates.insert(sample_batch_certificate_for_round(current_round, rng));
+        certificates.insert(sample_batch_certificate_for_round(current_round, rng));
+
+        // Initialize the committee.
+        let committee = sample_committee_for_round_and_members(
+            current_round,
+            vec![
+                certificates[0].author(),
+                certificates[1].author(),
+                certificates[2].author(),
+                certificates[3].author(),
+            ],
+            rng,
+        );
+
+        // Insert the certificates.
+        assert!(telemetry.tracked_certificates.read().is_empty());
+        for certificate in &certificates {
+            telemetry.insert_certificate(certificate);
+        }
+
+        // Fetch the participation scores.
+        let participation_scores = telemetry.get_participation_scores(&committee);
+        assert_eq!(participation_scores.len(), committee.members().len());
+        for (address, _) in committee.members() {
+            assert_eq!(*participation_scores.get(address).unwrap(), 0.0);
+        }
+
+        // Calculate the participation scores.
+        telemetry.update_participation_scores();
+
+        // Ensure that the participation scores are updated.
+        let participation_scores = telemetry.get_participation_scores(&committee);
+        for (address, _) in committee.members() {
+            assert!(*participation_scores.get(address).unwrap() > 0.0);
+        }
+
+        println!("{:?}", participation_scores);
+    }
+
+    #[test]
+    fn test_garbage_collection() {
+        let rng = &mut TestRng::default();
+
+        // Initialize the telemetry tracker.
+        let telemetry = Telemetry::<CurrentNetwork>::new();
+
+        // Set the current round.
+        let current_round = 2;
+        let next_round = current_round + 1;
+
+        // Sample the certificates for round `current_round`
+        let mut certificates = IndexSet::new();
+        let num_initial_certificates = rng.gen_range(1..10);
+        for _ in 0..num_initial_certificates {
+            certificates.insert(sample_batch_certificate_for_round(current_round, rng));
+        }
+
+        // Sample the certificates for round `next_round`
+        let num_new_certificates = rng.gen_range(1..10);
+        for _ in 0..num_new_certificates {
+            certificates.insert(sample_batch_certificate_for_round(next_round, rng));
+        }
+
+        // Insert the certificates.
+        for certificate in &certificates {
+            telemetry.insert_certificate(certificate);
+        }
+        assert_eq!(telemetry.tracked_certificates.read().get(&current_round).unwrap().len(), num_initial_certificates);
+        assert_eq!(telemetry.tracked_certificates.read().get(&next_round).unwrap().len(), num_new_certificates);
+
+        // Garbage collect the certificates
+        telemetry.garbage_collect_certificates(current_round);
+        assert!(telemetry.tracked_certificates.read().get(&current_round).is_none());
+        assert_eq!(telemetry.tracked_certificates.read().get(&next_round).unwrap().len(), num_new_certificates);
+    }
 }
