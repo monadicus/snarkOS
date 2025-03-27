@@ -58,6 +58,7 @@ use snarkvm::{
     prelude::committee::Committee,
 };
 
+use aleo_std::StorageMode;
 use colored::Colorize;
 use futures::stream::{FuturesUnordered, StreamExt};
 use indexmap::{IndexMap, IndexSet};
@@ -107,6 +108,8 @@ pub struct Primary<N: Network> {
     handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
     /// The lock for propose_batch.
     propose_lock: Arc<TMutex<u64>>,
+    /// The storage mode of the node.
+    storage_mode: StorageMode,
 }
 
 impl<N: Network> Primary<N> {
@@ -120,10 +123,11 @@ impl<N: Network> Primary<N> {
         ledger: Arc<dyn LedgerService<N>>,
         ip: Option<SocketAddr>,
         trusted_validators: &[SocketAddr],
-        dev: Option<u16>,
+        storage_mode: StorageMode,
     ) -> Result<Self> {
         // Initialize the gateway.
-        let gateway = Gateway::new(account, storage.clone(), ledger.clone(), ip, trusted_validators, dev)?;
+        let gateway =
+            Gateway::new(account, storage.clone(), ledger.clone(), ip, trusted_validators, storage_mode.dev())?;
         // Initialize the sync module.
         let sync = Sync::new(gateway.clone(), storage.clone(), ledger.clone());
 
@@ -140,15 +144,16 @@ impl<N: Network> Primary<N> {
             signed_proposals: Default::default(),
             handles: Default::default(),
             propose_lock: Default::default(),
+            storage_mode,
         })
     }
 
     /// Load the proposal cache file and update the Primary state with the stored data.
     async fn load_proposal_cache(&self) -> Result<()> {
         // Fetch the signed proposals from the file system if it exists.
-        match ProposalCache::<N>::exists(self.gateway.dev()) {
+        match ProposalCache::<N>::exists(&self.storage_mode) {
             // If the proposal cache exists, then process the proposal cache.
-            true => match ProposalCache::<N>::load(self.gateway.account().address(), self.gateway.dev()) {
+            true => match ProposalCache::<N>::load(self.gateway.account().address(), &self.storage_mode) {
                 Ok(proposal_cache) => {
                     // Extract the proposal and signed proposals.
                     let (latest_certificate_round, proposed_batch, signed_proposals, pending_certificates) =
@@ -1878,7 +1883,7 @@ impl<N: Network> Primary<N> {
             let pending_certificates = self.storage.get_pending_certificates();
             ProposalCache::new(latest_round, proposal, signed_proposals, pending_certificates)
         };
-        if let Err(err) = proposal_cache.store(self.gateway.dev()) {
+        if let Err(err) = proposal_cache.store(&self.storage_mode) {
             error!("Failed to store the current proposal cache: {err}");
         }
         // Close the gateway.
@@ -1934,7 +1939,7 @@ mod tests {
 
         // Initialize the primary.
         let account = accounts[account_index].1.clone();
-        let mut primary = Primary::new(account, storage, ledger, None, &[], None).unwrap();
+        let mut primary = Primary::new(account, storage, ledger, None, &[], StorageMode::new_test(None)).unwrap();
 
         // Construct a worker instance.
         primary.workers = Arc::from([Worker::new(
