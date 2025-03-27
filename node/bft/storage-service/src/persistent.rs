@@ -80,30 +80,6 @@ impl<N: Network> BFTPersistentStorage<N> {
             cache_aborted_transmission_ids: Mutex::new(LruCache::new(capacity)),
         })
     }
-
-    /// Initializes a new BFT persistent storage service for testing.
-    #[cfg(any(test, feature = "test"))]
-    pub fn open_testing(temp_dir: std::path::PathBuf, dev: Option<u16>) -> Result<Self> {
-        let max_committee_size = Committee::<N>::max_committee_size().unwrap();
-        let capacity =
-            NonZeroUsize::new((max_committee_size as usize) * (BatchHeader::<N>::MAX_TRANSMISSIONS_PER_BATCH) * 2)
-                .ok_or_else(|| anyhow!("Could not construct NonZeroUsize"))?;
-
-        Ok(Self {
-            transmissions: internal::RocksDB::open_map_testing(
-                temp_dir.clone(),
-                dev,
-                MapID::BFT(BFTMap::Transmissions),
-            )?,
-            aborted_transmission_ids: internal::RocksDB::open_map_testing(
-                temp_dir,
-                dev,
-                MapID::BFT(BFTMap::AbortedTransmissionIDs),
-            )?,
-            cache_transmissions: Mutex::new(LruCache::new(capacity)),
-            cache_aborted_transmission_ids: Mutex::new(LruCache::new(capacity)),
-        })
-    }
 }
 
 impl<N: Network> StorageService<N> for BFTPersistentStorage<N> {
