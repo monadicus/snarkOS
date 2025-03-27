@@ -300,6 +300,7 @@ impl<N: Network> Sync<N> {
                     });
                 }
 
+                #[cfg(feature = "telemetry")]
                 // Update the validator telemetry.
                 self.gateway.validator_telemetry().insert_subdag(subdag);
             }
@@ -564,6 +565,7 @@ impl<N: Network> Sync<N> {
                         warn!("Skipping block {block_height} from the latest block responses - not sequential.");
                         continue;
                     }
+                    #[cfg(feature = "telemetry")]
                     // Fetch the block authority.
                     let block_authority = block.authority().clone();
 
@@ -587,6 +589,7 @@ impl<N: Network> Sync<N> {
                     // Mark the block height as processed in block_sync.
                     self.block_sync.remove_block_response(block_height);
 
+                    #[cfg(feature = "telemetry")]
                     // Update the validator telemetry.
                     if let Authority::Quorum(subdag) = block_authority {
                         self_.gateway.validator_telemetry().insert_subdag(&subdag);

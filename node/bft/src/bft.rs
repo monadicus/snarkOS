@@ -706,6 +706,7 @@ impl<N: Network> BFT<N> {
                     "\n\nCommitting a subdag from round {anchor_round} with {num_transmissions} transmissions: {subdag_metadata:?}\n"
                 );
 
+                #[cfg(feature = "telemetry")]
                 // Update the validator telemetry.
                 self.primary().gateway().validator_telemetry().insert_subdag(&subdag);
             }

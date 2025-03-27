@@ -55,10 +55,6 @@ pub struct Telemetry<N: Network> {
     participation_scores: Arc<RwLock<IndexMap<Address<N>, (f64, f64)>>>,
 }
 
-// TODO (raychu86): Insert subdags on startup.
-
-// TODO (raychu86): Expose data via logs -> Rest -> prometheus.
-
 impl<N: Network> Default for Telemetry<N> {
     /// Initializes a new instance of telemetry.
     fn default() -> Self {
@@ -77,6 +73,7 @@ impl<N: Network> Telemetry<N> {
         }
     }
 
+    // TODO (raychu86): Consider using committee lookback here.
     /// Fetch the participation scores for each validator in the committee set.
     pub fn get_participation_scores(&self, committee: &Committee<N>) -> IndexMap<Address<N>, f64> {
         let participation_scores = self.participation_scores.read();
