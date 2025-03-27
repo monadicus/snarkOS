@@ -53,9 +53,8 @@ use locktick::parking_lot::Mutex;
 use parking_lot::Mutex;
 use std::{
     collections::HashMap,
-    net::SocketAddr,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     ops::RangeBounds,
-    str::FromStr,
     sync::{Arc, OnceLock},
     time::Duration,
 };
@@ -171,7 +170,7 @@ impl TestNetwork {
                     account,
                     storage,
                     ledger,
-                    Some(SocketAddr::from_str(&format!("127.0.0.1:{}", MEMORY_POOL_PORT + id as u16)).unwrap()),
+                    Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), MEMORY_POOL_PORT + id as u16)),
                     &[],
                     StorageMode::new_test(None),
                 )
@@ -182,7 +181,7 @@ impl TestNetwork {
                     account,
                     storage,
                     ledger,
-                    Some(SocketAddr::from_str(&format!("127.0.0.1:{}", MEMORY_POOL_PORT + id as u16)).unwrap()),
+                    Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), MEMORY_POOL_PORT + id as u16)),
                     &[],
                     StorageMode::new_test(None),
                 )

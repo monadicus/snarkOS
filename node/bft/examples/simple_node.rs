@@ -56,7 +56,7 @@ use indexmap::IndexMap;
 use rand::{CryptoRng, Rng, SeedableRng};
 use std::{
     collections::HashMap,
-    net::SocketAddr,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     path::PathBuf,
     str::FromStr,
     sync::{Arc, Mutex, OnceLock, atomic::AtomicBool},
@@ -132,7 +132,7 @@ pub async fn start_bft(
     // Initialize the gateway IP and storage mode.
     let ip = match peers.get(&node_id) {
         Some(ip) => Some(*ip),
-        None => Some(SocketAddr::from_str(&format!("127.0.0.1:{}", MEMORY_POOL_PORT + node_id)).unwrap()),
+        None => Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), MEMORY_POOL_PORT + node_id)),
     };
     let storage_mode = StorageMode::new_test(None);
     // Initialize the trusted validators.
@@ -174,7 +174,7 @@ pub async fn start_primary(
     // Initialize the gateway IP and storage mode.
     let ip = match peers.get(&node_id) {
         Some(ip) => Some(*ip),
-        None => Some(SocketAddr::from_str(&format!("127.0.0.1:{}", MEMORY_POOL_PORT + node_id)).unwrap()),
+        None => Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), MEMORY_POOL_PORT + node_id)),
     };
     let storage_mode = StorageMode::new_test(None);
     // Initialize the trusted validators.
