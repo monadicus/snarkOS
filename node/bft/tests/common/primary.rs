@@ -171,7 +171,7 @@ impl TestNetwork {
                 (bft.primary().clone(), Some(bft))
             } else {
                 let primary =
-                    Primary::<CurrentNetwork>::new(block_sync, account, storage, ledger, None, &[], Some(id as u16))
+                    Primary::<CurrentNetwork>::new(account, storage, ledger, block_sync, None, &[], Some(id as u16))
                         .unwrap();
                 (primary, None)
             };

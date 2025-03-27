@@ -79,10 +79,10 @@ pub struct Sync<N: Network> {
 impl<N: Network> Sync<N> {
     /// Initializes a new sync instance.
     pub fn new(
-        block_sync: Arc<BlockSync<N>>,
         gateway: Gateway<N>,
         storage: Storage<N>,
         ledger: Arc<dyn LedgerService<N>>,
+        block_sync: Arc<BlockSync<N>>,
     ) -> Self {
         // Return the sync instance.
         Self {
@@ -1015,7 +1015,7 @@ mod tests {
         // Initialize the block synchronization logic.
         let block_sync = Arc::new(BlockSync::new(syncing_ledger.clone()));
         // Initialize the sync module.
-        let sync = Sync::new(block_sync, gateway.clone(), storage.clone(), syncing_ledger.clone());
+        let sync = Sync::new(gateway.clone(), storage.clone(), syncing_ledger.clone(), block_sync);
         // Try to sync block 1.
         sync.sync_storage_with_block(block_1).await?;
         assert_eq!(syncing_ledger.latest_block_height(), 1);

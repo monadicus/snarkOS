@@ -182,7 +182,7 @@ pub async fn start_primary(
     // Initialize the primary instance.
     let block_sync = Arc::new(BlockSync::new(ledger.clone()));
     let mut primary =
-        Primary::<CurrentNetwork>::new(block_sync, account, storage, ledger, ip, &trusted_validators, dev)?;
+        Primary::<CurrentNetwork>::new(account, storage, ledger, block_sync, ip, &trusted_validators, dev)?;
     // Run the primary instance.
     primary.run(None, sender.clone(), receiver).await?;
     // Handle OS signals.

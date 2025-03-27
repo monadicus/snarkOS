@@ -117,10 +117,10 @@ impl<N: Network> Primary<N> {
 
     /// Initializes a new primary instance.
     pub fn new(
-        block_sync: Arc<BlockSync<N>>,
         account: Account<N>,
         storage: Storage<N>,
         ledger: Arc<dyn LedgerService<N>>,
+        block_sync: Arc<BlockSync<N>>,
         ip: Option<SocketAddr>,
         trusted_validators: &[SocketAddr],
 
@@ -130,7 +130,7 @@ impl<N: Network> Primary<N> {
             Gateway::new(account.clone(), storage.clone(), ledger.clone(), ip, trusted_validators, dev).unwrap();
 
         // Initialize the sync module.
-        let sync = Sync::new(block_sync, gateway.clone(), storage.clone(), ledger.clone());
+        let sync = Sync::new(gateway.clone(), storage.clone(), ledger.clone(), block_sync);
 
         // Initialize the primary instance.
         Ok(Self {
@@ -1941,7 +1941,7 @@ mod tests {
         // Initialize the primary.
         let account = accounts[account_index].1.clone();
         let block_sync = Arc::new(BlockSync::new(ledger.clone()));
-        let mut primary = Primary::new(block_sync, account, storage, ledger, None, &[], None).unwrap();
+        let mut primary = Primary::new(account, storage, ledger, block_sync, None, &[], None).unwrap();
 
         // Construct a worker instance.
         primary.workers = Arc::from([Worker::new(

@@ -97,7 +97,7 @@ impl<N: Network> BFT<N> {
         dev: Option<u16>,
     ) -> Result<Self> {
         Ok(Self {
-            primary: Primary::new(block_sync, account, storage, ledger, ip, trusted_validators, dev)?,
+            primary: Primary::new(account, storage, ledger, block_sync, ip, trusted_validators, dev)?,
             dag: Default::default(),
             leader_certificate: Default::default(),
             leader_certificate_timer: Default::default(),
