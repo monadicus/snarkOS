@@ -173,29 +173,24 @@ impl<N: Network> Telemetry<N> {
         let total_certificates = validator_certificates.values().map(|rounds| rounds.len()).sum::<usize>();
 
         // Calculate the signature participation scores for each validator.
-        let signature_participation_scores = Arc::new(RwLock::new(IndexMap::new()));
-        cfg_iter!(validator_signatures).for_each(|(address, signatures)| {
-            // Fetch the total number of signatures seen by the validator.
-            let total_signatures = signatures.values().sum::<u32>() as f64;
-
-            // Calculate a rough score for the validator based on the number of signatures seen.
-            let score = total_signatures / total_certificates as f64 * 100.0;
-            signature_participation_scores.write().insert(*address, score as u16);
-        });
+        let signature_participation_scores: IndexMap<_, _> = cfg_iter!(validator_signatures)
+            .map(|(address, signatures)| {
+                let total_signatures = signatures.values().sum::<u32>() as f64;
+                let score = total_signatures / total_certificates as f64 * 100.0;
+                (*address, score as u16)
+            })
+            .collect();
 
         // Calculate the certificate participation scores for each validator.
-        let certificate_participation_scores = Arc::new(RwLock::new(IndexMap::new()));
-        cfg_iter!(validator_certificates).for_each(|(address, rounds)| {
-            // Fetch the number of certificate created by the validator.
-            let num_certificates = rounds.len() as f64;
-            // Calculate a rough score for the validator based on the number of certificates seen.
-            let score = num_certificates / num_certificate_rounds as f64 * 100.0;
-            certificate_participation_scores.write().insert(*address, score as u16);
-        });
+        let certificate_participation_scores: IndexMap<_, _> = cfg_iter!(validator_certificates)
+            .map(|(address, certificate_rounds)| {
+                // Calculate a rough score for the validator based on the number of certificates seen.
+                let score = certificate_rounds.len() as f64 / num_certificate_rounds as f64 * 100.0;
+                (*address, score as u16)
+            })
+            .collect();
 
         // Calculate the final participation scores for each validator.
-        let signature_participation_scores = signature_participation_scores.read();
-        let certificate_participation_scores = certificate_participation_scores.read();
         let validator_addresses: IndexSet<_> =
             signature_participation_scores.keys().chain(certificate_participation_scores.keys()).copied().collect();
         let mut new_participation_scores = IndexMap::new();
