@@ -137,44 +137,28 @@ impl<N: Network> Telemetry<N> {
         }
 
         // Insert the certificate ID.
-        tracked_certificates
-            .entry(certificate_round)
-            .and_modify(|certs| {
-                certs.insert(certificate_id);
-            })
-            .or_insert_with(|| IndexSet::from([certificate_id]));
+        tracked_certificates.entry(certificate_round).or_default().insert(certificate_id);
 
         // Acquire the lock for `validator_signatures`
         let mut validator_signatures = self.validator_signatures.write();
 
-        // Insert the certificate author.
-        validator_signatures
-            .entry(certificate_author)
-            .and_modify(|counts| {
-                counts.entry(certificate_round).and_modify(|count| *count += 1).or_insert(1);
-            })
-            .or_insert_with(|| IndexMap::from([(certificate_round, 1)]));
-
-        // Insert the certificate signatures
-        for signature in certificate.signatures() {
+        // Insert the certificate author and signers.
+        for address in
+            [certificate_author].into_iter().chain(certificate.signatures().map(|signature| signature.to_address()))
+        {
             validator_signatures
-                .entry(signature.to_address())
-                .and_modify(|counts| {
-                    counts.entry(certificate_round).and_modify(|count| *count += 1).or_insert(1);
-                })
-                .or_insert_with(|| IndexMap::from([(certificate_round, 1)]));
+                .entry(address)
+                .or_default()
+                .entry(certificate_round)
+                .and_modify(|count| *count += 1)
+                .or_insert(1);
         }
 
         // Acquire the lock for `validator_certificates`.
         let mut validator_certificates = self.validator_certificates.write();
 
         // Insert the certificate
-        validator_certificates
-            .entry(certificate_author)
-            .and_modify(|cert_rounds| {
-                cert_rounds.insert(certificate_round);
-            })
-            .or_insert_with(|| IndexSet::from([certificate_round]));
+        validator_certificates.entry(certificate_author).or_default().insert(certificate_round);
     }
 
     /// Calculate and update the participation scores for each validator.
