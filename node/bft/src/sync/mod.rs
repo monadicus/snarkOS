@@ -299,6 +299,9 @@ impl<N: Network> Sync<N> {
                         self.storage.sync_certificate_with_block(block, certificate, &unconfirmed_transactions);
                     });
                 }
+
+                // Update the validator telemetry.
+                self.gateway.validator_telemetry().insert_subdag(subdag);
             }
         }
 
@@ -561,6 +564,8 @@ impl<N: Network> Sync<N> {
                         warn!("Skipping block {block_height} from the latest block responses - not sequential.");
                         continue;
                     }
+                    // Fetch the block authority.
+                    let block_authority = block.authority().clone();
 
                     let self_ = self.clone();
                     tokio::task::spawn_blocking(move || {
@@ -581,6 +586,11 @@ impl<N: Network> Sync<N> {
                     latest_block_responses.remove(&block_height);
                     // Mark the block height as processed in block_sync.
                     self.block_sync.remove_block_response(block_height);
+
+                    // Update the validator telemetry.
+                    if let Authority::Quorum(subdag) = block_authority {
+                        self_.gateway.validator_telemetry().insert_subdag(&subdag);
+                    }
                 }
             } else {
                 debug!(

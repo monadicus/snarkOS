@@ -687,7 +687,7 @@ impl<N: Network> BFT<N> {
                     // Initialize a callback sender and receiver.
                     let (callback_sender, callback_receiver) = oneshot::channel();
                     // Send the subdag and transmissions to consensus.
-                    consensus_sender.tx_consensus_subdag.send((subdag, transmissions, callback_sender)).await?;
+                    consensus_sender.tx_consensus_subdag.send((subdag.clone(), transmissions, callback_sender)).await?;
                     // Await the callback to continue.
                     match callback_receiver.await {
                         Ok(Ok(())) => (), // continue
@@ -705,6 +705,9 @@ impl<N: Network> BFT<N> {
                 info!(
                     "\n\nCommitting a subdag from round {anchor_round} with {num_transmissions} transmissions: {subdag_metadata:?}\n"
                 );
+
+                // Update the validator telemetry.
+                self.primary().gateway().validator_telemetry().insert_subdag(&subdag);
             }
 
             // Update the DAG, as the subdag was successfully included into a block.

@@ -19,7 +19,7 @@ use crate::{
     MEMORY_POOL_PORT,
     Worker,
     events::{EventCodec, PrimaryPing},
-    helpers::{Cache, PrimarySender, Resolver, Storage, SyncSender, WorkerSender, assign_to_worker},
+    helpers::{Cache, PrimarySender, Resolver, Storage, SyncSender, Telemetry, WorkerSender, assign_to_worker},
     spawn_blocking,
 };
 use snarkos_account::Account;
@@ -131,6 +131,8 @@ pub struct Gateway<N: Network> {
     /// prevent simultaneous "two-way" connections between two peers (i.e. both nodes simultaneously
     /// attempt to connect to each other). This set is used to prevent this from happening.
     connecting_peers: Arc<Mutex<IndexSet<SocketAddr>>>,
+    /// The validator telemetry.
+    validator_telemetry: Telemetry<N>,
     /// The primary sender.
     primary_sender: Arc<OnceCell<PrimarySender<N>>>,
     /// The worker senders.
@@ -172,6 +174,7 @@ impl<N: Network> Gateway<N> {
             trusted_validators: trusted_validators.iter().copied().collect(),
             connected_peers: Default::default(),
             connecting_peers: Default::default(),
+            validator_telemetry: Default::default(),
             primary_sender: Default::default(),
             worker_senders: Default::default(),
             sync_sender: Default::default(),
@@ -298,6 +301,11 @@ impl<N: Network> Gateway<N> {
     /// Returns the resolver.
     pub fn resolver(&self) -> &Resolver<N> {
         &self.resolver
+    }
+
+    /// Returns the validator telemetry.
+    pub fn validator_telemetry(&self) -> &Telemetry<N> {
+        &self.validator_telemetry
     }
 
     /// Returns the primary sender.
