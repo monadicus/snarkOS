@@ -13,13 +13,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#[cfg(feature = "telemetry")]
+use crate::helpers::Telemetry;
 use crate::{
     CONTEXT,
     MAX_BATCH_DELAY_IN_MS,
     MEMORY_POOL_PORT,
     Worker,
     events::{EventCodec, PrimaryPing},
-    helpers::{Cache, PrimarySender, Resolver, Storage, SyncSender, Telemetry, WorkerSender, assign_to_worker},
+    helpers::{Cache, PrimarySender, Resolver, Storage, SyncSender, WorkerSender, assign_to_worker},
     spawn_blocking,
 };
 use snarkos_account::Account;
@@ -131,8 +133,8 @@ pub struct Gateway<N: Network> {
     /// prevent simultaneous "two-way" connections between two peers (i.e. both nodes simultaneously
     /// attempt to connect to each other). This set is used to prevent this from happening.
     connecting_peers: Arc<Mutex<IndexSet<SocketAddr>>>,
-    #[cfg(feature = "telemetry")]
     /// The validator telemetry.
+    #[cfg(feature = "telemetry")]
     validator_telemetry: Telemetry<N>,
     /// The primary sender.
     primary_sender: Arc<OnceCell<PrimarySender<N>>>,
@@ -305,8 +307,8 @@ impl<N: Network> Gateway<N> {
         &self.resolver
     }
 
-    #[cfg(feature = "telemetry")]
     /// Returns the validator telemetry.
+    #[cfg(feature = "telemetry")]
     pub fn validator_telemetry(&self) -> &Telemetry<N> {
         &self.validator_telemetry
     }
@@ -931,8 +933,8 @@ impl<N: Network> Gateway<N> {
     fn heartbeat(&self) {
         // Log the connected validators.
         self.log_connected_validators();
-        #[cfg(feature = "telemetry")]
         // Log the validator participation scores.
+        #[cfg(feature = "telemetry")]
         self.log_participation_scores();
         // Keep the trusted validators connected.
         self.handle_trusted_validators();
@@ -985,8 +987,8 @@ impl<N: Network> Gateway<N> {
         }
     }
 
-    #[cfg(feature = "telemetry")]
     // Logs the validator participation scores.
+    #[cfg(feature = "telemetry")]
     fn log_participation_scores(&self) {
         if let Ok(current_committee) = self.ledger.current_committee() {
             // Retrieve the participation scores.

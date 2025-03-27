@@ -197,8 +197,8 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
             .route(&format!("/{network}/committee/:height"), get(Self::get_committee))
             .route(&format!("/{network}/delegators/:validator"), get(Self::get_delegators_for_validator));
 
-            #[cfg(feature = "telemetry")]
             // If the node is a validator and `telemetry` features is enabled, enable the additional endpoint.
+            #[cfg(feature = "telemetry")]
             let routes = match self.consensus {
                 Some(_) => routes.route(
                     &format!("/{network}/validators/participation"),

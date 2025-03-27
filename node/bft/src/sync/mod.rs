@@ -300,8 +300,8 @@ impl<N: Network> Sync<N> {
                     });
                 }
 
-                #[cfg(feature = "telemetry")]
                 // Update the validator telemetry.
+                #[cfg(feature = "telemetry")]
                 self.gateway.validator_telemetry().insert_subdag(subdag);
             }
         }
@@ -568,7 +568,6 @@ impl<N: Network> Sync<N> {
                         continue;
                     }
                     #[cfg(feature = "telemetry")]
-                    // Fetch the block authority.
                     let block_authority = block.authority().clone();
 
                     let self_ = self.clone();
@@ -591,8 +590,8 @@ impl<N: Network> Sync<N> {
                     // Mark the block height as processed in block_sync.
                     self.block_sync.remove_block_response(block_height);
 
-                    #[cfg(feature = "telemetry")]
                     // Update the validator telemetry.
+                    #[cfg(feature = "telemetry")]
                     if let Authority::Quorum(subdag) = block_authority {
                         self_.gateway.validator_telemetry().insert_subdag(&subdag);
                     }
