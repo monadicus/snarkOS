@@ -76,18 +76,26 @@ impl<N: Network> Telemetry<N> {
     // TODO (raychu86): Consider using committee lookback here.
     /// Fetch the participation scores for each validator in the committee set.
     pub fn get_participation_scores(&self, committee: &Committee<N>) -> IndexMap<Address<N>, f64> {
-        let participation_scores = self.participation_scores.read();
-
         // Calculate the combined score with custom weights:
         // - 90% certificate participation score
         // - 10% signature participation score
+        fn weighted_score(certificate_score: f64, signature_score: f64) -> f64 {
+            let score = (0.9 * certificate_score) + (0.1 * signature_score);
+
+            // Truncate to the last 2 decimal places.
+            (score * 100.0).round() / 100.0
+        }
+
+        // Fetch the participation scores.
+        let participation_scores = self.participation_scores.read();
+        // Calculate the weighted score for each validator.
         committee
             .members()
             .iter()
             .map(|(address, _)| {
                 let score = participation_scores
                     .get(address)
-                    .map(|(certificate_score, signature_score)| (0.9 * certificate_score) + (0.1 * signature_score))
+                    .map(|(certificate_score, signature_score)| weighted_score(*certificate_score, *signature_score))
                     .unwrap_or(0.0);
                 (*address, score)
             })
