@@ -18,6 +18,7 @@ edition = "2021"
 
 [features]
 default = [ ]
+telemetry = [ ]
 locktick = [
   "dep:locktick",
   "snarkos-node-bft-ledger-service/locktick",

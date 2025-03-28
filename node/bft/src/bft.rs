@@ -718,6 +718,10 @@ impl<N: Network> BFT<N> {
             for certificate in commit_subdag.values().flatten() {
                 dag_write.commit(certificate, self.storage().max_gc_rounds());
             }
+
+            // Update the validator telemetry.
+            #[cfg(feature = "telemetry")]
+            self.primary().gateway().validator_telemetry().insert_subdag(&Subdag::from(commit_subdag)?);
         }
 
         // Perform garbage collection based on the latest committed leader round.
