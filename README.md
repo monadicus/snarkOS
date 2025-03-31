@@ -173,6 +173,33 @@ To start a validator, you can also run the following command from the `snarkOS` 
 ./run-validator.sh
 ```
 
+### 3.2.1 Enable Validator Telemetry Metrics (Optional)
+
+You can optionally enable validator telemetry to track participation in consensus. This is controlled via the telemetry feature flag and can be enabled in one of two ways:
+
+Once enabled, telemetry metrics are exposed through:
+
+1. Node logs 
+2. REST API endpoints
+    ``` 
+    // GET /{network}/validators/participation
+    // GET /{network}/validators/participation?metadata={true}
+    ```
+
+#### 1. Enable via [installation](#2.3-installation)
+
+Add the feature flag to the installation command.
+```
+cargo install --locked --path . --features telemetry
+```
+
+#### 2. Enable via `./run-validator.sh`
+
+Run the `./run-validator.sh` script and enable telemetry when prompted:
+```
+Do you want to enable validator telemetry? (y/n, default: y):
+```
+
 ## 3.3 Run an Aleo Prover
 
 Start by following the instructions in the [Build Guide](#2-build-guide).
