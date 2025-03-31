@@ -30,8 +30,11 @@ pub fn proposal_cache_path(network: u16, storage_mode: &StorageMode) -> PathBuf 
     const PROPOSAL_CACHE_FILE_NAME: &str = "current-proposal-cache";
     // Obtain the path to the ledger.
     let mut path = aleo_ledger_dir(network, storage_mode);
-    // Go to the folder right above the ledger.
-    path.pop();
+    // Go to the folder right above the ledger when using the default paths,
+    // otherwise store in the same directory as storage.
+    if !matches!(storage_mode, StorageMode::Custom(_)) {
+        path.pop();
+    }
     // Append the proposal store's file name.
     match storage_mode.dev() {
         Some(id) => path.push(format!(".{PROPOSAL_CACHE_FILE_NAME}-{}-{}", network, id)),
