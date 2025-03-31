@@ -132,9 +132,9 @@ impl<N: Network, C: ConsensusStorage<N>> Validator<N, C> {
 
         // Initialize the consensus layer.
         let mut consensus = Consensus::new(
-            sync.clone(),
             account.clone(),
             ledger_service.clone(),
+            sync.clone(),
             bft_ip,
             trusted_validators,
             storage_mode.clone(),

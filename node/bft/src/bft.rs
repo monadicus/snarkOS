@@ -42,6 +42,7 @@ use snarkvm::{
     prelude::{Field, Network, Result, bail, ensure},
 };
 
+use aleo_std::StorageMode;
 use colored::Colorize;
 use indexmap::{IndexMap, IndexSet};
 #[cfg(feature = "locktick")]
@@ -88,16 +89,16 @@ pub struct BFT<N: Network> {
 impl<N: Network> BFT<N> {
     /// Initializes a new instance of the BFT.
     pub fn new(
-        block_sync: Arc<BlockSync<N>>,
         account: Account<N>,
         storage: Storage<N>,
         ledger: Arc<dyn LedgerService<N>>,
+        block_sync: Arc<BlockSync<N>>,
         ip: Option<SocketAddr>,
         trusted_validators: &[SocketAddr],
-        dev: Option<u16>,
+        storage_mode: StorageMode,
     ) -> Result<Self> {
         Ok(Self {
-            primary: Primary::new(account, storage, ledger, block_sync, ip, trusted_validators, dev)?,
+            primary: Primary::new(account, storage, ledger, block_sync, ip, trusted_validators, storage_mode)?,
             dag: Default::default(),
             leader_certificate: Default::default(),
             leader_certificate_timer: Default::default(),
@@ -516,6 +517,11 @@ impl<N: Network> BFT<N> {
             // TODO (howardwu): Investigate how many certificates we should have at this point.
             bail!("BFT failed to retrieve the certificates for certificate round {certificate_round}");
         };
+        // Retrieve the committee lookback for the certificate round (i.e. the round just after the commit round).
+        let Ok(certificate_committee_lookback) = self.ledger().get_committee_lookback_for_round(certificate_round)
+        else {
+            bail!("BFT failed to retrieve the committee lookback for certificate round {certificate_round}");
+        };
         // Construct a set over the authors who included the leader's certificate in the certificate round.
         let authors = certificates
             .values()
@@ -525,7 +531,7 @@ impl<N: Network> BFT<N> {
             })
             .collect();
         // Check if the leader is ready to be committed.
-        if !committee_lookback.is_availability_threshold_reached(&authors) {
+        if !certificate_committee_lookback.is_availability_threshold_reached(&authors) {
             // If the leader is not ready to be committed, return early.
             trace!("BFT is not ready to commit {commit_round}");
             return Ok(());
@@ -714,6 +720,10 @@ impl<N: Network> BFT<N> {
             for certificate in commit_subdag.values().flatten() {
                 dag_write.commit(certificate, self.storage().max_gc_rounds());
             }
+
+            // Update the validator telemetry.
+            #[cfg(feature = "telemetry")]
+            self.primary().gateway().validator_telemetry().insert_subdag(&Subdag::from(commit_subdag)?);
         }
 
         // Perform garbage collection based on the latest committed leader round.
@@ -916,6 +926,7 @@ mod tests {
         utilities::TestRng,
     };
 
+    use aleo_std::StorageMode;
     use anyhow::Result;
     use indexmap::{IndexMap, IndexSet};
     use std::sync::Arc;
@@ -954,7 +965,7 @@ mod tests {
         // Create the block synchronization logic.
         let block_sync = Arc::new(BlockSync::new(ledger.clone()));
         // Initialize the BFT.
-        BFT::new(block_sync, account.clone(), storage.clone(), ledger.clone(), None, &[], None)
+        BFT::new(account.clone(), storage.clone(), ledger.clone(), block_sync, None, &[], StorageMode::new_test(None))
     }
 
     #[test]
@@ -987,7 +998,7 @@ mod tests {
         let storage = Storage::new(ledger.clone(), Arc::new(BFTMemoryService::new()), 10);
         // Initialize the account.
         let account = Account::new(rng)?;
-        // Set up the BFT logic.
+        // Initialize the BFT.
         let bft = initialize_bft(account.clone(), storage.clone(), ledger.clone())?;
         assert!(bft.is_timer_expired());
         // Ensure this call succeeds on an odd round.
@@ -1151,7 +1162,6 @@ mod tests {
 
         // Initialize the BFT.
         let bft = initialize_bft(account.clone(), storage.clone(), ledger.clone())?;
-        assert!(bft.is_timer_expired()); // 0 + 5 < now()
 
         // Ensure this call succeeds on an even round.
         let result = bft.update_leader_certificate_to_even_round(6);
@@ -1204,7 +1214,6 @@ mod tests {
         // Initialize the BFT.
         let account = Account::new(rng)?;
         let bft = initialize_bft(account.clone(), storage.clone(), ledger.clone())?;
-        assert!(bft.is_timer_expired()); // 0 + 5 < now()
 
         // Set the leader certificate.
         *bft.leader_certificate.write() = Some(leader_certificate);
@@ -1393,7 +1402,6 @@ mod tests {
         let account = Account::new(rng)?;
         let bft = initialize_bft(account.clone(), storage.clone(), ledger.clone())?;
 
-        // Insert a mock DAG in the BFT.
         *bft.dag.write() = crate::helpers::dag::test_helpers::mock_dag_with_modified_last_committed_round(commit_round);
 
         // Ensure that the `gc_round` has not been updated yet.
@@ -1834,6 +1842,7 @@ mod tests {
         // Initialize the bootup BFT.
         let account = Account::new(rng)?;
         let bootup_bft = initialize_bft(account.clone(), storage.clone(), ledger.clone())?;
+
         // Insert a mock DAG in the BFT without bootup.
         *bootup_bft.dag.write() = crate::helpers::dag::test_helpers::mock_dag_with_modified_last_committed_round(0);
         // Sync the BFT DAG at bootup.

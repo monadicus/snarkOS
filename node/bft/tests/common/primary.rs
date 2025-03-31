@@ -22,6 +22,7 @@ use snarkos_account::Account;
 use snarkos_node_bft::{
     BFT,
     MAX_BATCH_DELAY_IN_MS,
+    MEMORY_POOL_PORT,
     Primary,
     helpers::{PrimarySender, Storage, init_primary_channels},
 };
@@ -53,6 +54,7 @@ use locktick::parking_lot::Mutex;
 use parking_lot::Mutex;
 use std::{
     collections::HashMap,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     ops::RangeBounds,
     sync::{Arc, OnceLock},
     time::Duration,
@@ -166,13 +168,28 @@ impl TestNetwork {
             // Initialize the block synchronization logic.
             let block_sync = Arc::new(BlockSync::new(ledger.clone()));
             let (primary, bft) = if config.bft {
-                let bft = BFT::<CurrentNetwork>::new(block_sync, account, storage, ledger, None, &[], Some(id as u16))
-                    .unwrap();
+                let bft = BFT::<CurrentNetwork>::new(
+                    account,
+                    storage,
+                    ledger,
+                    block_sync,
+                    Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), MEMORY_POOL_PORT + id as u16)),
+                    &[],
+                    StorageMode::new_test(None),
+                )
+                .unwrap();
                 (bft.primary().clone(), Some(bft))
             } else {
-                let primary =
-                    Primary::<CurrentNetwork>::new(account, storage, ledger, block_sync, None, &[], Some(id as u16))
-                        .unwrap();
+                let primary = Primary::<CurrentNetwork>::new(
+                    account,
+                    storage,
+                    ledger,
+                    block_sync,
+                    Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), MEMORY_POOL_PORT + id as u16)),
+                    &[],
+                    StorageMode::new_test(None),
+                )
+                .unwrap();
                 (primary, None)
             };
 
@@ -406,5 +423,5 @@ pub fn genesis_ledger(
         })
         .clone();
     // Initialize the ledger with the genesis block.
-    CurrentLedger::load(block, StorageMode::Production).unwrap()
+    CurrentLedger::load(block, StorageMode::new_test(None)).unwrap()
 }

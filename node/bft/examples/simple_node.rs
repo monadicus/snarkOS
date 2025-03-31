@@ -57,7 +57,7 @@ use indexmap::IndexMap;
 use rand::{CryptoRng, Rng, SeedableRng};
 use std::{
     collections::HashMap,
-    net::SocketAddr,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     path::PathBuf,
     str::FromStr,
     sync::{Arc, Mutex, OnceLock, atomic::AtomicBool},
@@ -130,11 +130,12 @@ pub async fn start_bft(
         Arc::new(BFTMemoryService::new()),
         BatchHeader::<CurrentNetwork>::MAX_GC_ROUNDS as u64,
     );
-    // Initialize the gateway IP and dev mode.
-    let (ip, dev) = match peers.get(&node_id) {
-        Some(ip) => (Some(*ip), None),
-        None => (None, Some(node_id)),
+    // Initialize the gateway IP and storage mode.
+    let ip = match peers.get(&node_id) {
+        Some(ip) => Some(*ip),
+        None => Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), MEMORY_POOL_PORT + node_id)),
     };
+    let storage_mode = StorageMode::new_test(None);
     // Initialize the trusted validators.
     let trusted_validators = trusted_validators(node_id, num_nodes, peers);
     // Initialize the consensus channels.
@@ -143,7 +144,8 @@ pub async fn start_bft(
     consensus_handler(consensus_receiver);
     // Initialize the BFT instance.
     let block_sync = Arc::new(BlockSync::new(ledger.clone()));
-    let mut bft = BFT::<CurrentNetwork>::new(block_sync, account, storage, ledger, ip, &trusted_validators, dev)?;
+    let mut bft =
+        BFT::<CurrentNetwork>::new(account, storage, ledger, block_sync, ip, &trusted_validators, storage_mode)?;
     // Run the BFT instance.
     bft.run(Some(consensus_sender), sender.clone(), receiver).await?;
     // Retrieve the BFT's primary.
@@ -172,17 +174,18 @@ pub async fn start_primary(
         Arc::new(BFTMemoryService::new()),
         BatchHeader::<CurrentNetwork>::MAX_GC_ROUNDS as u64,
     );
-    // Initialize the gateway IP and dev mode.
-    let (ip, dev) = match peers.get(&node_id) {
-        Some(ip) => (Some(*ip), None),
-        None => (None, Some(node_id)),
+    // Initialize the gateway IP and storage mode.
+    let ip = match peers.get(&node_id) {
+        Some(ip) => Some(*ip),
+        None => Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), MEMORY_POOL_PORT + node_id)),
     };
+    let storage_mode = StorageMode::new_test(None);
     // Initialize the trusted validators.
     let trusted_validators = trusted_validators(node_id, num_nodes, peers);
     // Initialize the primary instance.
     let block_sync = Arc::new(BlockSync::new(ledger.clone()));
     let mut primary =
-        Primary::<CurrentNetwork>::new(account, storage, ledger, block_sync, ip, &trusted_validators, dev)?;
+        Primary::<CurrentNetwork>::new(account, storage, ledger, block_sync, ip, &trusted_validators, storage_mode)?;
     // Run the primary instance.
     primary.run(None, sender.clone(), receiver).await?;
     // Handle OS signals.
