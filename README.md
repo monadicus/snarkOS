@@ -175,9 +175,9 @@ To start a validator, you can also run the following command from the `snarkOS` 
 
 ### 3.2.1 Enable Validator Telemetry Metrics (Optional)
 
-You can optionally enable validator telemetry to track participation in consensus. This is controlled via the telemetry feature flag and can be enabled in one of two ways:
+Validator telemetry allows you to track participation in consensus. This is optional and can be enabled using the `telemetry` feature flag.
 
-Once enabled, telemetry metrics are exposed through:
+Once enabled, telemetry metrics are available through:
 
 1. Node logs 
 2. REST API endpoints
@@ -186,9 +186,11 @@ Once enabled, telemetry metrics are exposed through:
     // GET /{network}/validators/participation?metadata={true}
     ```
 
+You can enable telemetry in one of the following ways:
+
 #### 1. Enable via [installation](#2.3-installation)
 
-Add the feature flag to the installation command.
+Add the `telemetry` feature flag to the installation command.
 ```
 cargo install --locked --path . --features telemetry
 ```
