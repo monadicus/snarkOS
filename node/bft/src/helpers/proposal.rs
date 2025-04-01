@@ -265,7 +265,9 @@ pub(crate) mod tests {
         let certificate = snarkvm::ledger::narwhal::batch_certificate::test_helpers::sample_batch_certificate(rng);
         let (_, transmissions) = sample_transmissions(&certificate, rng);
 
-        let transmissions = transmissions.into_iter().map(|(id, (t, _))| (id, t)).collect::<IndexMap<_, _>>();
+        let transmissions =
+            certificate.transmission_ids().iter().map(|id| (*id, transmissions.get(id).unwrap().0.clone())).collect();
+
         let batch_header = certificate.batch_header().clone();
         let signatures = certificate.signatures().copied().collect();
 
