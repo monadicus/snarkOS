@@ -28,6 +28,7 @@ locktick = [
   "snarkos-node-router/locktick",
   "snarkvm-synthesizer/locktick"
 ]
+test = [ "snarkvm/test" ]
 test_targets = [ "snarkvm/test_targets" ]
 
 [dependencies.anyhow]
