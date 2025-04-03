@@ -69,7 +69,7 @@ version = "=3.4.0"
 #path = "../../../snarkVM/synthesizer"
 #git = "https://github.com/ProvableHQ/snarkVM.git"
 #rev = "c15997f"
-version = "=1.4.0"
+version = "=1.5.0"
 default-features = false
 optional = true
 
