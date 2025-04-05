@@ -37,7 +37,6 @@ members = [
   "node/sync/communication-service",
   "node/sync/locators",
   "node/tcp",
-  ".integration"
 ]
 
 [workspace.dependencies.aleo-std]
