@@ -66,7 +66,18 @@ pub const MAX_BLOCKS_BEHIND: u32 = 1; // blocks
 /// Note: This here does not need to be a real IP address, but it must be unique/distinct from all other connections.
 pub const DUMMY_SELF_IP: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
 
-/// A struct that keeps track of the current block sync state.
+/// A struct that keeps track of synchronizing blocks with other nodes.
+///
+/// It generates requests to send to other peers and processes responses to those requests.
+/// The struct also keeps track of block locators, which indicate which peers it can fetch blocks from.
+///
+/// # Notes
+/// - The actual network communication happens in `snarkos_node::Client` (for clients and provers) and in `snarkos_node_bft::Sync` (for validators).
+///
+/// - Validators only sync from other nodes using this struct if they fall behind, e.g.,
+///   because they experience a network partition.
+///   In the common case, validators will generate blocks from the DAG after an anchor certificate has been approved
+///   by a supermajority of the committee.
 ///
 /// # State
 /// - When a request is inserted, the `requests` map and `request_timestamps` map insert an entry for the request height.

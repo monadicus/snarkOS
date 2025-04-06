@@ -46,9 +46,18 @@ use tokio::{
     task::JoinHandle,
 };
 
-/// The syncing logic for the consensus layer.
+/// Block synchronization logic for validators.
 ///
-/// This adds validator-specific behavior the generic `BlockSync` module.
+/// Synchronization works differently for nodes that act as validators in AleoBFT;
+/// In the common case, validators generate blocks after receiving an anchor block that has been accepted
+/// by a supermajority of the committee instead of fetching entire blocks from other nodes.
+/// However, if a validator does not have an up-to-date DAG, it might still fetch entire blocks from other nodes.
+///
+/// This struct also manages fetching certificates from other validators during normal operation,
+/// and blocks when falling behind.
+///
+/// Finally, `Sync` handles synchronization of blocks with the validator's local storage:
+/// it loads blocks from the storage on startup and writes new blocks to the storage after discovering them.
 #[derive(Clone)]
 pub struct Sync<N: Network> {
     /// The gateway enables communication with other validators.
@@ -63,7 +72,7 @@ pub struct Sync<N: Network> {
     pending: Arc<Pending<Field<N>, BatchCertificate<N>>>,
     /// The BFT sender.
     bft_sender: Arc<OnceCell<BFTSender<N>>>,
-    /// The spawned handles.
+    /// Handles to the spawned background tasks.
     handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
     /// The response lock.
     response_lock: Arc<TMutex<()>>,
@@ -163,7 +172,7 @@ impl<N: Network> Sync<N> {
             loop {
                 // Sleep briefly to avoid triggering spam detection.
                 tokio::time::sleep(Duration::from_millis(PRIMARY_PING_IN_MS)).await;
-                // let communication = &node.router;
+
                 self_.try_block_sync().await;
 
                 // Sync the storage with the blocks.
@@ -299,7 +308,9 @@ impl<N: Network> Sync<N> {
 // Methods to manage storage.
 impl<N: Network> Sync<N> {
     /// Syncs the storage with the ledger at bootup.
-    pub async fn sync_storage_with_ledger_at_bootup(&self) -> Result<()> {
+    ///
+    /// This is called exactly once when starting the validator.
+    async fn sync_storage_with_ledger_at_bootup(&self) -> Result<()> {
         // Retrieve the latest block in the ledger.
         let latest_block = self.ledger.latest_block();
 
@@ -385,7 +396,9 @@ impl<N: Network> Sync<N> {
     }
 
     /// Syncs the storage with blocks already received from peers.
-    pub async fn sync_storage_with_blocks(&self) -> Result<()> {
+    ///
+    /// This is called periodically at runtime.
+    async fn sync_storage_with_blocks(&self) -> Result<()> {
         // Acquire the response lock.
         let _lock = self.response_lock.lock().await;
 
@@ -453,6 +466,8 @@ impl<N: Network> Sync<N> {
     }
 
     /// Syncs the ledger with the given block without updating the BFT.
+    ///
+    /// This is only used at startup when fetching blocks from storage.
     async fn sync_ledger_with_block_without_bft(&self, block: Block<N>) -> Result<()> {
         // Acquire the sync lock.
         let _lock = self.sync_lock.lock().await;
@@ -486,7 +501,7 @@ impl<N: Network> Sync<N> {
     /// and its addition to the ledger is deferred until the check passes.
     /// Several blocks may be stored in `Sync::latest_block_responses`
     /// before they can be all checked and added to the ledger.
-    pub async fn sync_storage_with_block(&self, block: Block<N>) -> Result<()> {
+    async fn sync_storage_with_block(&self, block: Block<N>) -> Result<()> {
         // Acquire the sync lock.
         let _lock = self.sync_lock.lock().await;
         // Acquire the latest block responses lock.
