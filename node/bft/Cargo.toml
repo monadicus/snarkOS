@@ -38,6 +38,7 @@ cuda = [
   "snarkos-node-bft-ledger-service/cuda",
   "snarkos-node-sync/cuda"
 ]
+test_targets = [ "snarkvm/test_targets" ]
 
 [dependencies.aleo-std]
 workspace = true
