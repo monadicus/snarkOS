@@ -821,7 +821,7 @@ impl<N: Network> Primary<N> {
 
         // Ensure the transaction doesn't bring the proposal above the spend limit.
         let block_height = self.ledger.latest_block_height() + 1;
-        if N::CONSENSUS_VERSION(block_height)? >= ConsensusVersion::V4 {
+        if N::CONSENSUS_VERSION(block_height)? >= ConsensusVersion::V5 {
             let mut proposal_cost = 0u64;
             for transmission_id in batch_header.transmission_ids() {
                 let worker_id = assign_to_worker(*transmission_id, self.num_workers())?;
@@ -2579,7 +2579,7 @@ mod tests {
             1,
             &accounts,
             committee.clone(),
-            CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V4).unwrap(),
+            CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V5).unwrap(),
         );
 
         // Create a valid proposal with an author that isn't the primary.
