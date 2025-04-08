@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright 2024-2025 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -44,6 +44,9 @@ use snarkvm::prelude::{
 use aleo_std::StorageMode;
 use anyhow::Result;
 use core::future::Future;
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::Mutex;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::Mutex;
 use std::{
     net::SocketAddr,
@@ -474,7 +477,9 @@ mod tests {
         // Initialize the account.
         let account = Account::<CurrentNetwork>::new(&mut rng).unwrap();
         // Initialize a new VM.
-        let vm = VM::from(ConsensusStore::<CurrentNetwork, ConsensusMemory<CurrentNetwork>>::open(None)?)?;
+        let vm = VM::from(ConsensusStore::<CurrentNetwork, ConsensusMemory<CurrentNetwork>>::open(
+            StorageMode::new_test(None),
+        )?)?;
         // Initialize the genesis block.
         let genesis = vm.genesis_beacon(account.private_key(), &mut rng)?;
 

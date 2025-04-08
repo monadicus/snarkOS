@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright 2024-2025 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,12 +31,17 @@ use snarkvm::{
     prelude::{cfg_into_iter, cfg_iter},
 };
 
-use anyhow::{Result, bail};
+use anyhow::{Result, anyhow, bail};
+#[cfg(feature = "locktick")]
+use locktick::{parking_lot::Mutex, tokio::Mutex as TMutex};
+#[cfg(not(feature = "locktick"))]
 use parking_lot::Mutex;
 use rayon::prelude::*;
 use std::{collections::HashMap, future::Future, net::SocketAddr, sync::Arc, time::Duration};
+#[cfg(not(feature = "locktick"))]
+use tokio::sync::Mutex as TMutex;
 use tokio::{
-    sync::{Mutex as TMutex, OnceCell, oneshot},
+    sync::{OnceCell, oneshot},
     task::JoinHandle,
 };
 
@@ -61,6 +66,9 @@ pub struct Sync<N: Network> {
     /// The sync lock.
     sync_lock: Arc<TMutex<()>>,
     /// The latest block responses.
+    ///
+    /// This is used in [`Sync::sync_storage_with_block()`] to accumulate blocks
+    /// whose addition to the ledger is deferred until certain checks pass.
     latest_block_responses: Arc<TMutex<HashMap<u32, Block<N>>>>,
 }
 
@@ -291,6 +299,10 @@ impl<N: Network> Sync<N> {
                         self.storage.sync_certificate_with_block(block, certificate, &unconfirmed_transactions);
                     });
                 }
+
+                // Update the validator telemetry.
+                #[cfg(feature = "telemetry")]
+                self.gateway.validator_telemetry().insert_subdag(subdag);
             }
         }
 
@@ -414,6 +426,15 @@ impl<N: Network> Sync<N> {
     }
 
     /// Syncs the storage with the given block.
+    ///
+    /// This also updates the DAG, and uses the DAG to ensure that the block's leader certificate
+    /// meets the voter availability threshold (i.e. > f voting stake)
+    /// or is reachable via a DAG path from a later leader certificate that does.
+    /// Since performing this check requires DAG certificates from later blocks,
+    /// the block is stored in `Sync::latest_block_responses`,
+    /// and its addition to the ledger is deferred until the check passes.
+    /// Several blocks may be stored in `Sync::latest_block_responses`
+    /// before they can be all checked and added to the ledger.
     pub async fn sync_storage_with_block(&self, block: Block<N>) -> Result<()> {
         // Acquire the sync lock.
         let _lock = self.sync_lock.lock().await;
@@ -471,10 +492,15 @@ impl<N: Network> Sync<N> {
             .filter_map(|k| latest_block_responses.get(&k).cloned())
             .collect();
 
-        // Check if the block response is ready to be added to the ledger.
-        // Ensure that the previous block's leader certificate meets the availability threshold
-        // based on the certificates in the current block.
-        // If the availability threshold is not met, process the next block and check if it is linked to the current block.
+        // Check if each block response, from the contiguous sequence just constructed,
+        // is ready to be added to the ledger.
+        // Ensure that the block's leader certificate meets the availability threshold
+        // based on the certificates in the DAG just after the block's round.
+        // If the availability threshold is not met,
+        // process the next block and check if it is linked to the current block,
+        // in the sense that there is a path in the DAG
+        // from the next block's leader certificate
+        // to the current block's leader certificate.
         // Note: We do not advance to the most recent block response because we would be unable to
         // validate if the leader certificate in the block has been certified properly.
         for next_block in contiguous_blocks.into_iter() {
@@ -487,13 +513,15 @@ impl<N: Network> Sync<N> {
                 _ => bail!("Received a block with an unexpected authority type."),
             };
             let commit_round = leader_certificate.round();
-            let certificate_round = commit_round.saturating_add(1);
+            let certificate_round =
+                commit_round.checked_add(1).ok_or_else(|| anyhow!("Integer overflow on round number"))?;
 
-            // Get the committee lookback for the commit round.
-            let committee_lookback = self.ledger.get_committee_lookback_for_round(commit_round)?;
-            // Retrieve all of the certificates for the **certificate** round.
+            // Get the committee lookback for the round just after the leader.
+            let certificate_committee_lookback = self.ledger.get_committee_lookback_for_round(certificate_round)?;
+            // Retrieve all of the certificates for the round just after the leader.
             let certificates = self.storage.get_certificates_for_round(certificate_round);
-            // Construct a set over the authors who included the leader's certificate in the certificate round.
+            // Construct a set over the authors, at the round just after the leader,
+            // who included the leader's certificate in their previous certificate IDs.
             let authors = certificates
                 .iter()
                 .filter_map(|c| match c.previous_certificate_ids().contains(&leader_certificate.id()) {
@@ -504,7 +532,7 @@ impl<N: Network> Sync<N> {
 
             debug!("Validating sync block {next_block_height} at round {commit_round}...");
             // Check if the leader is ready to be committed.
-            if committee_lookback.is_availability_threshold_reached(&authors) {
+            if certificate_committee_lookback.is_availability_threshold_reached(&authors) {
                 // Initialize the current certificate.
                 let mut current_certificate = leader_certificate;
                 // Check if there are any linked blocks that need to be added.
@@ -516,7 +544,7 @@ impl<N: Network> Sync<N> {
                     let Some(previous_block) = latest_block_responses.get(&height) else {
                         bail!("Block {height} is missing from the latest block responses.");
                     };
-                    // Retrieve the previous certificate.
+                    // Retrieve the previous block's leader certificate.
                     let previous_certificate = match previous_block.authority() {
                         Authority::Quorum(subdag) => subdag.leader_certificate().clone(),
                         _ => bail!("Received a block with an unexpected authority type."),
@@ -539,6 +567,8 @@ impl<N: Network> Sync<N> {
                         warn!("Skipping block {block_height} from the latest block responses - not sequential.");
                         continue;
                     }
+                    #[cfg(feature = "telemetry")]
+                    let block_authority = block.authority().clone();
 
                     let self_ = self.clone();
                     tokio::task::spawn_blocking(move || {
@@ -559,6 +589,12 @@ impl<N: Network> Sync<N> {
                     latest_block_responses.remove(&block_height);
                     // Mark the block height as processed in block_sync.
                     self.block_sync.remove_block_response(block_height);
+
+                    // Update the validator telemetry.
+                    #[cfg(feature = "telemetry")]
+                    if let Authority::Quorum(subdag) = block_authority {
+                        self_.gateway.validator_telemetry().insert_subdag(&subdag);
+                    }
                 }
             } else {
                 debug!(
@@ -751,7 +787,7 @@ mod tests {
         let commit_round = 2;
 
         // Initialize the store.
-        let store = CurrentConsensusStore::open(None).unwrap();
+        let store = CurrentConsensusStore::open(StorageMode::new_test(None)).unwrap();
         let account: Account<CurrentNetwork> = Account::new(rng)?;
 
         // Create a genesis block with a seeded RNG to reproduce the same genesis private keys.
@@ -769,7 +805,7 @@ mod tests {
         ];
 
         // Initialize the ledger with the genesis block.
-        let ledger = CurrentLedger::load(genesis.clone(), StorageMode::Production).unwrap();
+        let ledger = CurrentLedger::load(genesis.clone(), StorageMode::new_test(None)).unwrap();
         // Initialize the ledger.
         let core_ledger = Arc::new(CoreLedgerService::new(ledger.clone(), Default::default()));
 
@@ -943,7 +979,7 @@ mod tests {
 
         // Initialize the syncing ledger.
         let syncing_ledger = Arc::new(CoreLedgerService::new(
-            CurrentLedger::load(genesis, StorageMode::Production).unwrap(),
+            CurrentLedger::load(genesis, StorageMode::new_test(None)).unwrap(),
             Default::default(),
         ));
         // Initialize the gateway.
@@ -975,7 +1011,7 @@ mod tests {
         let commit_round = 2;
 
         // Initialize the store.
-        let store = CurrentConsensusStore::open(None).unwrap();
+        let store = CurrentConsensusStore::open(StorageMode::new_test(None)).unwrap();
         let account: Account<CurrentNetwork> = Account::new(rng)?;
 
         // Create a genesis block with a seeded RNG to reproduce the same genesis private keys.
@@ -992,7 +1028,7 @@ mod tests {
             PrivateKey::new(genesis_rng)?,
         ];
         // Initialize the ledger with the genesis block.
-        let ledger = CurrentLedger::load(genesis.clone(), StorageMode::Production).unwrap();
+        let ledger = CurrentLedger::load(genesis.clone(), StorageMode::new_test(None)).unwrap();
         // Initialize the ledger.
         let core_ledger = Arc::new(CoreLedgerService::new(ledger.clone(), Default::default()));
         // Sample rounds of batch certificates starting at the genesis round from a static set of 4 authors.

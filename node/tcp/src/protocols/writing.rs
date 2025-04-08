@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright 2024-2025 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,6 +17,9 @@ use std::{any::Any, collections::HashMap, io, net::SocketAddr, sync::Arc};
 
 use async_trait::async_trait;
 use futures_util::sink::SinkExt;
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::RwLock;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
 use tokio::{
     io::AsyncWrite,

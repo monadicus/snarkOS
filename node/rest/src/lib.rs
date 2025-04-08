@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright 2024-2025 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -46,6 +46,9 @@ use axum::{
     routing::{get, post},
 };
 use axum_extra::response::ErasedJson;
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::Mutex;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::Mutex;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{net::TcpListener, task::JoinHandle};
@@ -193,6 +196,16 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
             .route(&format!("/{network}/committee/latest"), get(Self::get_committee_latest))
             .route(&format!("/{network}/committee/:height"), get(Self::get_committee))
             .route(&format!("/{network}/delegators/:validator"), get(Self::get_delegators_for_validator));
+
+            // If the node is a validator and `telemetry` features is enabled, enable the additional endpoint.
+            #[cfg(feature = "telemetry")]
+            let routes = match self.consensus {
+                Some(_) => routes.route(
+                    &format!("/{network}/validators/participation"),
+                    get(Self::get_validator_participation_scores),
+                ),
+                None => routes,
+            };
 
             // If the `history` feature is enabled, enable the additional endpoint.
             #[cfg(feature = "history")]

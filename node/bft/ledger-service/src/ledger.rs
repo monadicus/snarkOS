@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright 2024-2025 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,12 +23,15 @@ use snarkvm::{
         puzzle::{Solution, SolutionID},
         store::ConsensusStorage,
     },
-    prelude::{Address, Field, FromBytes, Network, Result, bail, cfg_into_iter},
+    prelude::{Address, Field, FromBytes, Network, Result, bail, cfg_into_iter, deployment_cost, execution_cost_v2},
 };
 
+use anyhow::anyhow;
 use indexmap::IndexMap;
-use lru::LruCache;
-use parking_lot::{Mutex, RwLock};
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::RwLock;
+#[cfg(not(feature = "locktick"))]
+use parking_lot::RwLock;
 use rayon::prelude::*;
 use std::{
     collections::BTreeMap,
@@ -41,8 +44,6 @@ use std::{
     },
 };
 
-/// The capacity of the LRU holding the recently queried committees.
-const COMMITTEE_CACHE_SIZE: usize = 16;
 /// The capacity of the cache holding the highest blocks.
 const BLOCK_CACHE_SIZE: usize = 10;
 
@@ -50,7 +51,6 @@ const BLOCK_CACHE_SIZE: usize = 10;
 #[allow(clippy::type_complexity)]
 pub struct CoreLedgerService<N: Network, C: ConsensusStorage<N>> {
     ledger: Ledger<N, C>,
-    committee_cache: Arc<Mutex<LruCache<u64, Committee<N>>>>,
     block_cache: Arc<RwLock<BTreeMap<u32, Block<N>>>>,
     latest_leader: Arc<RwLock<Option<(u64, Address<N>)>>>,
     shutdown: Arc<AtomicBool>,
@@ -59,9 +59,8 @@ pub struct CoreLedgerService<N: Network, C: ConsensusStorage<N>> {
 impl<N: Network, C: ConsensusStorage<N>> CoreLedgerService<N, C> {
     /// Initializes a new core ledger service.
     pub fn new(ledger: Ledger<N, C>, shutdown: Arc<AtomicBool>) -> Self {
-        let committee_cache = Arc::new(Mutex::new(LruCache::new(COMMITTEE_CACHE_SIZE.try_into().unwrap())));
         let block_cache = Arc::new(RwLock::new(BTreeMap::new()));
-        Self { ledger, committee_cache, block_cache, latest_leader: Default::default(), shutdown }
+        Self { ledger, block_cache, latest_leader: Default::default(), shutdown }
     }
 }
 
@@ -169,29 +168,9 @@ impl<N: Network, C: ConsensusStorage<N>> LedgerService<N> for CoreLedgerService<
 
     /// Returns the committee for the given round.
     fn get_committee_for_round(&self, round: u64) -> Result<Committee<N>> {
-        // Check if the committee is already in the cache.
-        if let Some(committee) = self.committee_cache.lock().get(&round) {
-            return Ok(committee.clone());
-        }
-
         match self.ledger.get_committee_for_round(round)? {
-            // Return the committee if it exists.
-            Some(committee) => {
-                // Insert the committee into the cache.
-                self.committee_cache.lock().push(round, committee.clone());
-                // Return the committee.
-                Ok(committee)
-            }
-            // Return the current committee if the round is equivalent.
-            None => {
-                // Retrieve the current committee.
-                let current_committee = self.current_committee()?;
-                // Return the current committee if the round is equivalent.
-                match current_committee.starting_round() == round {
-                    true => Ok(current_committee),
-                    false => bail!("No committee found for round {round} in the ledger"),
-                }
-            }
+            Some(committee) => Ok(committee),
+            None => bail!("No committee found for round {round} in the ledger"),
         }
     }
 
@@ -335,15 +314,8 @@ impl<N: Network, C: ConsensusStorage<N>> LedgerService<N> for CoreLedgerService<
     async fn check_transaction_basic(
         &self,
         transaction_id: N::TransactionID,
-        transaction: Data<Transaction<N>>,
+        transaction: Transaction<N>,
     ) -> Result<()> {
-        // Deserialize the transaction. If the transaction exceeds the maximum size, then return an error.
-        let transaction = spawn_blocking!({
-            match transaction {
-                Data::Object(transaction) => Ok(transaction),
-                Data::Buffer(bytes) => Ok(Transaction::<N>::read_le(&mut bytes.take(N::MAX_TRANSACTION_SIZE as u64))?),
-            }
-        })?;
         // Ensure the transaction ID matches in the transaction.
         if transaction_id != transaction.id() {
             bail!("Invalid transaction - expected {transaction_id}, found {}", transaction.id());
@@ -405,5 +377,31 @@ impl<N: Network, C: ConsensusStorage<N>> LedgerService<N> for CoreLedgerService<
 
         tracing::info!("\n\nAdvanced to block {} at round {} - {}\n", block.height(), block.round(), block.hash());
         Ok(())
+    }
+
+    /// Returns the spent cost for a transaction in microcredits.
+    /// This is used to limit the amount of compute in the block generation hot
+    /// path. This does NOT represent the full costs which a user has to pay.
+    fn transaction_spent_cost_in_microcredits(
+        &self,
+        _transaction_id: N::TransactionID,
+        transaction: Transaction<N>,
+    ) -> Result<u64> {
+        match &transaction {
+            // Include the synthesis cost and storage cost for deployments.
+            Transaction::Deploy(_, _, _, deployment, _) => {
+                let (_, (storage_cost, synthesis_cost, _)) = deployment_cost(deployment)?;
+                storage_cost
+                    .checked_add(synthesis_cost)
+                    .ok_or(anyhow!("The storage and synthesis cost computation overflowed for a deployment"))
+            }
+            // Include the finalize cost and storage cost for executions.
+            Transaction::Execute(_, _, execution, _) => {
+                let (total_cost, (_, _)) = execution_cost_v2(&self.ledger.vm().process().read(), execution)?;
+                Ok(total_cost)
+            }
+            // Fee transactions are internal to the VM, they do not have a compute cost.
+            Transaction::Fee(..) => Ok(0),
+        }
     }
 }
