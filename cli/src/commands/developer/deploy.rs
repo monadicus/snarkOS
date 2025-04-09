@@ -70,7 +70,7 @@ pub struct Deploy {
     /// Store generated deployment transaction to a local file.
     #[clap(long)]
     store: Option<String>,
-    /// Specify the path to a directory containing the ledger
+    /// Specify the path to a directory containing the ledger. Overrides the default path.
     #[clap(long = "storage_path")]
     storage_path: Option<PathBuf>,
 }
