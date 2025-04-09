@@ -221,7 +221,7 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
             .layer(middleware::from_fn(log_middleware))
             // Enable CORS.
             .layer(cors)
-            // Cap body size at 512KiB.
+            // Cap the request body size at 512KiB.
             .layer(DefaultBodyLimit::max(512 * 1024))
             .layer(GovernorLayer {
                 // We can leak this because it is created only once and it persists.
