@@ -147,7 +147,7 @@ pub struct Start {
     pub metrics_ip: Option<SocketAddr>,
 
     /// Specify the path to a directory containing the storage database for the ledger. Overrides
-    /// the default path.
+    /// the default path (also for dev).
     #[clap(long = "storage")]
     pub storage: Option<PathBuf>,
     /// Enables the node to prefetch initial blocks from a CDN
