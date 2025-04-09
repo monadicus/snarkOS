@@ -159,6 +159,7 @@ To start an outer client node, you can also run the following command from the `
 ./run-outer-client.sh
 ```
 
+Outer clients can be bootstrap clients that serve as accessible entry points for new nodes joining the network with publicly known or static IPs.
 For bootstrap clients, we also recommend the use of `--rotate-external-peers` to avoid the bootstrap peerlist from filling up.
 
 ## 3.2 Run an Aleo Validator
