@@ -1136,7 +1136,7 @@ impl<N: Network> Primary<N> {
     ///
     /// For each receiver in the `primary_receiver` struct, there will be a dedicated tasks
     /// that awaits new data and handles it accordingly.
-    /// Additionally, this spawns a tasks that periodically issues PrimaryPings and one that periodically
+    /// Additionally, this spawns a task that periodically issues PrimaryPings and one that periodically
     /// tries to move the the next round of batches.
     ///
     /// This function is called exactly once, in `Self::run()`.
