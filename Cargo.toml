@@ -51,7 +51,6 @@ branch = "feat/reject-old-execs-after-upgrade+staging"
 #version = "=3.7.1"
 features = [ "circuit", "console", "rocks" ]
 
-
 [[bin]]
 name = "snarkos"
 path = "snarkos/main.rs"
