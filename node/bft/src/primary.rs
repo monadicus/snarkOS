@@ -1133,6 +1133,13 @@ impl<N: Network> Primary<N> {
 
 impl<N: Network> Primary<N> {
     /// Starts the primary handlers.
+    ///
+    /// For each receiver in the `primary_receiver` struct, there will be a dedicated tasks
+    /// that awaits new data and handles it accordingly.
+    /// Additionally, this spawns a tasks that periodically issues PrimaryPings and one that periodically
+    /// tries to move the the next round of batches.
+    ///
+    /// This function is called exactly once, in `Self::run()`.
     fn start_handlers(&self, primary_receiver: PrimaryReceiver<N>) {
         let PrimaryReceiver {
             mut rx_batch_propose,
@@ -1143,7 +1150,7 @@ impl<N: Network> Primary<N> {
             mut rx_unconfirmed_transaction,
         } = primary_receiver;
 
-        // Start the primary ping.
+        // Start the primary ping sender.
         let self_ = self.clone();
         self.spawn(async move {
             loop {
@@ -1277,7 +1284,7 @@ impl<N: Network> Primary<N> {
             }
         });
 
-        // Process the proposed batch.
+        // Start the proposed batch handler.
         let self_ = self.clone();
         self.spawn(async move {
             while let Some((peer_ip, batch_propose)) = rx_batch_propose.recv().await {
@@ -1298,7 +1305,7 @@ impl<N: Network> Primary<N> {
             }
         });
 
-        // Process the batch signature.
+        // Start the batch signature handler.
         let self_ = self.clone();
         self.spawn(async move {
             while let Some((peer_ip, batch_signature)) = rx_batch_signature.recv().await {
@@ -1319,7 +1326,7 @@ impl<N: Network> Primary<N> {
             }
         });
 
-        // Process the certified batch.
+        // Start the certified batch handler.
         let self_ = self.clone();
         self.spawn(async move {
             while let Some((peer_ip, batch_certificate)) = rx_batch_certified.recv().await {
@@ -1346,7 +1353,8 @@ impl<N: Network> Primary<N> {
             }
         });
 
-        // Periodically try to increment to the next round.
+        // This task periodically tries to move to the next round.
+        //
         // Note: This is necessary to ensure that the primary is not stuck on a previous round
         // despite having received enough certificates to advance to the next round.
         let self_ = self.clone();
@@ -1385,7 +1393,7 @@ impl<N: Network> Primary<N> {
             }
         });
 
-        // Process the unconfirmed solutions.
+        // Start a handler to process new unconfirmed solutions.
         let self_ = self.clone();
         self.spawn(async move {
             while let Some((solution_id, solution, callback)) = rx_unconfirmed_solution.recv().await {
@@ -1411,7 +1419,7 @@ impl<N: Network> Primary<N> {
             }
         });
 
-        // Process the unconfirmed transactions.
+        // Start a handler to process new unconfirmed transactions.
         let self_ = self.clone();
         self.spawn(async move {
             while let Some((transaction_id, transaction, callback)) = rx_unconfirmed_transaction.recv().await {

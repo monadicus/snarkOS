@@ -25,6 +25,7 @@ use snarkvm::{
 use indexmap::{IndexMap, IndexSet};
 use std::collections::{HashMap, VecDeque, hash_map::Entry::Vacant};
 
+/// Maintains a queue of verified ("ready") transactions.
 #[derive(Clone, Debug)]
 pub struct Ready<N: Network> {
     /// Maps each transmission ID to its logical index (physical index + offset)

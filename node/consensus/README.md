@@ -6,5 +6,5 @@
 
 The `snarkos-node-consensus` crate provides the consensus layer for the snarkOS node.
 
-It builds on top of the `snarkos-node-bft` crate, which provides an abstract implementationv of the AleoBFT.
-More concretely, this crate provides the communication logic that allows multiple AleoBFT nodes to interact with each other.
+The crate builds on top of the `snarkos-node-bft`, which implements AleoBFT.
+It manages a ratelimiter/mempool for incoming transmissions, and manages construction of blcoks from batches that have been confirmed by the BFT layer.
