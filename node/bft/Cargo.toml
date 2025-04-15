@@ -40,7 +40,8 @@ cuda = [
 ]
 test = [
   "snarkos-node-bft-ledger-service/test",
-  "snarkos-node-bft-storage-service/test"
+  "snarkos-node-bft-storage-service/test",
+  "snarkvm/test"
 ]
 test_targets = [ "snarkvm/test_targets" ]
 
