@@ -197,6 +197,16 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
             .route(&format!("/{network}/committee/:height"), get(Self::get_committee))
             .route(&format!("/{network}/delegators/:validator"), get(Self::get_delegators_for_validator));
 
+            // If the node is a validator and `telemetry` features is enabled, enable the additional endpoint.
+            #[cfg(feature = "telemetry")]
+            let routes = match self.consensus {
+                Some(_) => routes.route(
+                    &format!("/{network}/validators/participation"),
+                    get(Self::get_validator_participation_scores),
+                ),
+                None => routes,
+            };
+
             // If the `history` feature is enabled, enable the additional endpoint.
             #[cfg(feature = "history")]
             let routes =
@@ -211,7 +221,7 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
             .layer(middleware::from_fn(log_middleware))
             // Enable CORS.
             .layer(cors)
-            // Cap body size at 512KiB.
+            // Cap the request body size at 512KiB.
             .layer(DefaultBodyLimit::max(512 * 1024))
             .layer(GovernorLayer {
                 // We can leak this because it is created only once and it persists.

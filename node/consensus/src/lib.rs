@@ -35,6 +35,7 @@ use snarkos_node_bft::{
 };
 use snarkos_node_bft_ledger_service::LedgerService;
 use snarkos_node_bft_storage_service::BFTPersistentStorage;
+use snarkos_node_sync::BlockSync;
 use snarkvm::{
     ledger::{
         block::Transaction,
@@ -117,21 +118,17 @@ impl<N: Network> Consensus<N> {
     pub fn new(
         account: Account<N>,
         ledger: Arc<dyn LedgerService<N>>,
+        block_sync: Arc<BlockSync<N>>,
         ip: Option<SocketAddr>,
         trusted_validators: &[SocketAddr],
         storage_mode: StorageMode,
     ) -> Result<Self> {
-        // Recover the development ID, if it is present.
-        let dev = match storage_mode {
-            StorageMode::Development(id) => Some(id),
-            StorageMode::Production | StorageMode::Custom(..) | StorageMode::Test(_) => None,
-        };
         // Initialize the Narwhal transmissions.
-        let transmissions = Arc::new(BFTPersistentStorage::open(storage_mode)?);
+        let transmissions = Arc::new(BFTPersistentStorage::open(storage_mode.clone())?);
         // Initialize the Narwhal storage.
         let storage = NarwhalStorage::new(ledger.clone(), transmissions, BatchHeader::<N>::MAX_GC_ROUNDS as u64);
         // Initialize the BFT.
-        let bft = BFT::new(account, storage, ledger.clone(), ip, trusted_validators, dev)?;
+        let bft = BFT::new(account, storage, ledger.clone(), block_sync, ip, trusted_validators, storage_mode)?;
         // Return the consensus.
         Ok(Self {
             ledger,
