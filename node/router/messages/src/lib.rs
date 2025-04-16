@@ -112,10 +112,13 @@ impl<N: Network> From<DisconnectReason> for Message<N> {
 }
 
 impl<N: Network> Message<N> {
-    /// The version of the network protocol; it can be incremented in order to force users to update.
-    pub const VERSION: u32 = 17;
     /// The version of the network protocol; this can is incremented for breaking changes between migration versions.
-    pub const VERSIONS: [(ConsensusVersion, u32); 1] = [(ConsensusVersion::V5, 17)];
+    pub const VERSIONS: [(ConsensusVersion, u32); 2] = [(ConsensusVersion::V4, 16), (ConsensusVersion::V5, 17)];
+
+    /// Returns the latest message version.
+    pub fn latest_message_version() -> u32 {
+        Self::VERSIONS.last().map(|(_, version)| *version).unwrap_or(0)
+    }
 
     /// Returns the message name.
     #[inline]

@@ -167,6 +167,7 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
             node_ip,
             NodeType::Client,
             account,
+            ledger_service.clone(),
             trusted_peers,
             Self::MAXIMUM_NUMBER_OF_PEERS as u16,
             rotate_external_peers,

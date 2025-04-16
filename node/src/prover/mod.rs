@@ -113,6 +113,7 @@ impl<N: Network, C: ConsensusStorage<N>> Prover<N, C> {
             node_ip,
             NodeType::Prover,
             account,
+            ledger_service.clone(),
             trusted_peers,
             Self::MAXIMUM_NUMBER_OF_PEERS as u16,
             rotate_external_peers,
