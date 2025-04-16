@@ -65,6 +65,7 @@ pub use snarkos_node_bft_events::DataBlocks;
 use snarkos_node_sync_locators::BlockLocators;
 use snarkvm::prelude::{
     Address,
+    ConsensusVersion,
     FromBytes,
     Network,
     Signature,
@@ -113,6 +114,8 @@ impl<N: Network> From<DisconnectReason> for Message<N> {
 impl<N: Network> Message<N> {
     /// The version of the network protocol; it can be incremented in order to force users to update.
     pub const VERSION: u32 = 17;
+    /// The version of the network protocol; this can is incremented for breaking changes between migration versions.
+    pub const VERSIONS: [(ConsensusVersion, u32); 1] = [(ConsensusVersion::V5, 17)];
 
     /// Returns the message name.
     #[inline]

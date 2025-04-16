@@ -39,7 +39,7 @@ pub use outbound::*;
 mod routing;
 pub use routing::*;
 
-use crate::messages::NodeType;
+use crate::messages::{Message, NodeType};
 use snarkos_account::Account;
 use snarkos_node_tcp::{Config, P2P, Tcp, is_bogon_ip, is_unspecified_or_broadcast_ip};
 
@@ -249,6 +249,15 @@ impl<N: Network> Router<N> {
     /// Returns `true` if the given IP is not this node, is not a bogon address, and is not unspecified.
     pub fn is_valid_peer_ip(&self, ip: &SocketAddr) -> bool {
         !self.is_local_ip(ip) && !is_bogon_ip(ip.ip()) && !is_unspecified_or_broadcast_ip(ip.ip())
+    }
+
+    /// Returns `true` if the message version is valid.
+    pub fn is_valid_message_version(&self, message_version: u32) -> bool {
+        // TODO (raychu86) Consider the following cases:
+        //  1. Client node that is caught up
+        //  2. Validator nodes connecting to clients
+        //  3. Prover nodes that do not have blocks in their ledger.
+        message_version >= Message::<N>::VERSION
     }
 
     /// Returns the node type.
