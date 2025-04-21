@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright 2024-2025 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -48,7 +48,10 @@ use aleo_std::StorageMode;
 use anyhow::Result;
 use colored::Colorize;
 use indexmap::IndexMap;
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::Mutex;
 use lru::LruCache;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::Mutex;
 use std::{future::Future, net::SocketAddr, num::NonZeroUsize, sync::Arc, time::Duration};
 use tokio::{
@@ -118,17 +121,12 @@ impl<N: Network> Consensus<N> {
         trusted_validators: &[SocketAddr],
         storage_mode: StorageMode,
     ) -> Result<Self> {
-        // Recover the development ID, if it is present.
-        let dev = match storage_mode {
-            StorageMode::Development(id) => Some(id),
-            StorageMode::Production | StorageMode::Custom(..) => None,
-        };
         // Initialize the Narwhal transmissions.
-        let transmissions = Arc::new(BFTPersistentStorage::open(storage_mode)?);
+        let transmissions = Arc::new(BFTPersistentStorage::open(storage_mode.clone())?);
         // Initialize the Narwhal storage.
         let storage = NarwhalStorage::new(ledger.clone(), transmissions, BatchHeader::<N>::MAX_GC_ROUNDS as u64);
         // Initialize the BFT.
-        let bft = BFT::new(account, storage, ledger.clone(), ip, trusted_validators, dev)?;
+        let bft = BFT::new(account, storage, ledger.clone(), ip, trusted_validators, storage_mode)?;
         // Return the consensus.
         Ok(Self {
             ledger,

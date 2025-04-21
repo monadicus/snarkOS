@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright 2024-2025 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -57,6 +57,9 @@ pub fn log_clean_error(storage_mode: &StorageMode) {
         }
         StorageMode::Custom(path) => {
             error!("Storage corruption detected! Run `snarkos clean --path {}` to reset storage", path.display())
+        }
+        StorageMode::Test(_) => {
+            // Ephemeral location - no need for cleanups.
         }
     }
 }

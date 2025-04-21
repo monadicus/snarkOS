@@ -40,14 +40,14 @@ members = [
 ]
 
 [workspace.dependencies.aleo-std]
-version = "=0.1.24"
+version = "1.0.1"
 default-features = false
 
 [workspace.dependencies.snarkvm] # If this is updated, the rev in `node/rest/Cargo.toml` must be updated as well.
 #path = "../snarkVM"
-#git = "https://github.com/ProvableHQ/snarkVM.git"
-#rev = "c15997f"
-version = "=1.5.0"
+git = "https://github.com/ProvableHQ/snarkVM.git"
+rev = "0face8c"
+#version = "=1.5.0"
 features = [ "circuit", "console", "rocks" ]
 
 [[bin]]
@@ -57,6 +57,30 @@ path = "snarkos/main.rs"
 [features]
 default = [ "snarkos-node-metrics", "snarkos-node/metrics", "snarkos-cli/metrics" ]
 history = [ "snarkos-node/history" ]
+telemetry = [ "snarkos-node/telemetry" ]
+cuda = [
+  "snarkos-account/cuda",
+  "snarkos-cli/cuda",
+  "snarkos-node/cuda",
+  "snarkos-node-bft/cuda",
+  "snarkos-node-cdn/cuda",
+  "snarkos-node-consensus/cuda",
+  "snarkos-node-rest/cuda",
+  "snarkos-node-router/cuda",
+  "snarkos-node-sync/cuda"
+]
+locktick = [
+  "dep:locktick",
+  "dep:tracing",
+  "snarkos-node/locktick",
+  "snarkos-node-bft/locktick",
+  "snarkos-node-consensus/locktick",
+  "snarkos-node-metrics/locktick",
+  "snarkos-node-rest/locktick",
+  "snarkos-node-router/locktick",
+  "snarkos-node-sync/locktick",
+  "snarkos-node-tcp/locktick"
+]
 test_targets = [ "snarkos-cli/test_targets" ]
 
 [dependencies.anyhow]
@@ -68,6 +92,10 @@ features = [ "derive" ]
 
 [dependencies.crossterm]
 version = "0.27.0"
+
+[dependencies.locktick]
+version = "0.3"
+optional = true
 
 [dependencies.once_cell]
 version = "1"
@@ -124,6 +152,10 @@ version = "=3.5.0"
 [target.'cfg(all(target_os = "linux", target_arch = "x86_64"))'.dependencies]
 tikv-jemallocator = "0.5"
 
+[dependencies.tracing]
+version = "0.1"
+optional = true
+
 [dev-dependencies.rusty-hook]
 version = "0.11.2"
 
@@ -138,6 +170,9 @@ version = "2"
 opt-level = 3
 lto = "thin"
 incremental = true
+# uncomment the 2 lines below when building with the locktick feature
+# debug = "line-tables-only"
+# strip = "none"
 
 [profile.bench]
 opt-level = 3

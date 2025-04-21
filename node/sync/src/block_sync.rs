@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright 2024-2025 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,6 +27,9 @@ use snarkvm::prelude::{Network, block::Block};
 use anyhow::{Result, bail, ensure};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::{Mutex, RwLock};
+#[cfg(not(feature = "locktick"))]
 use parking_lot::{Mutex, RwLock};
 use rand::{CryptoRng, Rng, prelude::IteratorRandom};
 use std::{
@@ -204,6 +207,7 @@ impl<N: Network> BlockSync<N> {
         let latest_height = self.ledger.latest_block_height();
 
         // Initialize the recents map.
+        // TODO: generalize this for RECENT_INTERVAL > 1, or remove this comment if we hardwire that to 1
         let mut recents = IndexMap::with_capacity(NUM_RECENT_BLOCKS);
         // Retrieve the recent block hashes.
         for height in latest_height.saturating_sub((NUM_RECENT_BLOCKS - 1) as u32)..=latest_height {
@@ -419,16 +423,18 @@ impl<N: Network> BlockSync<N> {
     }
 
     /// Updates the block locators and common ancestors for the given peer IP.
-    /// This function checks that the given block locators are well-formed, however it does **not** check
-    /// that the block locators are consistent the peer's previous block locators or other peers' block locators.
+    ///
+    /// This function does not need to check that the block locators are well-formed,
+    /// because that is already done in [`BlockLocators::new()`], as noted in [`BlockLocators`].
+    ///
+    /// This function does **not** check
+    /// that the block locators are consistent with the peer's previous block locators or other peers' block locators.
     pub fn update_peer_locators(&self, peer_ip: SocketAddr, locators: BlockLocators<N>) -> Result<()> {
         // If the locators match the existing locators for the peer, return early.
         if self.locators.read().get(&peer_ip) == Some(&locators) {
             return Ok(());
         }
 
-        // Ensure the given block locators are well-formed.
-        locators.ensure_is_valid()?;
         // Update the locators entry for the given peer IP.
         self.locators.write().insert(peer_ip, locators.clone());
 
@@ -1518,7 +1524,9 @@ mod tests {
         }
 
         // Duplicate a new sync module with a different height to simulate block advancement.
-        let ledger_height = rng.gen_range(0..locator_height);
+        // This range needs to be inclusive, so that the range is never empty,
+        // even with a locator height of 0.
+        let ledger_height = rng.gen_range(0..=locator_height);
         let new_sync = duplicate_sync_at_new_height(&sync, ledger_height);
 
         // Check that the number of requests is the same.

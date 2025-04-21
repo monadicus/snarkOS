@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright 2024-2025 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,6 +16,7 @@
 #[macro_use]
 extern crate tracing;
 
+use aleo_std::StorageMode;
 use snarkos_account::Account;
 use snarkos_node_bft::{
     BFT,
@@ -55,7 +56,7 @@ use indexmap::IndexMap;
 use rand::{CryptoRng, Rng, SeedableRng};
 use std::{
     collections::HashMap,
-    net::SocketAddr,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     path::PathBuf,
     str::FromStr,
     sync::{Arc, Mutex, OnceLock, atomic::AtomicBool},
@@ -87,7 +88,7 @@ pub fn initialize_logger(verbosity: u8) {
             .add_directive("hyper=off".parse().unwrap())
             .add_directive("reqwest=off".parse().unwrap())
             .add_directive("want=off".parse().unwrap())
-            .add_directive("warp=off".parse().unwrap());
+            .add_directive("h2=off".parse().unwrap());
 
         let filter = if verbosity > 3 {
             filter.add_directive("snarkos_node_bft::gateway=trace".parse().unwrap())
@@ -128,11 +129,12 @@ pub async fn start_bft(
         Arc::new(BFTMemoryService::new()),
         BatchHeader::<CurrentNetwork>::MAX_GC_ROUNDS as u64,
     );
-    // Initialize the gateway IP and dev mode.
-    let (ip, dev) = match peers.get(&node_id) {
-        Some(ip) => (Some(*ip), None),
-        None => (None, Some(node_id)),
+    // Initialize the gateway IP and storage mode.
+    let ip = match peers.get(&node_id) {
+        Some(ip) => Some(*ip),
+        None => Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), MEMORY_POOL_PORT + node_id)),
     };
+    let storage_mode = StorageMode::new_test(None);
     // Initialize the trusted validators.
     let trusted_validators = trusted_validators(node_id, num_nodes, peers);
     // Initialize the consensus channels.
@@ -140,7 +142,7 @@ pub async fn start_bft(
     // Initialize the consensus receiver handler.
     consensus_handler(consensus_receiver);
     // Initialize the BFT instance.
-    let mut bft = BFT::<CurrentNetwork>::new(account, storage, ledger, ip, &trusted_validators, dev)?;
+    let mut bft = BFT::<CurrentNetwork>::new(account, storage, ledger, ip, &trusted_validators, storage_mode)?;
     // Run the BFT instance.
     bft.run(Some(consensus_sender), sender.clone(), receiver).await?;
     // Retrieve the BFT's primary.
@@ -169,15 +171,16 @@ pub async fn start_primary(
         Arc::new(BFTMemoryService::new()),
         BatchHeader::<CurrentNetwork>::MAX_GC_ROUNDS as u64,
     );
-    // Initialize the gateway IP and dev mode.
-    let (ip, dev) = match peers.get(&node_id) {
-        Some(ip) => (Some(*ip), None),
-        None => (None, Some(node_id)),
+    // Initialize the gateway IP and storage mode.
+    let ip = match peers.get(&node_id) {
+        Some(ip) => Some(*ip),
+        None => Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), MEMORY_POOL_PORT + node_id)),
     };
+    let storage_mode = StorageMode::new_test(None);
     // Initialize the trusted validators.
     let trusted_validators = trusted_validators(node_id, num_nodes, peers);
     // Initialize the primary instance.
-    let mut primary = Primary::<CurrentNetwork>::new(account, storage, ledger, ip, &trusted_validators, dev)?;
+    let mut primary = Primary::<CurrentNetwork>::new(account, storage, ledger, ip, &trusted_validators, storage_mode)?;
     // Run the primary instance.
     primary.run(None, sender.clone(), receiver).await?;
     // Handle OS signals.
@@ -219,7 +222,7 @@ fn genesis_block(
     rng: &mut (impl Rng + CryptoRng),
 ) -> Block<CurrentNetwork> {
     // Initialize the store.
-    let store = ConsensusStore::<_, ConsensusMemory<_>>::open(None).unwrap();
+    let store = ConsensusStore::<_, ConsensusMemory<_>>::open(StorageMode::new_test(None)).unwrap();
     // Initialize a new VM.
     let vm = VM::from(store).unwrap();
     // Initialize the genesis block.
