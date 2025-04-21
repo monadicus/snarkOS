@@ -52,7 +52,7 @@ const MAXIMUM_REQUEST_ATTEMPTS: u8 = 10;
 /// Updates the metrics during CDN sync.
 #[cfg(feature = "metrics")]
 fn update_block_metrics(height: u32) {
-    // Update the BFT height metric
+    // Update the BFT height metric.
     crate::metrics::gauge(crate::metrics::bft::HEIGHT, height as f64);
 }
 
