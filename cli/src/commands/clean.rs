@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright 2024-2025 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -38,22 +38,28 @@ pub struct Clean {
 impl Clean {
     /// Cleans the snarkOS node storage.
     pub fn parse(self) -> Result<String> {
+        // Initialize the storage mode.
+        let storage_mode = match self.path {
+            Some(path) => StorageMode::Custom(path),
+            None => match self.dev {
+                Some(id) => StorageMode::Development(id),
+                None => StorageMode::Production,
+            },
+        };
+
         // Remove the current proposal cache file, if it exists.
-        let proposal_cache_path = proposal_cache_path(self.network, self.dev);
+        let proposal_cache_path = proposal_cache_path(self.network, &storage_mode);
         if proposal_cache_path.exists() {
             if let Err(err) = std::fs::remove_file(&proposal_cache_path) {
                 bail!("Failed to remove the current proposal cache file at {}: {err}", proposal_cache_path.display());
             }
         }
         // Remove the specified ledger from storage.
-        Self::remove_ledger(self.network, match self.path {
-            Some(path) => StorageMode::Custom(path),
-            None => StorageMode::from(self.dev),
-        })
+        Self::remove_ledger(self.network, &storage_mode)
     }
 
     /// Removes the specified ledger from storage.
-    pub(crate) fn remove_ledger(network: u16, mode: StorageMode) -> Result<String> {
+    pub(crate) fn remove_ledger(network: u16, mode: &StorageMode) -> Result<String> {
         // Construct the path to the ledger in storage.
         let path = aleo_std::aleo_ledger_dir(network, mode);
 

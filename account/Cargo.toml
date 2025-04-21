@@ -1,6 +1,6 @@
 [package]
 name = "snarkos-account"
-version = "3.5.0"
+version = "3.6.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Account for a decentralized operating system"
 homepage = "https://aleo.org"
@@ -17,6 +17,7 @@ license = "Apache-2.0"
 edition = "2021"
 
 [features]
+cuda = [ "snarkvm/cuda" ]
 test_targets = [ "snarkvm/test_targets" ]
 
 [dependencies.anyhow]

@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright 2024-2025 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -469,5 +469,38 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
             .map_err(|_| RestError(format!("Could not load mapping '{mapping}' from block '{height}'")))?;
 
         Ok((StatusCode::OK, [(CONTENT_TYPE, "application/json")], result))
+    }
+
+    // GET /{network}/validators/participation
+    // GET /{network}/validators/participation?metadata={true}
+    #[cfg(feature = "telemetry")]
+    pub(crate) async fn get_validator_participation_scores(
+        State(rest): State<Self>,
+        metadata: Query<Metadata>,
+    ) -> Result<impl axum::response::IntoResponse, RestError> {
+        match rest.consensus {
+            Some(consensus) => {
+                // Retrieve the latest committee.
+                let latest_committee = rest.ledger.latest_committee()?;
+                // Retrieve the latest participation scores.
+                let participation_scores = consensus
+                    .bft()
+                    .primary()
+                    .gateway()
+                    .validator_telemetry()
+                    .get_participation_scores(&latest_committee);
+
+                // Check if metadata is requested and return the participation scores with metadata if so.
+                if metadata.metadata.unwrap_or(false) {
+                    return Ok(ErasedJson::pretty(json!({
+                        "participation_scores": participation_scores,
+                        "height": rest.ledger.latest_height(),
+                    })));
+                }
+
+                Ok(ErasedJson::pretty(participation_scores))
+            }
+            None => Err(RestError("Route isn't available for this node type".to_string())),
+        }
     }
 }

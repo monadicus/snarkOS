@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright 2024-2025 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,6 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#[cfg(feature = "telemetry")]
+use crate::helpers::Telemetry;
 use crate::{
     CONTEXT,
     MAX_BATCH_DELAY_IN_MS,
@@ -63,6 +65,9 @@ use snarkvm::{
 use colored::Colorize;
 use futures::SinkExt;
 use indexmap::{IndexMap, IndexSet};
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::{Mutex, RwLock};
+#[cfg(not(feature = "locktick"))]
 use parking_lot::{Mutex, RwLock};
 use rand::seq::{IteratorRandom, SliceRandom};
 #[cfg(not(any(test)))]
@@ -128,6 +133,9 @@ pub struct Gateway<N: Network> {
     /// prevent simultaneous "two-way" connections between two peers (i.e. both nodes simultaneously
     /// attempt to connect to each other). This set is used to prevent this from happening.
     connecting_peers: Arc<Mutex<IndexSet<SocketAddr>>>,
+    /// The validator telemetry.
+    #[cfg(feature = "telemetry")]
+    validator_telemetry: Telemetry<N>,
     /// The primary sender.
     primary_sender: Arc<OnceCell<PrimarySender<N>>>,
     /// The worker senders.
@@ -169,6 +177,8 @@ impl<N: Network> Gateway<N> {
             trusted_validators: trusted_validators.iter().copied().collect(),
             connected_peers: Default::default(),
             connecting_peers: Default::default(),
+            #[cfg(feature = "telemetry")]
+            validator_telemetry: Default::default(),
             primary_sender: Default::default(),
             worker_senders: Default::default(),
             sync_sender: Default::default(),
@@ -295,6 +305,12 @@ impl<N: Network> Gateway<N> {
     /// Returns the resolver.
     pub fn resolver(&self) -> &Resolver<N> {
         &self.resolver
+    }
+
+    /// Returns the validator telemetry.
+    #[cfg(feature = "telemetry")]
+    pub fn validator_telemetry(&self) -> &Telemetry<N> {
+        &self.validator_telemetry
     }
 
     /// Returns the primary sender.
@@ -915,7 +931,11 @@ impl<N: Network> Gateway<N> {
 impl<N: Network> Gateway<N> {
     /// Handles the heartbeat request.
     fn heartbeat(&self) {
+        // Log the connected validators.
         self.log_connected_validators();
+        // Log the validator participation scores.
+        #[cfg(feature = "telemetry")]
+        self.log_participation_scores();
         // Keep the trusted validators connected.
         self.handle_trusted_validators();
         // Removes any validators that not in the current committee.
@@ -963,6 +983,20 @@ impl<N: Network> Gateway<N> {
             // Log the validators that are not connected.
             for address in committee_members.difference(&connected_validator_addresses) {
                 debug!("{}", format!("  Not connected to {address}").dimmed());
+            }
+        }
+    }
+
+    // Logs the validator participation scores.
+    #[cfg(feature = "telemetry")]
+    fn log_participation_scores(&self) {
+        if let Ok(current_committee) = self.ledger.current_committee() {
+            // Retrieve the participation scores.
+            let participation_scores = self.validator_telemetry().get_participation_scores(&current_committee);
+            // Log the participation scores.
+            debug!("Participation Scores (in the last {} rounds):", self.storage.max_gc_rounds());
+            for (address, score) in participation_scores {
+                debug!("{}", format!("  {address} - {score:.2}%").dimmed());
             }
         }
     }
@@ -1128,7 +1162,7 @@ impl<N: Network> Reading for Gateway<N> {
     type Message = Event<N>;
 
     /// The maximum queue depth of incoming messages for a single peer.
-    const MESSAGE_QUEUE_DEPTH: usize = 256_000;
+    const MESSAGE_QUEUE_DEPTH: usize = 300_000;
 
     /// Creates a [`Decoder`] used to interpret messages from the network.
     /// The `side` param indicates the connection side **from the node's perspective**.
@@ -1158,7 +1192,7 @@ impl<N: Network> Writing for Gateway<N> {
     type Message = Event<N>;
 
     /// The maximum queue depth of outgoing messages for a single peer.
-    const MESSAGE_QUEUE_DEPTH: usize = 256_000;
+    const MESSAGE_QUEUE_DEPTH: usize = 300_000;
 
     /// Creates an [`Encoder`] used to write the outbound messages to the target stream.
     /// The `side` parameter indicates the connection side **from the node's perspective**.
@@ -1757,7 +1791,15 @@ mod prop_tests {
             * BatchHeader::<MainnetV0>::MAX_TRANSMISSIONS_PER_BATCH;
 
         // The queue depths may be larger than the calculated maximum needed capacity.
-        assert!(<Gateway<MainnetV0> as Reading>::MESSAGE_QUEUE_DEPTH >= desired_rw_queue_depth);
-        assert!(<Gateway<MainnetV0> as Writing>::MESSAGE_QUEUE_DEPTH >= desired_rw_queue_depth);
+        assert!(
+            <Gateway<MainnetV0> as Reading>::MESSAGE_QUEUE_DEPTH >= desired_rw_queue_depth,
+            "{}",
+            desired_rw_queue_depth
+        );
+        assert!(
+            <Gateway<MainnetV0> as Writing>::MESSAGE_QUEUE_DEPTH >= desired_rw_queue_depth,
+            "{}",
+            desired_rw_queue_depth
+        );
     }
 }

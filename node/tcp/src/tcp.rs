@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright 2024-2025 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,7 +26,10 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::Mutex;
 use once_cell::sync::OnceCell;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::Mutex;
 use tokio::{
     io::split,

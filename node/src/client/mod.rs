@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright 2024-2025 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -46,7 +46,10 @@ use snarkvm::{
 use aleo_std::StorageMode;
 use anyhow::Result;
 use core::future::Future;
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::Mutex;
 use lru::LruCache;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::Mutex;
 use std::{
     net::SocketAddr,

@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright 2024-2025 Aleo Network Foundation
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -45,6 +45,11 @@ pub use signed_proposals::*;
 
 pub mod storage;
 pub use storage::*;
+
+#[cfg(feature = "telemetry")]
+pub mod telemetry;
+#[cfg(feature = "telemetry")]
+pub use telemetry::*;
 
 pub mod timestamp;
 pub use timestamp::*;

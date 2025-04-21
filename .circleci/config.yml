@@ -165,6 +165,42 @@ commands:
       - clear_environment:
           cache_key: << parameters.cache_key >>
 
+  run_devnet:
+    description: "Run devnet for integration testing"
+    parameters:
+      workspace_member:
+        type: string
+      cache_key:
+        type: string
+      validators:
+        type: integer
+        default: 4
+      clients:
+        type: integer
+        default: 2
+      network_id:
+        type: integer
+        default: 0
+      min_height:
+        type: integer
+        default: 45
+    steps:
+      - checkout
+      - setup_environment:
+          cache_key: << parameters.cache_key >>
+      - run:
+          name: "Install snarkos"
+          command: |
+            cargo install --locked --path .
+      - run:
+          name: "Run devnet test"
+          no_output_timeout: 20m  # Allow 20 minutes total
+          command: |
+            chmod +x .circleci/devnet_ci.sh
+            ./.circleci/devnet_ci.sh << parameters.validators >> << parameters.clients >> << parameters.network_id >> << parameters.min_height >>
+      - clear_environment:
+          cache_key: << parameters.cache_key >>
+
   install_rust_nightly:
     description: "Install Rust nightly toolchain"
     steps:
@@ -333,6 +369,15 @@ jobs:
           workspace_member: node/tcp
           cache_key: v3.3.1-rust-1.83.0-node-tcp-cache
 
+  devnet-test:
+    docker:
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+    resource_class: << pipeline.parameters.xlarge >>
+    steps:
+      - run_devnet:
+          workspace_member: .
+          cache_key: v3.3.1-rust-1.83.0-devnet-test-cache
+
   check-fmt:
     docker:
       - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
@@ -404,6 +449,7 @@ workflows:
       - node-tcp
       - check-fmt
       - check-clippy
+      - devnet-test
 
   windows-workflow:
     jobs:
