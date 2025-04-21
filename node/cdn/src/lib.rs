@@ -18,5 +18,8 @@
 #[macro_use]
 extern crate tracing;
 
+#[cfg(feature = "metrics")]
+pub use snarkos_node_metrics as metrics;
+
 mod blocks;
 pub use blocks::{load_blocks, sync_ledger_with_cdn};
