@@ -258,44 +258,15 @@ impl<N: Network> Router<N> {
 
     /// Returns `true` if the message version is valid.
     pub fn is_valid_message_version(&self, message_version: u32) -> bool {
-        // Fetch the latest message version.
-        let latest_message_version = Message::<N>::latest_message_version();
-
         // Determine the minimum message version this node will accept, based on its role.
         // - Provers always operate at the latest message version.
         // - Validators and clients may accept older versions, depending on their current block height.
-        //
-        // Example scenario:
-        // - At block height `X`, the protocol upgrades to message version from `Y-1` to `Y`.
-        // - Client A upgrades and starts using message version `Y`.
-        // - Client B has not upgraded and still uses message version `Y-1`.
-        // - Until block `X`, they stay connected and can communicate.
-        // - After block `X`, Client A will reject messages from Client B.
         let lowest_accepted_message_version = match self.node_type {
             // Provers should always use the latest version.
             NodeType::Prover => Message::<N>::latest_message_version(),
             // Validators and clients accept messages from lower version based on the migration height.
             NodeType::Validator | NodeType::Client => {
-                let latest_block_height = self.ledger.latest_block_height();
-                let versions = Message::<N>::VERSIONS;
-                // TODO (raychu86): Refactor `consensus_config_value` to support generic constant types.
-                // Determine the message version to use.
-                N::CONSENSUS_VERSION(latest_block_height).map_or(latest_message_version, |seek_version| {
-                    // Search the consensus value for the specified version.
-                    match versions.binary_search_by(|(version, _)| version.cmp(&seek_version)) {
-                        // If a value was found for this consensus version, return it.
-                        Ok(index) => versions[index].1,
-                        Err(index) => {
-                            // If the specified version was not found exactly, determine whether to return an appropriate value anyway.
-                            match index {
-                                // This constant is not yet in effect at this consensus version.
-                                0 => Message::<N>::latest_message_version(),
-                                // Return the appropriate value belonging to the consensus version *lower* than the sought version.
-                                _ => versions[index - 1].1,
-                            }
-                        }
-                    }
-                })
+                Message::<N>::lowest_accepted_message_version(self.ledger.latest_block_height())
             }
         };
 
