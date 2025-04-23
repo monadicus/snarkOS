@@ -522,8 +522,8 @@ impl Start {
 
         // Check if we are running with the lower coinbase and proof targets. This should only be
         // allowed in --dev mode.
-        if cfg!(feature = "test_targets") && self.dev.is_none() {
-            bail!("The 'test_targets' feature is enabled, but the '--dev' flag is not set");
+        if cfg!(feature = "test_network") && self.dev.is_none() {
+            bail!("The 'test_network' feature is enabled, but the '--dev' flag is not set");
         }
 
         // Parse the trusted peers to connect to.

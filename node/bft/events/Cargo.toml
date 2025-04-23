@@ -19,7 +19,7 @@ edition = "2021"
 [features]
 default = [ ]
 metrics = [ "dep:metrics", "snarkvm/metrics" ]
-test_targets = [ "snarkvm/test_targets" ]
+test_network = [ "snarkvm/test_targets", "snarkvm/test_consensus_versions" ]
 
 [dependencies.anyhow]
 version = "1.0"

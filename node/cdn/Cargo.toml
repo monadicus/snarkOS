@@ -21,7 +21,7 @@ default = [ "parallel" ]
 locktick = [ "dep:locktick", "snarkvm/locktick" ]
 parallel = [ "rayon" ]
 cuda = [ "snarkvm/cuda" ]
-test_targets = [ "snarkvm/test_targets" ]
+test_network = [ "snarkvm/test_targets", "snarkvm/test_consensus_versions" ]
 
 [dependencies.anyhow]
 version = "1.0.79"
