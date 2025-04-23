@@ -82,10 +82,7 @@ locktick = [
   "snarkos-node-sync/locktick",
   "snarkos-node-tcp/locktick"
 ]
-test_network = [
-  "snarkos-cli/test_network",
-  "snarkos-node/test_network"
-]
+test_network = [ "snarkos-cli/test_network" ]
 
 [dependencies.anyhow]
 version = "1.0.79"
