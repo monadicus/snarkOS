@@ -82,7 +82,6 @@ locktick = [
   "snarkos-node-sync/locktick",
   "snarkos-node-tcp/locktick"
 ]
-test = [ "snarkos-node-rest/test" ]
 test_targets = [ "snarkos-cli/test_targets" ]
 
 [dependencies.anyhow]
