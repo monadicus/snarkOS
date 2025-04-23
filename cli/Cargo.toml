@@ -34,7 +34,7 @@ cuda = [
 ]
 test_network = [ 
   "snarkvm/test_targets", 
-  "snarkvm/test_consensus_versions" 
+  "snarkvm/test_consensus_heights" 
 ]
 
 [dependencies.aleo-std]
