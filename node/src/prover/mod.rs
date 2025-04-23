@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,7 +26,7 @@ use snarkos_node_router::{
     Routing,
     messages::{Message, NodeType, UnconfirmedSolution},
 };
-use snarkos_node_sync::{BlockSync, BlockSyncMode};
+use snarkos_node_sync::BlockSync;
 use snarkos_node_tcp::{
     P2P,
     protocols::{Disconnect, Handshake, OnConnect, Reading, Writing},
@@ -122,7 +122,7 @@ impl<N: Network, C: ConsensusStorage<N>> Prover<N, C> {
         .await?;
 
         // Initialize the sync module.
-        let sync = BlockSync::new(BlockSyncMode::Router, ledger_service.clone(), router.tcp().clone());
+        let sync = BlockSync::new(ledger_service.clone());
 
         // Compute the maximum number of puzzle instances.
         let max_puzzle_instances = num_cpus::get().saturating_sub(2).clamp(1, 6);

@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,7 +30,8 @@ pub struct Clean {
     /// Enables development mode, specify the unique ID of the local node to clean.
     #[clap(long)]
     pub dev: Option<u16>,
-    /// Specify the path to a directory containing the ledger
+    /// Specify the path to a directory containing the ledger. Overrides the default path (also for
+    /// dev).
     #[clap(long = "path")]
     pub path: Option<PathBuf>,
 }

@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -73,7 +73,8 @@ pub struct Execute {
     /// Store generated deployment transaction to a local file.
     #[clap(long)]
     store: Option<String>,
-    /// Specify the path to a directory containing the ledger
+    /// Specify the path to a directory containing the ledger. Overrides the default path (also for
+    /// dev).
     #[clap(long = "storage_path")]
     pub storage_path: Option<PathBuf>,
 }
