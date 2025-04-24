@@ -159,6 +159,9 @@ To start an outer client node, you can also run the following command from the `
 ./run-outer-client.sh
 ```
 
+Outer clients can be bootstrap clients that serve as accessible entry points for new nodes joining the network with publicly known or static IPs.
+For bootstrap clients, we also recommend the use of `--rotate-external-peers` to avoid the bootstrap peerlist from filling up.
+
 ## 3.2 Run an Aleo Validator
 
 Start by following the instructions in the [Build Guide](#2-build-guide).
@@ -171,6 +174,35 @@ Instead of specifying a private key file (`--private-key-file` flag), the privat
 To start a validator, you can also run the following command from the `snarkOS` directory:
 ```
 ./run-validator.sh
+```
+
+### 3.2.1 Enable Validator Telemetry Metrics (Optional)
+
+Validator telemetry allows you to track participation in consensus. This is optional and can be enabled using the `telemetry` feature flag.
+
+Once enabled, telemetry metrics are available through:
+
+1. Node logs 
+2. REST API endpoints
+    ``` 
+    // GET /{network}/validators/participation
+    // GET /{network}/validators/participation?metadata={true}
+    ```
+
+You can enable telemetry in one of the following ways:
+
+#### 1. Enable via [installation](#2.3-installation)
+
+Add the `telemetry` feature flag to the installation command.
+```
+cargo install --locked --path . --features telemetry
+```
+
+#### 2. Enable via `./run-validator.sh`
+
+Run the `./run-validator.sh` script and enable telemetry when prompted:
+```
+Do you want to enable validator telemetry? (y/n, default: y):
 ```
 
 ## 3.3 Run an Aleo Prover
@@ -202,7 +234,7 @@ Enter the Aleo Prover account private key:
 APrivateKey1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
-### 3.3.1 Enable CUDA Acceleration (Optional)
+### 3.3.1 Enable CUDA Acceleration (Optional) <a name="cuda"></a>
 
 If a supported Nvidia GPU is available, CUDA-based acceleration can be enabled using the following command:
 
@@ -434,6 +466,21 @@ To clean up the node storage, run:
 ```
 cargo run --release -- clean --dev <NODE_ID>
 ```
+
+## 6.4 Feature Flags
+
+By default, the metrics feature is turnned on for some internal crates.
+
+* **history** -
+  Enables a /history REST endpoint.
+* **telemetry** -
+  Allows the node to upload telemetry data.
+* **cuda** -
+  Allows some operations to run on the (NVidia) GPU, instead of on the CPU. See above under [Enable CUDA acceleration](#cuda)
+* **locktick** -
+  This feature turns on code for detecting deadlocks.
+* **test_targets** -
+  This feature allows the lowering of coinbase and proof targets for testing.
 
 ## 7. Contributors
 Thank you for helping make snarkOS better!  
