@@ -3791,6 +3791,7 @@ dependencies = [
  "reqwest 0.11.27",
  "serde",
  "snarkos-account",
+ "snarkos-node-bft-ledger-service",
  "snarkos-node-metrics",
  "snarkos-node-router",
  "snarkos-node-router-messages",
