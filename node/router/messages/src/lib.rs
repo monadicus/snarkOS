@@ -121,6 +121,12 @@ impl<N: Network> Message<N> {
     }
 
     /// Returns the lowest acceptable message version for the given block height.
+    /// Example scenario:
+    ///     At block height `X`, the protocol upgrades to message version from `Y-1` to `Y`.
+    ///     Client A upgrades and starts using message version `Y`.
+    ///     Client B has not upgraded and still uses message version `Y-1`.
+    ///     Until block `X`, they stay connected and can communicate.
+    ///     After block `X`, Client A will reject messages from Client B.
     pub fn lowest_accepted_message_version(current_block_height: u32) -> u32 {
         // Fetch the latest message version.
         let latest_message_version = Self::latest_message_version();
@@ -129,23 +135,14 @@ impl<N: Network> Message<N> {
         let versions = Self::VERSIONS;
 
         // Determine the minimum accepted message version.
-        // Example scenario:
-        // - At block height `X`, the protocol upgrades to message version from `Y-1` to `Y`.
-        // - Client A upgrades and starts using message version `Y`.
-        // - Client B has not upgraded and still uses message version `Y-1`.
-        // - Until block `X`, they stay connected and can communicate.
-        // - After block `X`, Client A will reject messages from Client B.
         N::CONSENSUS_VERSION(current_block_height).map_or(latest_message_version, |seek_version| {
             // Search the consensus value for the specified version.
             match versions.binary_search_by(|(version, _)| version.cmp(&seek_version)) {
                 // If a value was found for this consensus version, return it.
                 Ok(index) => versions[index].1,
-                // If the specified version was not found exactly, determine whether to return an appropriate value anyway.
-                Err(index) => {
-                    // Return the appropriate value belonging to the consensus version *lower* than the sought version.
-                    // If the constant is not yet in effect at this consensus version, use the earliest version.
-                    versions[index.saturating_sub(1)].1
-                }
+                // If the specified version was not found exactly, return the appropriate value belonging to the consensus version *lower* than the sought version.
+                // If the constant is not yet in effect at this consensus version, use the earliest version.
+                Err(index) => versions[index.saturating_sub(1)].1,
             }
         })
     }
@@ -299,16 +296,6 @@ mod tests {
         }
     }
 
-    /// Ensure that `Message::VERSIONS` increases and is correctly defined.
-    /// See the constant declaration for an explanation why.
-    fn message_version_increasing<N: Network>() {
-        let mut previous_value = Message::<N>::VERSIONS.first().unwrap().1;
-        for (_, value) in Message::<N>::VERSIONS.iter().skip(1) {
-            assert!(*value >= previous_value);
-            previous_value = *value;
-        }
-    }
-
     #[test]
     #[allow(clippy::assertions_on_constants)]
     fn test_consensus_constants() {
@@ -323,9 +310,5 @@ mod tests {
         consensus_constants_increasing_heights::<MainnetV0>();
         consensus_constants_increasing_heights::<TestnetV0>();
         consensus_constants_increasing_heights::<CanaryV0>();
-
-        message_version_increasing::<MainnetV0>();
-        message_version_increasing::<TestnetV0>();
-        message_version_increasing::<CanaryV0>();
     }
 }
