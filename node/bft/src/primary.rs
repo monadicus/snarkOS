@@ -301,7 +301,7 @@ impl<N: Network> Primary<N> {
         self.workers.iter().map(|worker| worker.num_ratifications()).sum()
     }
 
-    /// Returns the number of solutions.
+    /// Returns the number of unconfirmed solutions.
     pub fn num_unconfirmed_solutions(&self) -> usize {
         self.workers.iter().map(|worker| worker.num_solutions()).sum()
     }
@@ -365,6 +365,8 @@ impl<N: Network> Primary<N> {
         let previous_round = round.saturating_sub(1);
 
         // If the current round is 0, return early.
+        // This can actually never happen, because of the invariant that the current round is never 0
+        // (see [`StorageInner::current_round`]).
         ensure!(round > 0, "Round 0 cannot have transaction batches");
 
         // If the current storage round is below the latest proposal round, then return early.
@@ -737,7 +739,7 @@ impl<N: Network> Primary<N> {
             self.signed_proposals.read().get(&batch_author).copied()
         {
             // If the signed round is ahead of the peer's batch round, do not sign the proposal.
-            // Note: while this may be valid behaviour, additional formal analysis and testing will need to be done before allowing it.
+            // Note: while this may be valid behavior, additional formal analysis and testing will need to be done before allowing it.
             if signed_round > batch_header.round() {
                 bail!(
                     "Peer ({batch_author}) proposed a batch for a previous round ({}), latest signed round: {signed_round}",
@@ -1270,7 +1272,7 @@ impl<N: Network> Primary<N> {
                 };
                 // If there is no proposed batch, attempt to propose a batch.
                 // Note: Do NOT spawn a task around this function call. Proposing a batch is a critical path,
-                // and only one batch needs be proposed at a time.
+                // and only one batch needs to be proposed at a time.
                 if let Err(e) = self_.propose_batch().await {
                     warn!("Cannot propose a batch - {e}");
                 }
@@ -1683,7 +1685,7 @@ impl<N: Network> Primary<N> {
             bail!("Round {batch_round} is too far in the past")
         }
 
-        // If node is not in sync mode and the node is not synced. Then return an error.
+        // If node is not in sync mode and the node is not synced, then return an error.
         if !IS_SYNCING && !self.is_synced() {
             bail!(
                 "Failed to process batch header `{}` at round {batch_round} from '{peer_ip}' (node is syncing)",
