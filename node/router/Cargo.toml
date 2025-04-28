@@ -81,7 +81,7 @@ version = "=3.6.0"
 
 [dependencies.snarkos-node-bft-ledger-service]
 path = "../bft/ledger-service"
-version = "=3.5.0"
+version = "=3.6.0"
 default-features = false
 features = [ "ledger", "prover" ]
 
