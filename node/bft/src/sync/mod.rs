@@ -38,7 +38,13 @@ use locktick::{parking_lot::Mutex, tokio::Mutex as TMutex};
 #[cfg(not(feature = "locktick"))]
 use parking_lot::Mutex;
 use rayon::prelude::*;
-use std::{collections::HashMap, future::Future, net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    collections::{BTreeMap, HashMap},
+    future::Future,
+    net::SocketAddr,
+    sync::Arc,
+    time::Duration,
+};
 #[cfg(not(feature = "locktick"))]
 use tokio::sync::Mutex as TMutex;
 use tokio::{
@@ -82,7 +88,8 @@ pub struct Sync<N: Network> {
     ///
     /// This is used in [`Sync::sync_storage_with_block()`] to accumulate blocks
     /// whose addition to the ledger is deferred until certain checks pass.
-    latest_block_responses: Arc<TMutex<HashMap<u32, Block<N>>>>,
+    /// Blocks need to be processed in order, hence a BTree map.
+    latest_block_responses: Arc<TMutex<BTreeMap<u32, Block<N>>>>,
 }
 
 impl<N: Network> Sync<N> {
@@ -118,7 +125,10 @@ impl<N: Network> Sync<N> {
         info!("Syncing storage with the ledger...");
 
         // Sync the storage with the ledger.
-        self.sync_storage_with_ledger_at_bootup().await
+        self.sync_storage_with_ledger_at_bootup().await?;
+
+        debug!("Finished initial block synchronization at startup");
+        Ok(())
     }
 
     /// Issues new requests for blocks, if needed.
@@ -142,9 +152,16 @@ impl<N: Network> Sync<N> {
             });
         }
 
+        // We might be further ahead than the ledger, if there are queued
+        // responses.
+        let current_height = {
+            let responses = self.latest_block_responses.lock().await;
+            if let Some((height, _)) = responses.last_key_value() { *height } else { self.ledger.latest_block_height() }
+        };
+
         // Prepare the block requests, if any.
         // In the process, we update the state of `is_block_synced` for the sync module.
-        let (block_requests, sync_peers) = self.block_sync.prepare_block_requests();
+        let (block_requests, sync_peers) = self.block_sync.prepare_block_requests_at_height(current_height);
         trace!("Prepared {} block requests", block_requests.len());
 
         // Sends the block requests to the sync peers.
@@ -281,8 +298,8 @@ impl<N: Network> Sync<N> {
         self.issue_block_requests().await;
 
         // Sync the storage with the blocks.
-        if let Err(e) = self.try_advancing_block_synchronization().await {
-            error!("Unable to sync storage with blocks - {e}");
+        if let Err(err) = self.try_advancing_block_synchronization().await {
+            error!("Block synchronization failed - {err}");
         }
 
         // If the node is synced, clear the `latest_block_responses`.
@@ -323,7 +340,7 @@ impl<N: Network> Sync<N> {
 impl<N: Network> Sync<N> {
     /// Syncs the storage with the ledger at bootup.
     ///
-    /// This is called exactly once when starting the validator.
+    /// This is called when starting the validator and after finishing a sync without BFT.
     async fn sync_storage_with_ledger_at_bootup(&self) -> Result<()> {
         // Retrieve the latest block in the ledger.
         let latest_block = self.ledger.latest_block();
@@ -425,19 +442,33 @@ impl<N: Network> Sync<N> {
         // Acquire the response lock.
         let _lock = self.response_lock.lock().await;
 
+        // Figure out which height we are synchronized to.
+        // If there are queued block responses, this might be higher than the latest block in the ledger.
+        let sync_height = {
+            let responses = self.latest_block_responses.lock().await;
+            if let Some((height, _)) = responses.last_key_value() { *height } else { self.ledger.latest_block_height() }
+        };
+
         // Retrieve the next block height.
         // This variable is used to index blocks that are added to the ledger;
         // it is incremented as blocks as added.
         // So 'current' means 'currently being added'.
-        let mut current_height = self.ledger.latest_block_height() + 1;
+        let mut current_height = sync_height + 1;
+        trace!("Try advancing with block responses (at block {current_height})");
 
         // Retrieve the maximum block height of the peers.
-        let tip = self.block_sync.find_sync_peers().map(|(x, _)| x.into_values().max().unwrap_or(0)).unwrap_or(0);
+        let tip = self
+            .block_sync
+            .find_sync_peers_at_height(sync_height)
+            .map(|(x, _)| x.into_values().max().unwrap_or(0))
+            .unwrap_or(0);
+
         // Determine the maximum number of blocks corresponding to rounds
         // that would not have been garbage collected, i.e. that would be kept in storage.
         // Since at most one block is created every two rounds,
         // this is half of the maximum number of rounds kept in storage.
         let max_gc_blocks = u32::try_from(self.storage.max_gc_rounds())?.saturating_div(2);
+
         // Determine the earliest height of blocks corresponding to rounds kept in storage,
         // conservatively set to the block height minus the maximum number of blocks calculated above.
         // By virtue of the BFT protocol, we can guarantee that all GC range blocks will be loaded.
@@ -445,6 +476,8 @@ impl<N: Network> Sync<N> {
 
         // Determine if we can sync the ledger without updating the BFT first.
         if current_height <= max_gc_height {
+            info!("Block sync is too far behind other validators. Syncing without BFT.");
+
             // Try to advance the ledger *to tip* without updating the BFT.
             while let Some(block) = self.block_sync.peek_next_block(current_height) {
                 info!("Syncing the ledger to block {}...", block.height());
@@ -463,7 +496,9 @@ impl<N: Network> Sync<N> {
             }
             // Sync the storage with the ledger if we should transition to the BFT sync.
             if current_height > max_gc_height {
+                info!("Finished catching up with the network. Switching back to BFT sync.");
                 if let Err(e) = self.sync_storage_with_ledger_at_bootup().await {
+                    //TODO (kaimast): bail! here?
                     error!("BFT sync (with bootup routine) failed - {e}");
                 }
             }
@@ -531,7 +566,14 @@ impl<N: Network> Sync<N> {
         let mut latest_block_responses = self.latest_block_responses.lock().await;
 
         // If this block has already been processed, return early.
-        if self.ledger.contains_block_height(block.height()) || latest_block_responses.contains_key(&block.height()) {
+        // TODO(kaimast): Should we remove the response here?
+        if self.ledger.contains_block_height(block.height()) {
+            debug!("Ledger is already synced with block at height {}. Will not sync.", block.height());
+            return Ok(());
+        }
+
+        if latest_block_responses.contains_key(&block.height()) {
+            debug!("An unconfirmed block is queued already for height {}. Will not sync.", block.height());
             return Ok(());
         }
 
@@ -557,10 +599,11 @@ impl<N: Network> Sync<N> {
                 // Sync the BFT DAG with the certificates.
                 for certificate in certificates {
                     // If a BFT sender was provided, send the certificate to the BFT.
+                    // For validators, BFT spawns a receiver task in `BFT::start_handlers`.
                     if let Some(bft_sender) = self.bft_sender.get() {
                         // Await the callback to continue.
-                        if let Err(e) = bft_sender.send_sync_bft(certificate).await {
-                            bail!("Sync - {e}");
+                        if let Err(err) = bft_sender.send_sync_bft(certificate).await {
+                            bail!("Failed to sync certificate - {err}");
                         };
                     }
                 }
@@ -676,8 +719,6 @@ impl<N: Network> Sync<N> {
                     .await??;
                     // Remove the block height from the latest block responses.
                     latest_block_responses.remove(&block_height);
-                    // Mark the block height as processed in block_sync.
-                    self.block_sync.remove_block_response(block_height);
 
                     // Update the validator telemetry.
                     #[cfg(feature = "telemetry")]
@@ -690,6 +731,11 @@ impl<N: Network> Sync<N> {
                     "Availability threshold was not reached for block {next_block_height} at round {commit_round}. Checking next block..."
                 );
             }
+
+            // Mark the block height as processed in block_sync.
+            // Even if we did not add the block to the ledger yet, the associated request can safely
+            // be removed as the block is now stored in `latest_block_responses`.
+            self.block_sync.remove_block_response(next_block_height);
         }
 
         Ok(())

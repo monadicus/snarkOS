@@ -342,7 +342,13 @@ impl<N: Network> BlockSync<N> {
     /// This function returns peers that are consistent with each other, and have a block height
     /// that is greater than the ledger height of this node.
     pub fn find_sync_peers(&self) -> Option<(IndexMap<SocketAddr, u32>, u32)> {
-        if let Some((sync_peers, min_common_ancestor)) = self.find_sync_peers_inner() {
+        self.find_sync_peers_at_height(self.ledger.latest_block_height())
+    }
+
+    /// Same as `Self::find_sync_peers`, but allows specifiying a custom height
+    /// (must be greater than the ledger height).
+    pub fn find_sync_peers_at_height(&self, current_height: u32) -> Option<(IndexMap<SocketAddr, u32>, u32)> {
+        if let Some((sync_peers, min_common_ancestor)) = self.find_sync_peers_inner(current_height) {
             // Map the locators into the latest height.
             let sync_peers =
                 sync_peers.into_iter().map(|(ip, locators)| (ip, locators.latest_locator_height())).collect();
@@ -426,35 +432,51 @@ impl<N: Network> BlockSync<N> {
     /// Returns a list of block requests and the sync peers, if the node needs to sync.
     ///
     /// You usually want to call `remove_timed_out_block_requests` before invoking this function.
+    ///
+    /// `current_height` should either be the ledger height, or the height of the pending blocks (for validators).
     pub fn prepare_block_requests(&self) -> BlockRequestBatch<N> {
+        self.prepare_block_requests_at_height(self.ledger.latest_block_height())
+    }
+
+    /// Returns a list of block requests and the sync peers, if the node needs to sync.
+    ///
+    /// You usually want to call `remove_timed_out_block_requests` before invoking this function.
+    ///
+    /// `current_height` should either be the ledger height, or the height of the pending blocks (for validators).
+    pub fn prepare_block_requests_at_height(&self, current_height: u32) -> BlockRequestBatch<N> {
         // Prepare the block requests.
-        if let Some((sync_peers, min_common_ancestor)) = self.find_sync_peers_inner() {
+        if let Some((sync_peers, min_common_ancestor)) = self.find_sync_peers_inner(current_height) {
             // Retrieve the highest block height.
             let greatest_peer_height = sync_peers.values().map(|l| l.latest_locator_height()).max().unwrap_or(0);
             // Update the state of `is_block_synced` for the sync module.
-            self.update_is_block_synced(greatest_peer_height, MAX_BLOCKS_BEHIND);
+            self.update_is_block_synced(greatest_peer_height, current_height, MAX_BLOCKS_BEHIND);
             // Return the list of block requests.
             (self.construct_requests(&sync_peers, min_common_ancestor), sync_peers)
         } else {
             // Update `is_block_synced` if there are no pending requests or responses.
             if self.requests.read().is_empty() && self.responses.read().is_empty() {
+                trace!("All requests have been processed. Will set block synced to true.");
                 // Update the state of `is_block_synced` for the sync module.
-                self.update_is_block_synced(0, MAX_BLOCKS_BEHIND);
+                self.update_is_block_synced(0, current_height, MAX_BLOCKS_BEHIND);
+            } else {
+                trace!("No new blocks can be requests, but there are still outstanding requests.");
             }
+
             // Return an empty list of block requests.
             (Default::default(), Default::default())
         }
     }
 
     /// Updates the state of `is_block_synced` for the sync module.
-    fn update_is_block_synced(&self, greatest_peer_height: u32, max_blocks_behind: u32) {
+    fn update_is_block_synced(&self, greatest_peer_height: u32, current_height: u32, max_blocks_behind: u32) {
         // Retrieve the latest block height.
         let ledger_height = self.ledger.latest_block_height();
         trace!(
-            "Updating is_block_synced: greatest_peer_height = {greatest_peer_height}, ledger_height = {ledger_height}"
+            "Updating is_block_synced: greatest_peer_height = {greatest_peer_height}, ledger_height = {ledger_height},
+            current_height = {current_height}"
         );
         // Compute the number of blocks that we are behind by.
-        let num_blocks_behind = greatest_peer_height.saturating_sub(ledger_height);
+        let num_blocks_behind = greatest_peer_height.saturating_sub(current_height);
         // Determine if the primary is synced.
         let is_synced = num_blocks_behind <= max_blocks_behind;
         // Update the num blocks behind.
@@ -579,7 +601,7 @@ impl<N: Network> BlockSync<N> {
         self.request_timestamps.write().remove(&height);
     }
 
-    /// Removes the block response for the given height
+    /// Removes the block request and response for the given height
     /// This may only be called after `peek_next_block`, which checked if the request for the given height was complete.
     pub fn remove_block_response(&self, height: u32) {
         // Acquire the requests write lock.
@@ -639,9 +661,10 @@ impl<N: Network> BlockSync<N> {
         // Retrieve the current block height
         let current_height = self.ledger.latest_block_height();
 
-        // Track the number of timed out block requests.
+        // Track the number of timed out block requests (only used to print a log message).
         let mut num_timed_out_block_requests = 0;
 
+        // Track which peers should be banned due to unresponsiveness.
         let mut peers_to_ban: HashSet<SocketAddr> = HashSet::new();
 
         // Remove timed out block requests.
@@ -673,18 +696,26 @@ impl<N: Network> BlockSync<N> {
                 requests.remove(height);
                 // Remove the response entry for the given height.
                 responses.remove(height);
+            }
+
+            if is_timeout {
                 // Increment the number of timed out block requests.
                 num_timed_out_block_requests += 1;
             }
+
             // Retain if this is not a timeout and is not obsolete.
             !is_timeout && !is_obsolete
         });
+
+        if num_timed_out_block_requests > 0 {
+            debug!("{num_timed_out_block_requests} block requests timed out");
+        }
 
         peers_to_ban
     }
 
     /// Returns the sync peers and their minimum common ancestor, if the node needs to sync.
-    fn find_sync_peers_inner(&self) -> Option<(IndexMap<SocketAddr, BlockLocators<N>>, u32)> {
+    fn find_sync_peers_inner(&self, current_height: u32) -> Option<(IndexMap<SocketAddr, BlockLocators<N>>, u32)> {
         // Retrieve the latest ledger height.
         let latest_ledger_height = self.ledger.latest_block_height();
 
@@ -694,7 +725,7 @@ impl<N: Network> BlockSync<N> {
             .locators
             .read()
             .iter()
-            .filter(|(_, locators)| locators.latest_locator_height() > latest_ledger_height)
+            .filter(|(_, locators)| locators.latest_locator_height() > current_height)
             .sorted_by(|(_, a), (_, b)| b.latest_locator_height().cmp(&a.latest_locator_height()))
             .take(NUM_SYNC_CANDIDATE_PEERS)
             .map(|(peer_ip, locators)| (*peer_ip, locators.clone()))

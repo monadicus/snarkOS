@@ -255,7 +255,7 @@ impl<N: Network> BFT<N> {
             } else {
                 match is_ready {
                     true => info!("\n\nRound {current_round} reached quorum without a leader\n"),
-                    false => info!("{}", format!("\n\nRound {current_round} did not elect a leader\n").dimmed()),
+                    false => info!("{}", format!("\n\nRound {current_round} did not elect a leader (yet)\n").dimmed()),
                 }
             }
         }
@@ -466,14 +466,17 @@ impl<N: Network> BFT<N> {
         // Acquire the BFT lock.
         let _lock = self.lock.lock().await;
 
-        // Retrieve the certificate round.
+        // Retrieve the round of the new certificate to add to the DAG.
         let certificate_round = certificate.round();
+
         // Insert the certificate into the DAG.
         self.dag.write().insert(certificate);
 
-        // Construct the commit round.
+        // Get the previous round number.
         let commit_round = certificate_round.saturating_sub(1);
-        // If the commit round is odd, return early.
+
+        // Leaders are elected in even rounds.
+        // If the previous round is odd, the current round cannot commit any leader certs.
         if commit_round % 2 != 0 || commit_round < 2 {
             return Ok(());
         }
@@ -881,7 +884,7 @@ impl<N: Network> BFT<N> {
             }
         });
 
-        // Process the request to sync the BFT.
+        // Handler for new certificates that were fetched by the sync module.
         let self_ = self.clone();
         self.spawn(async move {
             while let Some((certificate, callback)) = rx_sync_bft.recv().await {
