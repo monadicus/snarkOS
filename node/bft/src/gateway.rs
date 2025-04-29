@@ -110,8 +110,6 @@ pub trait Transport<N: Network>: Send + Sync {
     fn broadcast(&self, event: Event<N>);
 }
 
-/// The gateway maintains connections to other validators.
-/// For connections with clients and provers, the Router logic is used.
 #[derive(Clone)]
 pub struct Gateway<N: Network> {
     /// The account of the node.
@@ -516,8 +514,9 @@ impl<N: Network> Gateway<N> {
         self.update_metrics();
     }
 
-    /// Inserts the given peer into the connected peers. This is only used in testing.
+    /// Inserts the given peer into the connected peers.
     #[cfg(test)]
+    // For unit tests, we need to make this public so we can inject peers.
     pub fn insert_connected_peer(&self, peer_ip: SocketAddr, peer_addr: SocketAddr, address: Address<N>) {
         // Adds a bidirectional map between the listener address and (ambiguous) peer address.
         self.resolver.insert_peer(peer_ip, peer_addr, address);
