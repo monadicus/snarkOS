@@ -1784,6 +1784,8 @@ mod prop_tests {
     // process the maximum expected load at any givent moment. Due to the number of certificates
     // not being const, those values are currently hardcoded, and the test below will alert us
     // if they need to be increased.
+    // For example, if `BatchHeader::MAX_CERTIFICATES` is increased in snarkVM, the two
+    // MESSAGE_QUEUE_DEPTH values need to be increased accordingly.
     #[test]
     fn ensure_sufficient_rw_queue_depth() {
         let desired_rw_queue_depth = 2
