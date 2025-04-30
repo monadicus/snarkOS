@@ -1163,7 +1163,7 @@ impl<N: Network> Reading for Gateway<N> {
     type Message = Event<N>;
 
     /// The maximum queue depth of incoming messages for a single peer.
-    const MESSAGE_QUEUE_DEPTH: usize = 300_000;
+    const MESSAGE_QUEUE_DEPTH: usize = 350_000;
 
     /// Creates a [`Decoder`] used to interpret messages from the network.
     /// The `side` param indicates the connection side **from the node's perspective**.
@@ -1193,7 +1193,7 @@ impl<N: Network> Writing for Gateway<N> {
     type Message = Event<N>;
 
     /// The maximum queue depth of outgoing messages for a single peer.
-    const MESSAGE_QUEUE_DEPTH: usize = 300_000;
+    const MESSAGE_QUEUE_DEPTH: usize = 350_000;
 
     /// Creates an [`Encoder`] used to write the outbound messages to the target stream.
     /// The `side` parameter indicates the connection side **from the node's perspective**.
@@ -1784,6 +1784,8 @@ mod prop_tests {
     // process the maximum expected load at any givent moment. Due to the number of certificates
     // not being const, those values are currently hardcoded, and the test below will alert us
     // if they need to be increased.
+    // For example, if `BatchHeader::MAX_CERTIFICATES` is increased in snarkVM, the two
+    // MESSAGE_QUEUE_DEPTH values need to be increased accordingly.
     #[test]
     fn ensure_sufficient_rw_queue_depth() {
         let desired_rw_queue_depth = 2
