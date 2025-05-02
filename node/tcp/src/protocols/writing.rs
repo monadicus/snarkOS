@@ -198,7 +198,7 @@ impl<W: Writing> WritingInternal for W {
         let writer = conn.writer.take().expect("missing connection writer!");
         let mut framed = FramedWrite::new(writer, codec);
 
-        let (outbound_message_sender, mut outbound_message_receiver) = mpsc::channel(Self::message_queue_depth(&self));
+        let (outbound_message_sender, mut outbound_message_receiver) = mpsc::channel(self.message_queue_depth());
 
         // register the connection's message sender with the Writing protocol handler
         conn_senders.write().insert(addr, outbound_message_sender);

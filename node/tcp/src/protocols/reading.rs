@@ -131,7 +131,7 @@ impl<R: Reading> ReadingInternal for R {
             framed.read_buffer_mut().reserve(Self::INITIAL_BUFFER_SIZE);
         }
 
-        let (inbound_message_sender, mut inbound_message_receiver) = mpsc::channel(Self::message_queue_depth(self));
+        let (inbound_message_sender, mut inbound_message_receiver) = mpsc::channel(self.message_queue_depth());
 
         // use a channel to know when the processing task is ready
         let (tx_processing, rx_processing) = oneshot::channel::<()>();
