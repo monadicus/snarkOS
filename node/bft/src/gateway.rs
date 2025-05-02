@@ -1161,9 +1161,6 @@ impl<N: Network> Reading for Gateway<N> {
     type Codec = EventCodec<N>;
     type Message = Event<N>;
 
-    /// The maximum queue depth of incoming messages for a single peer.
-    const MESSAGE_QUEUE_DEPTH: usize = 350_000;
-
     /// Creates a [`Decoder`] used to interpret messages from the network.
     /// The `side` param indicates the connection side **from the node's perspective**.
     fn codec(&self, _peer_addr: SocketAddr, _side: ConnectionSide) -> Self::Codec {
@@ -1184,6 +1181,14 @@ impl<N: Network> Reading for Gateway<N> {
         }
         Ok(())
     }
+
+    /// Computes the depth of per-connection queues used to process inbound messages, sufficient to process the maximum expected load at any givent moment.
+    /// The greater it is, the more inbound messages the node can enqueue, but a too large value can make the node more susceptible to DoS attacks.
+    fn message_queue_depth(&self) -> usize {
+        2 * BatchHeader::<N>::MAX_GC_ROUNDS
+            * N::LATEST_MAX_CERTIFICATES().unwrap() as usize
+            * BatchHeader::<N>::MAX_TRANSMISSIONS_PER_BATCH
+    }
 }
 
 #[async_trait]
@@ -1191,13 +1196,19 @@ impl<N: Network> Writing for Gateway<N> {
     type Codec = EventCodec<N>;
     type Message = Event<N>;
 
-    /// The maximum queue depth of outgoing messages for a single peer.
-    const MESSAGE_QUEUE_DEPTH: usize = 350_000;
-
     /// Creates an [`Encoder`] used to write the outbound messages to the target stream.
     /// The `side` parameter indicates the connection side **from the node's perspective**.
     fn codec(&self, _peer_addr: SocketAddr, _side: ConnectionSide) -> Self::Codec {
         Default::default()
+    }
+
+    /// Computes the depth of per-connection queues used to send outbound messages, sufficient to process the maximum expected load at any givent moment.
+    /// The greater it is, the more outbound messages the node can enqueue. A too large value large value might obscure potential issues with your implementation
+    /// (like slow serialization) or network.
+    fn message_queue_depth(&self) -> usize {
+        2 * BatchHeader::<N>::MAX_GC_ROUNDS
+            * N::LATEST_MAX_CERTIFICATES().unwrap() as usize
+            * BatchHeader::<N>::MAX_TRANSMISSIONS_PER_BATCH
     }
 }
 
@@ -1777,31 +1788,5 @@ mod prop_tests {
                 assert!(!is_authorized);
             }
         }
-    }
-
-    // This test is used to ensure that the Reading and Writing network queues are sufficient to
-    // process the maximum expected load at any givent moment. Due to the number of certificates
-    // not being const, those values are currently hardcoded, and the test below will alert us
-    // if they need to be increased.
-    // For example, if `BatchHeader::MAX_CERTIFICATES` is increased in snarkVM, the two
-    // MESSAGE_QUEUE_DEPTH values need to be increased accordingly.
-    #[test]
-    fn ensure_sufficient_rw_queue_depth() {
-        let desired_rw_queue_depth = 2
-            * BatchHeader::<MainnetV0>::MAX_GC_ROUNDS
-            * MainnetV0::LATEST_MAX_CERTIFICATES().unwrap() as usize
-            * BatchHeader::<MainnetV0>::MAX_TRANSMISSIONS_PER_BATCH;
-
-        // The queue depths may be larger than the calculated maximum needed capacity.
-        assert!(
-            <Gateway<MainnetV0> as Reading>::MESSAGE_QUEUE_DEPTH >= desired_rw_queue_depth,
-            "{}",
-            desired_rw_queue_depth
-        );
-        assert!(
-            <Gateway<MainnetV0> as Writing>::MESSAGE_QUEUE_DEPTH >= desired_rw_queue_depth,
-            "{}",
-            desired_rw_queue_depth
-        );
     }
 }
