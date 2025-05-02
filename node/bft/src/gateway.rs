@@ -110,8 +110,6 @@ pub trait Transport<N: Network>: Send + Sync {
     fn broadcast(&self, event: Event<N>);
 }
 
-/// The gateway maintains connections to other validators.
-/// For connections with clients and provers, the Router logic is used.
 #[derive(Clone)]
 pub struct Gateway<N: Network> {
     /// The account of the node.
@@ -516,8 +514,9 @@ impl<N: Network> Gateway<N> {
         self.update_metrics();
     }
 
-    /// Inserts the given peer into the connected peers. This is only used in testing.
+    /// Inserts the given peer into the connected peers.
     #[cfg(test)]
+    // For unit tests, we need to make this public so we can inject peers.
     pub fn insert_connected_peer(&self, peer_ip: SocketAddr, peer_addr: SocketAddr, address: Address<N>) {
         // Adds a bidirectional map between the listener address and (ambiguous) peer address.
         self.resolver.insert_peer(peer_ip, peer_addr, address);
@@ -1163,7 +1162,7 @@ impl<N: Network> Reading for Gateway<N> {
     type Message = Event<N>;
 
     /// The maximum queue depth of incoming messages for a single peer.
-    const MESSAGE_QUEUE_DEPTH: usize = 300_000;
+    const MESSAGE_QUEUE_DEPTH: usize = 350_000;
 
     /// Creates a [`Decoder`] used to interpret messages from the network.
     /// The `side` param indicates the connection side **from the node's perspective**.
@@ -1193,7 +1192,7 @@ impl<N: Network> Writing for Gateway<N> {
     type Message = Event<N>;
 
     /// The maximum queue depth of outgoing messages for a single peer.
-    const MESSAGE_QUEUE_DEPTH: usize = 300_000;
+    const MESSAGE_QUEUE_DEPTH: usize = 350_000;
 
     /// Creates an [`Encoder`] used to write the outbound messages to the target stream.
     /// The `side` parameter indicates the connection side **from the node's perspective**.
@@ -1784,6 +1783,8 @@ mod prop_tests {
     // process the maximum expected load at any givent moment. Due to the number of certificates
     // not being const, those values are currently hardcoded, and the test below will alert us
     // if they need to be increased.
+    // For example, if `BatchHeader::MAX_CERTIFICATES` is increased in snarkVM, the two
+    // MESSAGE_QUEUE_DEPTH values need to be increased accordingly.
     #[test]
     fn ensure_sufficient_rw_queue_depth() {
         let desired_rw_queue_depth = 2

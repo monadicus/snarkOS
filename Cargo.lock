@@ -3453,7 +3453,7 @@ dependencies = [
 
 [[package]]
 name = "snarkos"
-version = "3.5.0"
+version = "3.6.0"
 dependencies = [
  "anyhow",
  "built",
@@ -3481,7 +3481,7 @@ dependencies = [
 
 [[package]]
 name = "snarkos-account"
-version = "3.5.0"
+version = "3.6.0"
 dependencies = [
  "anyhow",
  "colored",
@@ -3491,7 +3491,7 @@ dependencies = [
 
 [[package]]
 name = "snarkos-cli"
-version = "3.5.0"
+version = "3.6.0"
 dependencies = [
  "aleo-std",
  "anstyle",
@@ -3531,7 +3531,7 @@ dependencies = [
 
 [[package]]
 name = "snarkos-display"
-version = "3.5.0"
+version = "3.6.0"
 dependencies = [
  "anyhow",
  "crossterm",
@@ -3542,20 +3542,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "snarkos-integration"
-version = "3.5.0"
-dependencies = [
- "aleo-std",
- "snarkos-node-cdn",
- "snarkvm",
- "tokio",
- "tracing",
- "tracing-test 0.1.0",
-]
-
-[[package]]
 name = "snarkos-node"
-version = "3.5.0"
+version = "3.6.0"
 dependencies = [
  "aleo-std",
  "anyhow",
@@ -3594,7 +3582,7 @@ dependencies = [
 
 [[package]]
 name = "snarkos-node-bft"
-version = "3.5.0"
+version = "3.6.0"
 dependencies = [
  "aleo-std",
  "anyhow",
@@ -3644,7 +3632,7 @@ dependencies = [
 
 [[package]]
 name = "snarkos-node-bft-events"
-version = "3.5.0"
+version = "3.6.0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -3663,7 +3651,7 @@ dependencies = [
 
 [[package]]
 name = "snarkos-node-bft-ledger-service"
-version = "3.5.0"
+version = "3.6.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3680,7 +3668,7 @@ dependencies = [
 
 [[package]]
 name = "snarkos-node-bft-storage-service"
-version = "3.5.0"
+version = "3.6.0"
 dependencies = [
  "aleo-std",
  "anyhow",
@@ -3694,7 +3682,7 @@ dependencies = [
 
 [[package]]
 name = "snarkos-node-cdn"
-version = "3.5.0"
+version = "3.6.0"
 dependencies = [
  "anyhow",
  "bincode",
@@ -3715,7 +3703,7 @@ dependencies = [
 
 [[package]]
 name = "snarkos-node-consensus"
-version = "3.5.0"
+version = "3.6.0"
 dependencies = [
  "aleo-std",
  "anyhow",
@@ -3741,7 +3729,7 @@ dependencies = [
 
 [[package]]
 name = "snarkos-node-metrics"
-version = "3.5.0"
+version = "3.6.0"
 dependencies = [
  "locktick",
  "metrics-exporter-prometheus",
@@ -3754,7 +3742,7 @@ dependencies = [
 
 [[package]]
 name = "snarkos-node-rest"
-version = "3.5.0"
+version = "3.6.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -3783,7 +3771,7 @@ dependencies = [
 
 [[package]]
 name = "snarkos-node-router"
-version = "3.5.0"
+version = "3.6.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3803,6 +3791,7 @@ dependencies = [
  "reqwest 0.11.27",
  "serde",
  "snarkos-account",
+ "snarkos-node-bft-ledger-service",
  "snarkos-node-metrics",
  "snarkos-node-router",
  "snarkos-node-router-messages",
@@ -3820,7 +3809,7 @@ dependencies = [
 
 [[package]]
 name = "snarkos-node-router-messages"
-version = "3.5.0"
+version = "3.6.0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -3839,7 +3828,7 @@ dependencies = [
 
 [[package]]
 name = "snarkos-node-sync"
-version = "3.5.0"
+version = "3.6.0"
 dependencies = [
  "anyhow",
  "indexmap 2.9.0",
@@ -3862,7 +3851,7 @@ dependencies = [
 
 [[package]]
 name = "snarkos-node-sync-communication-service"
-version = "3.5.0"
+version = "3.6.0"
 dependencies = [
  "async-trait",
  "tokio",
@@ -3870,7 +3859,7 @@ dependencies = [
 
 [[package]]
 name = "snarkos-node-sync-locators"
-version = "3.5.0"
+version = "3.6.0"
 dependencies = [
  "anyhow",
  "indexmap 2.9.0",
@@ -3881,7 +3870,7 @@ dependencies = [
 
 [[package]]
 name = "snarkos-node-tcp"
-version = "3.5.0"
+version = "3.6.0"
 dependencies = [
  "async-trait",
  "bytes",
@@ -3974,6 +3963,7 @@ dependencies = [
 name = "snarkvm-circuit"
 version = "1.6.0"
 source = "git+https://github.com/ProvableHQ/snarkVM.git?rev=a87ceb9#a87ceb9ccdb7d45d876c7212208b95b5a6b01820"
+
 dependencies = [
  "snarkvm-circuit-account",
  "snarkvm-circuit-algorithms",
