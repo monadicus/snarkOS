@@ -1546,10 +1546,7 @@ mod prop_tests {
     use snarkos_account::Account;
     use snarkos_node_bft_ledger_service::MockLedgerService;
     use snarkos_node_bft_storage_service::BFTMemoryService;
-    use snarkos_node_tcp::{
-        P2P,
-        protocols::{Reading, Writing},
-    };
+    use snarkos_node_tcp::P2P;
     use snarkvm::{
         ledger::{
             committee::{
@@ -1559,7 +1556,7 @@ mod prop_tests {
             },
             narwhal::{BatchHeader, batch_certificate::test_helpers::sample_batch_certificate_for_round},
         },
-        prelude::{MainnetV0, Network, PrivateKey},
+        prelude::{MainnetV0, PrivateKey},
         utilities::TestRng,
     };
 
