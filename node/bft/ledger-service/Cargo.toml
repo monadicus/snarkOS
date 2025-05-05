@@ -27,7 +27,6 @@ prover = [ ]
 cuda = [ "snarkvm/cuda" ]
 test = [ "mock", "translucent" ]
 translucent = [ "ledger" ]
-test_network = [ "snarkvm/test_targets", "snarkvm/test_consensus_heights" ]
 
 [dependencies.anyhow]
 version = "1.0"

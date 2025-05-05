@@ -19,7 +19,6 @@ edition = "2021"
 [features]
 default = [ ]
 test = [ ]
-test_network = [ "snarkvm/test_targets", "snarkvm/test_consensus_heights" ]
 
 [dependencies.anyhow]
 version = "1.0"
