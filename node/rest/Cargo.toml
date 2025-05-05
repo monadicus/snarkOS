@@ -28,7 +28,6 @@ locktick = [
   "snarkos-node-router/locktick",
   "snarkvm-synthesizer/locktick"
 ]
-test_targets = [ "snarkvm/test_targets" ]
 
 [dependencies.anyhow]
 version = "1.0.79"
@@ -81,7 +80,7 @@ version = "=3.6.0"
 [dependencies.snarkvm-synthesizer]
 #path = "../../../snarkVM/synthesizer"
 git = "https://github.com/ProvableHQ/snarkVM.git"
-rev = "629cccc"
+rev = "a87ceb9"
 version = "=1.6.0"
 default-features = false
 optional = true

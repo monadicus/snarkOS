@@ -32,7 +32,10 @@ cuda = [
   "snarkos-node-cdn/cuda",
   "snarkos-node-rest/cuda"
 ]
-test_targets = [ "snarkvm/test_targets" ]
+test_network = [ 
+  "snarkvm/test_targets", 
+  "snarkvm/test_consensus_heights" 
+]
 
 [dependencies.aleo-std]
 workspace = true

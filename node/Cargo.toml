@@ -50,7 +50,6 @@ cuda = [
   "snarkos-node-router/cuda",
   "snarkos-node-sync/cuda"
 ]
-test_targets = [ "snarkvm/test_targets" ]
 
 [dependencies.aleo-std]
 workspace = true
