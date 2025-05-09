@@ -20,7 +20,7 @@ edition = "2021"
 default = [ "parallel" ]
 parallel = [ "rayon" ]
 history = [ "snarkvm-synthesizer/history" ]
-telemetry = [ ]
+telemetry = [ "snarkos-node-consensus/telemetry" ]
 cuda = [ "snarkvm/cuda", "snarkos-node-consensus/cuda", "snarkos-node-router/cuda" ]
 locktick = [
   "dep:locktick",
