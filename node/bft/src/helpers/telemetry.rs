@@ -51,8 +51,11 @@ pub struct Telemetry<N: Network> {
     /// A mapping of `address` to a list of rounds.
     validator_certificates: Arc<RwLock<IndexMap<Address<N>, IndexSet<u64>>>>,
 
-    /// The certificate and signature participation scores for each validator.
-    participation_scores: Arc<RwLock<IndexMap<Address<N>, (f64, f64)>>>,
+    /// The certificate, signature, and combined participation scores for each validator.
+    ///     Certificate Score: The % of rounds the validator has a valid certificate
+    ///     Signature Score: The % of certificates the validator has a valid signature for
+    ///     Combined Score: The weighted score using the certificate and signature scores
+    participation_scores: Arc<RwLock<IndexMap<Address<N>, (f64, f64, f64)>>>,
 }
 
 impl<N: Network> Default for Telemetry<N> {
@@ -76,16 +79,6 @@ impl<N: Network> Telemetry<N> {
     // TODO (raychu86): Consider using committee lookback here.
     /// Fetch the participation scores for each validator in the committee set.
     pub fn get_participation_scores(&self, committee: &Committee<N>) -> IndexMap<Address<N>, f64> {
-        // Calculate the combined score with custom weights:
-        // - 90% certificate participation score
-        // - 10% signature participation score
-        fn weighted_score(certificate_score: f64, signature_score: f64) -> f64 {
-            let score = (0.9 * certificate_score) + (0.1 * signature_score);
-
-            // Truncate to the last 2 decimal places.
-            (score * 100.0).round() / 100.0
-        }
-
         // Fetch the participation scores.
         let participation_scores = self.participation_scores.read();
         // Calculate the weighted score for each validator.
@@ -93,10 +86,8 @@ impl<N: Network> Telemetry<N> {
             .members()
             .iter()
             .map(|(address, _)| {
-                let score = participation_scores
-                    .get(address)
-                    .map(|(certificate_score, signature_score)| weighted_score(*certificate_score, *signature_score))
-                    .unwrap_or(0.0);
+                let score =
+                    participation_scores.get(address).map(|(_, _, combined_score)| *combined_score).unwrap_or(0.0);
                 (*address, score)
             })
             .collect()
@@ -163,6 +154,16 @@ impl<N: Network> Telemetry<N> {
 
     /// Calculate and update the participation scores for each validator.
     pub fn update_participation_scores(&self) {
+        // Calculate the combined score with custom weights:
+        // - 90% certificate participation score
+        // - 10% signature participation score
+        fn weighted_score(certificate_score: f64, signature_score: f64) -> f64 {
+            let score = (0.9 * certificate_score) + (0.1 * signature_score);
+
+            // Truncate to the last 2 decimal places.
+            (score * 100.0).round() / 100.0
+        }
+
         // Fetch the certificates and signatures.
         let tracked_certificates = self.tracked_certificates.read();
         let validator_signatures = self.validator_signatures.read();
@@ -197,7 +198,8 @@ impl<N: Network> Telemetry<N> {
         for address in validator_addresses {
             let signature_score = *signature_participation_scores.get(&address).unwrap_or(&0) as f64;
             let certificate_score = *certificate_participation_scores.get(&address).unwrap_or(&0) as f64;
-            new_participation_scores.insert(address, (certificate_score, signature_score));
+            let combined_score = weighted_score(certificate_score, signature_score);
+            new_participation_scores.insert(address, (certificate_score, signature_score, combined_score));
         }
 
         // Update the participation scores.
