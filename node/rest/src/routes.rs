@@ -35,6 +35,11 @@ pub(crate) struct BlockRange {
     end: u32,
 }
 
+#[derive(Deserialize, Serialize)]
+pub(crate) struct BackupPath {
+    path: std::path::PathBuf,
+}
+
 /// The query object for `get_mapping_value` and `get_mapping_values`.
 #[derive(Copy, Clone, Deserialize, Serialize)]
 pub(crate) struct Metadata {
@@ -581,6 +586,16 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
         rest.routing.propagate(message, &[]);
 
         Ok(ErasedJson::pretty(solution_id))
+    }
+
+    // POST /{network}/db_backup?path=new_fs_path
+    pub(crate) async fn db_backup(
+        State(rest): State<Self>,
+        backup_path: Query<BackupPath>,
+    ) -> Result<ErasedJson, RestError> {
+        rest.ledger.backup_database(&backup_path.path).map_err(RestError::from)?;
+
+        Ok(ErasedJson::pretty(()))
     }
 
     // GET /{network}/block/{blockHeight}/history/{mapping}
