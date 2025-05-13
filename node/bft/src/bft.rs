@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -725,6 +725,20 @@ impl<N: Network> BFT<N> {
         }
 
         // Perform garbage collection based on the latest committed leader round.
+        // The protocol guarantees that validators commit the same anchors in the same order,
+        // but they may do so in different chunks of anchors,
+        // where 'chunk' refers to the vector of certificates that the loop just above iterates over.
+        // Doing garbage collection at the end of each chunk (as we do here),
+        // as opposed to after each certificate in the chunk (if we moved this call inside the loop, at the end),
+        // may give raise to a discrepancy between the DAGs of different validators who commit different chunks:
+        // one validator may have more certificates than the other, not yet garbage collected.
+        // However, when `order_dag_with_dfs()` collects the sub-DAG to commit from an anchor,
+        // it excludes certificates that are below the GC round,
+        // so the possible aforementioned discrepancy between DAGs should not affect the consensus.
+        // That exclusion in `order_dag_with_dfs()` is critical to prevent forking,
+        // so long as garbage collection is done after each chunk.
+        // If garbage collection were done after each committed certificate,
+        // that exclusion in `order_dag_with_dfs()` should be unnecessary.
         self.storage().garbage_collect_certificates(latest_leader_round);
 
         Ok(())
@@ -747,6 +761,9 @@ impl<N: Network> BFT<N> {
             commit.entry(certificate.round()).or_default().insert(certificate.clone());
 
             // Check if the previous certificate is below the GC round.
+            // This is currently a critical check to prevent forking,
+            // as explained in the comment at the end of `commit_leader_certificate()`,
+            // just before the call to garbage collection.
             let previous_round = certificate.round().saturating_sub(1);
             if previous_round + self.storage().max_gc_rounds() <= self.dag.read().last_committed_round() {
                 continue;

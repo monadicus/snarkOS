@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -153,6 +153,11 @@ impl<N: Network, C: ConsensusStorage<N>> Outbound<N> for Prover<N, C> {
 
 #[async_trait]
 impl<N: Network, C: ConsensusStorage<N>> Inbound<N> for Prover<N, C> {
+    /// Returns `true` if the message version is valid.
+    fn is_valid_message_version(&self, message_version: u32) -> bool {
+        self.router().is_valid_message_version(message_version)
+    }
+
     /// Handles a `BlockRequest` message.
     fn block_request(&self, peer_ip: SocketAddr, _message: BlockRequest) -> bool {
         debug!("Disconnecting '{peer_ip}' for the following reason - {:?}", DisconnectReason::ProtocolViolation);
