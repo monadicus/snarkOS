@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -2298,13 +2298,14 @@ mod tests {
     #[tokio::test]
     async fn test_propose_batch_over_spend_limit() {
         let mut rng = TestRng::default();
-        // Create two primaries to test spend limit activation on V4.
+
+        // Create a primary to test spend limit backwards compatibility with V4.
         let (accounts, committee) = sample_committee(&mut rng);
         let primary = primary_with_committee(
             0,
             &accounts,
             committee.clone(),
-            CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V3).unwrap(),
+            CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V4).unwrap(),
         );
 
         // Check there is no batch currently proposed.
@@ -2567,15 +2568,15 @@ mod tests {
     async fn test_batch_propose_from_peer_over_spend_limit() {
         let mut rng = TestRng::default();
 
-        // Create two primaries to test spend limit activation on V4.
+        // Create two primaries to test spend limit activation on V5.
         let (accounts, committee) = sample_committee(&mut rng);
-        let primary_v3 = primary_with_committee(
+        let primary_v4 = primary_with_committee(
             0,
             &accounts,
             committee.clone(),
-            CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V3).unwrap(),
+            CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V4).unwrap(),
         );
-        let primary_v4 = primary_with_committee(
+        let primary_v5 = primary_with_committee(
             1,
             &accounts,
             committee.clone(),
@@ -2592,26 +2593,26 @@ mod tests {
 
         // Make sure the primary is aware of the transmissions in the proposal.
         for (transmission_id, transmission) in proposal.transmissions() {
-            primary_v3.workers[0].process_transmission_from_peer(peer_ip, *transmission_id, transmission.clone());
             primary_v4.workers[0].process_transmission_from_peer(peer_ip, *transmission_id, transmission.clone());
+            primary_v5.workers[0].process_transmission_from_peer(peer_ip, *transmission_id, transmission.clone());
         }
 
         // The author must be known to resolver to pass propose checks.
-        primary_v3.gateway.resolver().insert_peer(peer_ip, peer_ip, peer_account.1.address());
         primary_v4.gateway.resolver().insert_peer(peer_ip, peer_ip, peer_account.1.address());
+        primary_v5.gateway.resolver().insert_peer(peer_ip, peer_ip, peer_account.1.address());
         // The primary must be considered synced.
-        primary_v3.sync.block_sync().try_block_sync(&primary_v3.gateway.clone()).await;
         primary_v4.sync.block_sync().try_block_sync(&primary_v4.gateway.clone()).await;
+        primary_v5.sync.block_sync().try_block_sync(&primary_v5.gateway.clone()).await;
 
-        // Check the spend limit is enforced from V4 onwards.
+        // Check the spend limit is enforced from V5 onwards.
         assert!(
-            primary_v3
+            primary_v4
                 .process_batch_propose_from_peer(peer_ip, (*proposal.batch_header()).clone().into())
                 .await
                 .is_ok()
         );
         assert!(
-            primary_v4
+            primary_v5
                 .process_batch_propose_from_peer(peer_ip, (*proposal.batch_header()).clone().into())
                 .await
                 .is_err()

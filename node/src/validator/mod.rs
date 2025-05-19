@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -125,7 +125,8 @@ impl<N: Network, C: ConsensusStorage<N>> Validator<N, C> {
         let router = Router::new(
             node_ip,
             NodeType::Validator,
-            account,
+            account.clone(),
+            ledger_service.clone(),
             trusted_peers,
             Self::MAXIMUM_NUMBER_OF_PEERS as u16,
             rotate_external_peers,
