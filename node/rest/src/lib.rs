@@ -149,6 +149,9 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
             .route(&format!("/{network}/program/{{id}}/mapping/{{name}}"), get(Self::get_mapping_values))
             .route_layer(middleware::from_fn(auth_middleware))
 
+             // Get ../consensus_version
+            .route(&format!("/{network}/consensus_version"), get(Self::get_consensus_version))
+
             // GET ../block/..
             .route(&format!("/{network}/block/height/latest"), get(Self::get_block_height_latest))
             .route(&format!("/{network}/block/hash/latest"), get(Self::get_block_hash_latest))

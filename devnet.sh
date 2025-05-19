@@ -28,6 +28,10 @@ if [[ $build_binary == "y" ]]; then
   read -p "Do you want to enable validator telemetry? (y/n, default: y): " enable_telemetry
   enable_telemetry=${enable_telemetry:-y}
 
+  # Ask the user for additional crate features (comma-separated)
+  read -p "Enter crate features to enable (comma separated, default: none): " crate_features
+  crate_features=${crate_features:-}
+
   # Build command
   build_cmd="cargo install --locked --path ."
 
@@ -36,25 +40,28 @@ if [[ $build_binary == "y" ]]; then
     build_cmd+=" --features telemetry"
   fi
 
-  # Build command
+  # Add any extra features if provided
+  if [[ -n $crate_features ]]; then
+    # If telemetry was also enabled, append with a comma separator
+    if [[ $enable_telemetry == "y" ]]; then
+      build_cmd+=",${crate_features}"
+    else
+      build_cmd+=" --features ${crate_features}"
+    fi
+  fi
+
+  # Run it
   echo "Running build command: \"$build_cmd\""
   eval "$build_cmd" || exit 1
 fi
 
 # Clear the ledger logs for each validator if the user chooses to clear ledger
 if [[ $clear_ledger == "y" ]]; then
-  # Create an array to store background processes
   clean_processes=()
-
   for ((index = 0; index < $((total_validators + total_clients)); index++)); do
-    # Run 'snarkos clean' for each node in the background
     snarkos clean --network $network_id --dev $index &
-
-    # Store the process ID of the background task
     clean_processes+=($!)
   done
-
-  # Wait for all 'snarkos clean' processes to finish
   for process_id in "${clean_processes[@]}"; do
     wait "$process_id"
   done
@@ -68,16 +75,11 @@ mkdir -p "$log_dir"
 tmux new-session -d -s "devnet" -n "validator-0"
 
 # Get the tmux's base-index for windows
-# we have to create all windows with index offset by this much
 index_offset="$(tmux show-option -gv base-index)"
-if [ -z "$index_offset" ]; then
-  index_offset=0
-fi
+index_offset=${index_offset:-0}
 
-# Generate validator indices from 0 to (total_validators - 1)
+# Generate validator indices and spawn windows
 validator_indices=($(seq 0 $((total_validators - 1))))
-
-# Loop through the list of validator indices and create a new window for each
 for validator_index in "${validator_indices[@]}"; do
   # Generate a unique and incrementing log file name based on the validator indexi
   name="validator-$validator_index"
@@ -95,11 +97,9 @@ for validator_index in "${validator_indices[@]}"; do
   tmux send-keys -t "devnet:$window_index" "snarkos start --nodisplay --network $network_id --dev $validator_index --allow-external-peers --dev-num-validators $total_validators --validator --logfile $log_file --verbosity $verbosity" C-m
 done
 
+# Spawn client windows if needed
 if [ "$total_clients" -ne 0 ]; then
-  # Generate client indices from 0 to (total_clients - 1)
   client_indices=($(seq 0 $((total_clients - 1))))
-
-  # Loop through the list of client indices and create a new window for each
   for client_index in "${client_indices[@]}"; do
     # Generate a unique and incrementing log file name based on the client index
     name="client-$client_index"
@@ -115,5 +115,5 @@ if [ "$total_clients" -ne 0 ]; then
   done
 fi
 
-# Attach to the tmux session to view and interact with the windows
+# Attach to the tmux session
 tmux attach-session -t "devnet"
