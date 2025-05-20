@@ -76,19 +76,25 @@ impl FromStr for BondedBalances {
 
 /// Starts the snarkOS node.
 #[derive(Clone, Debug, Parser)]
+#[command(group(
+    // Ensure at most one node type is specified
+    clap::ArgGroup::new("node_type")
+        .required(false)
+        .multiple(false)
+))]
 pub struct Start {
     /// Specify the network ID of this node (0 = mainnet, 1 = testnet, 2 = canary)
     #[clap(default_value_t=MainnetV0::ID, long = "network", value_parser = clap::value_parser!(u16).range((MainnetV0::ID as i64)..=(CanaryV0::ID as i64)))]
     pub network: u16,
 
-    /// Specify this node as a validator
-    #[clap(long = "validator")]
+    /// Start the node as a validator
+    #[clap(long = "validator", group = "node_type")]
     pub validator: bool,
-    /// Specify this node as a prover
-    #[clap(long = "prover")]
+    /// Start the node as a prover
+    #[clap(long = "prover", group = "node_type")]
     pub prover: bool,
-    /// Specify this node as a client
-    #[clap(long = "client")]
+    /// Start the node as a client (default)
+    #[clap(long = "client", group = "node_type")]
     pub client: bool,
 
     /// Specify the account private key of the node
@@ -506,7 +512,8 @@ impl Start {
         }
     }
 
-    /// Returns the node type, from the given configurations.
+    /// Returns the node type specified in the command-line arguments.
+    /// This will return `NodeType::Client` if no node type was specified by the user.
     const fn parse_node_type(&self) -> NodeType {
         if self.validator {
             NodeType::Validator
