@@ -77,8 +77,8 @@ impl FromStr for BondedBalances {
 /// Starts the snarkOS node.
 #[derive(Clone, Debug, Parser)]
 pub struct Start {
-    /// Specify the network ID of this node
-    #[clap(default_value = "0", long = "network")]
+    /// Specify the network ID of this node (0 = mainnet, 1 = testnet, 2 = canary)
+    #[clap(default_value_t=MainnetV0::ID, long = "network", value_parser = clap::value_parser!(u16).range((MainnetV0::ID as i64)..=(CanaryV0::ID as i64)))]
     pub network: u16,
 
     /// Specify this node as a validator
