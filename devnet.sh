@@ -29,7 +29,7 @@ if [[ $build_binary == "y" ]]; then
   enable_telemetry=${enable_telemetry:-y}
 
   # Build command
-  build_cmd="cargo install --locked --path . --offline --debug"
+  build_cmd="cargo install --locked --path ."
 
   # Add the telemetry feature if requested
   if [[ $enable_telemetry == "y" ]]; then
