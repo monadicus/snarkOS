@@ -469,7 +469,7 @@ cargo run --release -- clean --dev <NODE_ID>
 
 ## 6.4 Feature Flags
 
-By default, the metrics feature is turnned on for some internal crates.
+By default, the metrics feature is turned on for some internal crates.
 
 * **history** -
   Enables a /history REST endpoint.
