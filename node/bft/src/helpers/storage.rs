@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -80,6 +80,12 @@ pub struct StorageInner<N: Network> {
     current_height: AtomicU32,
     /* Once per round */
     /// The current round.
+    ///
+    /// Invariant: current_round > 0.
+    /// This is established in [`Storage::new`], which sets it to at least 1 via [`Storage::update_current_round`].
+    /// The only callers of [`Storage::update_current_round`] are
+    /// [`Storage::increment_to_next_round`] and [`Storage::sync_round_with_block`],
+    /// both of which set it to at least 1.
     current_round: AtomicU64,
     /// The `round` for which garbage collection has occurred **up to** (inclusive).
     gc_round: AtomicU64,
