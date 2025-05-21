@@ -90,15 +90,9 @@ version = "1.0.79"
 version = "4.4"
 features = [ "derive" ]
 
-[dependencies.crossterm]
-version = "0.27.0"
-
 [dependencies.locktick]
 version = "0.3"
 optional = true
-
-[dependencies.once_cell]
-version = "1"
 
 [dependencies.snarkos-account]
 path = "./account"
@@ -106,10 +100,6 @@ version = "=3.7.1"
 
 [dependencies.snarkos-cli]
 path = "./cli"
-version = "=3.7.1"
-
-[dependencies.snarkos-display]
-path = "./display"
 version = "=3.7.1"
 
 [dependencies.snarkos-node]
@@ -196,3 +186,17 @@ lto = "thin"
 incremental = true
 debug = true
 debug-assertions = true
+
+[package.metadata.cargo-machete]
+ignored = [
+  "snarkos-account", # Needed for cuda feature
+  "snarkos-node", # Needed for metrics feature
+  "snarkos-node-bft", # Needed for cuda and locktick features
+  "snarkos-node-cdn", # Needed for cuda and locktick features
+  "snarkos-node-consensus", # Needed for cuda and locktick features
+  "snarkos-node-tcp", # Needed for locktick feature
+  "snarkos-node-rest", # Needed for cuda and locktick features
+  "snarkos-node-sync", # Needed for cuda and locktick features
+  "snarkos-node-router", # Needed for cuda and locktick features
+  "snarkos-node-metrics", # Needed for locktick feature
+]

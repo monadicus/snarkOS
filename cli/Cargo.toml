@@ -46,9 +46,6 @@ version = "1"
 [dependencies.anyhow]
 version = "1.0.79"
 
-[dependencies.bincode]
-version = "1.0"
-
 [dependencies.clap]
 version = "4.4"
 features = [ "derive", "color", "unstable-styles" ]
