@@ -169,10 +169,8 @@ impl<N: Network> Telemetry<N> {
         let validator_signatures = self.validator_signatures.read();
         let validator_certificates = self.validator_certificates.read();
 
-        // Fetch the total number of certificates and rounds.
-        let num_certificate_rounds = tracked_certificates.len();
+        // Fetch the total number of certificates.
         let total_certificates = validator_certificates.values().map(|rounds| rounds.len()).sum::<usize>();
-        let tracked_rounds: Vec<_> = tracked_certificates.keys().copied().collect();
 
         // Calculate the signature participation scores for each validator.
         let signature_participation_scores: IndexMap<_, _> = cfg_iter!(validator_signatures)
@@ -185,6 +183,7 @@ impl<N: Network> Telemetry<N> {
 
         // Calculate the certificate participation scores for each validator.
         // This score is based on how many certificates the validator has included in every two rounds.
+        let tracked_rounds: Vec<_> = tracked_certificates.keys().skip_while(|r| *r % 2 == 0).copied().collect();
         let certificate_participation_scores: IndexMap<_, _> = cfg_iter!(validator_certificates)
             .map(|(address, certificate_rounds)| {
                 // Count the number of round pairs that are included in the certificate rounds.
@@ -192,7 +191,7 @@ impl<N: Network> Telemetry<N> {
                     .filter(|chunk| chunk.iter().any(|r| certificate_rounds.contains(r)))
                     .count();
                 // Calculate the number of round pairs.
-                let num_round_pairs = (num_certificate_rounds.saturating_add(1)).saturating_div(2);
+                let num_round_pairs = (tracked_rounds.len().saturating_add(1)).saturating_div(2);
                 // Calculate the score based on the number of certificate rounds the validator is a part of.
                 let score = num_included_round_pairs as f64 / num_round_pairs.max(1) as f64 * 100.0;
                 (*address, score as u16)
