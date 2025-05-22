@@ -82,6 +82,7 @@ pub mod consensus {
     pub const UNCONFIRMED_SOLUTIONS: &str = "snarkos_consensus_unconfirmed_solutions_total";
     pub const TRANSMISSION_LATENCY: &str = "snarkos_consensus_transmission_latency";
     pub const STALE_UNCONFIRMED_TRANSMISSIONS: &str = "snarkos_consensus_stale_unconfirmed_transmissions";
+    pub const VALIDATOR_PARTICIPATION: &str = "snarkos_consensus_validator_participation";
 }
 
 pub mod router {

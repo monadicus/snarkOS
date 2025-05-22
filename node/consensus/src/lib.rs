@@ -563,7 +563,15 @@ impl<N: Network> Consensus<N> {
                 let participation_scores =
                     self.bft().primary().gateway().validator_telemetry().get_participation_scores(&latest_committee);
 
-                // TODO: Log participation metrics
+                // Log the participation scores.
+                for (address, participation_score) in participation_scores {
+                    metrics::histogram_label(
+                        metrics::consensus::VALIDATOR_PARTICIPATION,
+                        "validator_address",
+                        address.to_string(),
+                        participation_score,
+                    )
+                }
             }
         }
         Ok(())
