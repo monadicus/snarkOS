@@ -18,13 +18,13 @@ use snarkvm::{
         committee::Committee,
         narwhal::{BatchCertificate, BatchHeader, Subdag},
     },
-    prelude::{Address, Field, Network, cfg_iter},
+    prelude::{Address, Field, Network, cfg_chunks, cfg_iter},
 };
 
 use indexmap::{IndexMap, IndexSet};
 use parking_lot::RwLock;
 use rayon::prelude::*;
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 // TODO: Consider other metrics to track:
 //  - Response time
@@ -41,7 +41,7 @@ use std::sync::Arc;
 pub struct Telemetry<N: Network> {
     /// The certificates seen for each round
     /// A mapping of `round` to set of certificate IDs.
-    tracked_certificates: Arc<RwLock<IndexMap<u64, IndexSet<Field<N>>>>>,
+    tracked_certificates: Arc<RwLock<BTreeMap<u64, IndexSet<Field<N>>>>>,
 
     /// The total number of signatures seen for a validator, including for their own certificates.
     /// A mapping of `address` to a mapping of `round` to `count`.
@@ -169,9 +169,10 @@ impl<N: Network> Telemetry<N> {
         let validator_signatures = self.validator_signatures.read();
         let validator_certificates = self.validator_certificates.read();
 
-        // Fetch the total number of certificates.
+        // Fetch the total number of certificates and rounds.
         let num_certificate_rounds = tracked_certificates.len();
         let total_certificates = validator_certificates.values().map(|rounds| rounds.len()).sum::<usize>();
+        let tracked_rounds: Vec<_> = tracked_certificates.keys().copied().collect();
 
         // Calculate the signature participation scores for each validator.
         let signature_participation_scores: IndexMap<_, _> = cfg_iter!(validator_signatures)
@@ -183,10 +184,17 @@ impl<N: Network> Telemetry<N> {
             .collect();
 
         // Calculate the certificate participation scores for each validator.
+        // This score is based on how many certificates the validator has included in every two rounds.
         let certificate_participation_scores: IndexMap<_, _> = cfg_iter!(validator_certificates)
             .map(|(address, certificate_rounds)| {
-                // Calculate a rough score for the validator based on the number of certificates seen.
-                let score = certificate_rounds.len() as f64 / num_certificate_rounds as f64 * 100.0;
+                // Count the number of round pairs that are included in the certificate rounds.
+                let num_included_round_pairs = cfg_chunks!(tracked_rounds, 2)
+                    .filter(|chunk| chunk.iter().any(|r| certificate_rounds.contains(r)))
+                    .count();
+                // Calculate the number of round pairs.
+                let num_round_pairs = (num_certificate_rounds.saturating_add(1)).saturating_div(2);
+                // Calculate the score based on the number of certificate rounds the validator is a part of.
+                let score = num_included_round_pairs as f64 / num_round_pairs.max(1) as f64 * 100.0;
                 (*address, score as u16)
             })
             .collect();
