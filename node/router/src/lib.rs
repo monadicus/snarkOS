@@ -509,7 +509,7 @@ impl<N: Network> Router<N> {
                 return;
             }
             None => {
-                warn!("Couldn't promote {peer_ip} from \"connecting\" to \"connected\": Public/listen address unkown");
+                warn!("Couldn't promote {peer_ip} from \"connecting\" to \"connected\": Public/listen address unknown");
                 return;
             }
         };
