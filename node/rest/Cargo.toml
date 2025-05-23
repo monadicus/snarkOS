@@ -28,7 +28,6 @@ locktick = [
   "snarkos-node-router/locktick",
   "snarkvm-synthesizer/locktick"
 ]
-test_targets = [ "snarkvm/test_targets" ]
 
 [dependencies.anyhow]
 version = "1.0.79"
