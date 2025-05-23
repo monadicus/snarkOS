@@ -448,10 +448,10 @@ impl<N: Network> Router<N> {
         } else if N::ID == snarkvm::console::network::MainnetV0::ID {
             // Mainnet contains the following bootstrap peers.
             vec![
-                SocketAddr::from_str("34.139.88.58:4130").unwrap(),
-                SocketAddr::from_str("34.139.252.207:4130").unwrap(),
-                SocketAddr::from_str("35.185.98.12:4130").unwrap(),
-                SocketAddr::from_str("35.231.106.26:4130").unwrap(),
+                SocketAddr::from_str("35.231.67.219:4130").unwrap(),
+                SocketAddr::from_str("34.73.195.196:4130").unwrap(),
+                SocketAddr::from_str("34.23.225.202:4130").unwrap(),
+                SocketAddr::from_str("34.148.16.111:4130").unwrap(),
             ]
         } else if N::ID == snarkvm::console::network::TestnetV0::ID {
             // TestnetV0 contains the following bootstrap peers.
@@ -464,10 +464,10 @@ impl<N: Network> Router<N> {
         } else if N::ID == snarkvm::console::network::CanaryV0::ID {
             // CanaryV0 contains the following bootstrap peers.
             vec![
-                SocketAddr::from_str("35.231.67.219:4130").unwrap(),
-                SocketAddr::from_str("34.73.195.196:4130").unwrap(),
-                SocketAddr::from_str("34.23.225.202:4130").unwrap(),
-                SocketAddr::from_str("34.148.16.111:4130").unwrap(),
+                SocketAddr::from_str("34.139.88.58:4130").unwrap(),
+                SocketAddr::from_str("34.139.252.207:4130").unwrap(),
+                SocketAddr::from_str("35.185.98.12:4130").unwrap(),
+                SocketAddr::from_str("35.231.106.26:4130").unwrap(),
             ]
         } else {
             // Unrecognized networks contain no bootstrap peers.
