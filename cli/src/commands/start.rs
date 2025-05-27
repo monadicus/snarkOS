@@ -520,7 +520,7 @@ impl Start {
     async fn parse_node<N: Network>(&mut self, shutdown: Arc<AtomicBool>) -> Result<Node<N>> {
         // Print the welcome.
         println!("{}", crate::helpers::welcome_message());
-        
+
         // Check if we are running with the lower coinbase and proof targets. This should only be
         // allowed in --dev mode and should not be allowed in mainnet mode.
         if cfg!(feature = "test_network") && self.dev.is_none() {
