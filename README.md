@@ -25,6 +25,8 @@
 * [6. Development Guide](#6-development-guide)
   * [6.1 Quick Start](#61-quick-start)
   * [6.2 Operations](#62-operations)
+  * [6.3 Local Devnet](#63-local-devnet)
+  * [6.4 Feature Flags](#64-feature-flags)
 * [7. Contributors](#7-contributors)
 * [8. License](#8-license)
 
