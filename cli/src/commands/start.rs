@@ -110,7 +110,9 @@ pub struct Start {
     /// Specify the IP address and port of the validator(s) to connect to
     #[clap(default_value = "", long = "validators")]
     pub validators: String,
-    /// If the flag is set, a validator will allow untrusted peers to connect
+    /// If the flag is set, a validator will allow untrusted peers to connect.
+    /// Client and Prover nodes ignore the flag and always allow untrusted peers
+    /// to connect.
     #[clap(long = "allow-external-peers")]
     pub allow_external_peers: bool,
     /// If the flag is set, a client will periodically evict more external peers
