@@ -78,9 +78,7 @@ impl FromStr for BondedBalances {
 #[derive(Clone, Debug, Parser)]
 #[command(group(
     // Ensure at most one node type is specified
-    clap::ArgGroup::new("node_type")
-        .required(false)
-        .multiple(false)
+    clap::ArgGroup::new("node_type").required(false).multiple(false)
 ))]
 pub struct Start {
     /// Specify the network ID of this node (0 = mainnet, 1 = testnet, 2 = canary)

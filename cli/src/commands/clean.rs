@@ -13,12 +13,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use snarkos_node::bft::helpers::proposal_cache_path;
+use snarkvm::console::network::{CanaryV0, MainnetV0, Network};
+
 use aleo_std::StorageMode;
 use anyhow::{Result, bail};
 use clap::Parser;
 use colored::Colorize;
-use snarkos_node::bft::helpers::proposal_cache_path;
-use snarkvm::console::network::{CanaryV0, MainnetV0, Network};
 use std::path::PathBuf;
 
 /// Cleans the snarkOS node storage.
