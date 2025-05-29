@@ -904,7 +904,7 @@ impl<N: Network> Gateway<N> {
             tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
             info!("Starting the heartbeat of the gateway...");
             loop {
-                // Process a heartbeat in the router.
+                // Process a heartbeat in the gateway.
                 self_clone.heartbeat();
                 // Sleep for the heartbeat interval.
                 tokio::time::sleep(Duration::from_secs(15)).await;
