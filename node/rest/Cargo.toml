@@ -80,7 +80,7 @@ version = "=3.7.1"
 [dependencies.snarkvm-synthesizer]
 #path = "../../../snarkVM/synthesizer"
 git = "https://github.com/ProvableHQ/snarkVM.git"
-rev = "382198c"
+rev = "45f3223"
 ##version = "=3.7.1"
 default-features = false
 optional = true
