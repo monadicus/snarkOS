@@ -86,6 +86,11 @@ pub const DUMMY_SELF_IP: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(1
 ///   the `request_timestamps` map remains unchanged.
 /// - When a response is removed/completed, the `requests` map and `request_timestamps` map also remove the entry for the request height.
 /// - When a request is timed out, the `requests`, `request_timestamps`, and `responses` map remove the entry for the request height.
+///
+/// Invariant: `requests` and `request_timestamps` always have the same keys.
+/// Initially, they have no keys (see `new()`), thus establishing the invariant.
+/// All the functions that change the keys of one map, also change the keys of the other map in the same way,
+/// thus preserving the invariant.
 #[derive(Debug)]
 pub struct BlockSync<N: Network> {
     /// The ledger.
@@ -266,6 +271,8 @@ impl<N: Network> BlockSync<N> {
 
     /// Returns the next block for the given `next_height` if the request is complete,
     /// or `None` otherwise. This does not remove the block from the `responses` map.
+    ///
+    /// Postcondition: If this function returns `Some`, then `self.responses` has `next_height` as a key.
     #[inline]
     pub fn peek_next_block(&self, next_height: u32) -> Option<Block<N>> {
         // Acquire the requests write lock.
@@ -273,11 +280,12 @@ impl<N: Network> BlockSync<N> {
         // from multiple peers that may be received concurrently.
         let requests = self.requests.read();
 
-        // Determine if the request is complete.
+        // Determine if the request is complete:
+        // either there is no request for `next_height`, or the request has no peer socket addresses left.
         let is_request_complete =
             requests.get(&next_height).map(|(_, _, peer_ips)| peer_ips.is_empty()).unwrap_or(true);
 
-        // If the request is not complete, return early.
+        // If the request is complete, return the block from the responses, if there is one.
         if is_request_complete { self.responses.read().get(&next_height).cloned() } else { None }
     }
 
@@ -516,6 +524,7 @@ impl<N: Network> BlockSync<N> {
         }
 
         // Remove the peer IP from the request entry.
+        // This `if` never fails, because of the postcondition of `check_block_response` (called above).
         if let Some((_, _, sync_ips)) = self.requests.write().get_mut(&height) {
             sync_ips.swap_remove(&peer_ip);
         }
@@ -554,6 +563,8 @@ impl<N: Network> BlockSync<N> {
             bail!("Failed to add block request, as block {height} exists in the responses map");
         }
         // Ensure the block height is not already requested.
+        // TODO: Because of the invariant that `requests` and `request_timestamps` have the same keys
+        //  (see `BlockSync` doc), the following check is redundant.
         if self.request_timestamps.read().contains_key(&height) {
             bail!("Failed to add block request, as block {height} exists in the timestamps map");
         }
@@ -561,6 +572,8 @@ impl<N: Network> BlockSync<N> {
     }
 
     /// Checks the given block (response) from a peer against the expected block hash and previous block hash.
+    ///
+    /// Postcondition: If this function returns `Ok`, then `self.requests` has `height` as a key.
     fn check_block_response(&self, peer_ip: &SocketAddr, block: &Block<N>) -> Result<()> {
         // Retrieve the block height.
         let height = block.height();
@@ -603,6 +616,10 @@ impl<N: Network> BlockSync<N> {
 
     /// Removes the block request and response for the given height
     /// This may only be called after `peek_next_block`, which checked if the request for the given height was complete.
+    ///
+    /// Precondition: This may only be called after `peek_next_block` has returned `Some`,
+    /// which has checked if the request for the given height is complete
+    /// and there is a block with the given `height` in the `responses` map.
     pub fn remove_block_response(&self, height: u32) {
         // Acquire the requests write lock.
         // Note: This lock must be held across the entire scope, due to asynchronous block responses
