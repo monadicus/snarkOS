@@ -92,13 +92,13 @@ pub struct StorageInner<N: Network> {
     /// The maximum number of rounds to keep in storage.
     max_gc_rounds: u64,
     /* Once per batch */
-    /// The map of `round` to a list of `(certificate ID, batch ID, author)` entries.
-    rounds: RwLock<IndexMap<u64, IndexSet<(Field<N>, Field<N>, Address<N>)>>>,
+    /// The map of `round` to a list of `(certificate ID, author)` entries.
+    rounds: RwLock<IndexMap<u64, IndexSet<(Field<N>, Address<N>)>>>,
     /// A cache of `certificate ID` to unprocessed `certificate`.
     unprocessed_certificates: RwLock<LruCache<Field<N>, BatchCertificate<N>>>,
     /// The map of `certificate ID` to `certificate`.
     certificates: RwLock<IndexMap<Field<N>, BatchCertificate<N>>>,
-    /// The map of `batch ID` to `round`.
+    /// The map of `certificate ID` to `round`.
     batch_ids: RwLock<IndexMap<Field<N>, u64>>,
     /// The map of `transmission ID` to `(transmission, certificate IDs)` entries.
     transmissions: Arc<dyn StorageService<N>>,
@@ -265,7 +265,7 @@ impl<N: Network> Storage<N> {
 
     /// Returns `true` if the storage contains a certificate from the specified `author` in the given `round`.
     pub fn contains_certificate_in_round_from(&self, round: u64, author: Address<N>) -> bool {
-        self.rounds.read().get(&round).map_or(false, |set| set.iter().any(|(_, _, a)| a == &author))
+        self.rounds.read().get(&round).map_or(false, |set| set.iter().any(|(_, a)| a == &author))
     }
 
     /// Returns `true` if the storage contains the specified `certificate ID`.
@@ -334,7 +334,7 @@ impl<N: Network> Storage<N> {
         if let Some(entries) = self.rounds.read().get(&round) {
             let certificates = self.certificates.read();
             entries.iter().find_map(
-                |(certificate_id, _, a)| if a == &author { certificates.get(certificate_id).cloned() } else { None },
+                |(certificate_id, a)| if a == &author { certificates.get(certificate_id).cloned() } else { None },
             )
         } else {
             Default::default()
@@ -351,7 +351,7 @@ impl<N: Network> Storage<N> {
         // Retrieve the certificates.
         if let Some(entries) = self.rounds.read().get(&round) {
             let certificates = self.certificates.read();
-            entries.iter().flat_map(|(certificate_id, _, _)| certificates.get(certificate_id).cloned()).collect()
+            entries.iter().flat_map(|(certificate_id, _)| certificates.get(certificate_id).cloned()).collect()
         } else {
             Default::default()
         }
@@ -366,7 +366,7 @@ impl<N: Network> Storage<N> {
         }
         // Retrieve the certificates.
         if let Some(entries) = self.rounds.read().get(&round) {
-            entries.iter().map(|(certificate_id, _, _)| *certificate_id).collect()
+            entries.iter().map(|(certificate_id, _)| *certificate_id).collect()
         } else {
             Default::default()
         }
@@ -381,7 +381,7 @@ impl<N: Network> Storage<N> {
         }
         // Retrieve the certificates.
         if let Some(entries) = self.rounds.read().get(&round) {
-            entries.iter().map(|(_, _, author)| *author).collect()
+            entries.iter().map(|(_, author)| *author).collect()
         } else {
             Default::default()
         }
@@ -398,7 +398,7 @@ impl<N: Network> Storage<N> {
         cfg_sorted_by!(rounds.clone(), |a, _, b, _| a.cmp(b))
             .flat_map(|(_, certificates_for_round)| {
                 // Iterate over the certificates for the round.
-                cfg_into_iter!(certificates_for_round).filter_map(|(certificate_id, _, _)| {
+                cfg_into_iter!(certificates_for_round).filter_map(|(certificate_id, _)| {
                     // Skip the certificate if it already exists in the ledger.
                     if self.ledger.contains_certificate(&certificate_id).unwrap_or(false) {
                         None
@@ -664,13 +664,11 @@ impl<N: Network> Storage<N> {
         let round = certificate.round();
         // Retrieve the certificate ID.
         let certificate_id = certificate.id();
-        // Retrieve the batch ID.
-        let batch_id = certificate.batch_id();
         // Retrieve the author of the batch.
         let author = certificate.author();
 
         // Insert the round to certificate ID entry.
-        self.rounds.write().entry(round).or_default().insert((certificate_id, batch_id, author));
+        self.rounds.write().entry(round).or_default().insert((certificate_id, author));
         // Obtain the certificate's transmission ids.
         let transmission_ids = certificate.transmission_ids().clone();
         // Insert the certificate.
@@ -678,7 +676,7 @@ impl<N: Network> Storage<N> {
         // Remove the unprocessed certificate.
         self.unprocessed_certificates.write().pop(&certificate_id);
         // Insert the batch ID.
-        self.batch_ids.write().insert(batch_id, round);
+        self.batch_ids.write().insert(certificate_id, round);
         // Insert the certificate ID for each of the transmissions into storage.
         self.transmissions.insert_transmissions(
             certificate_id,
@@ -714,8 +712,6 @@ impl<N: Network> Storage<N> {
         };
         // Retrieve the round.
         let round = certificate.round();
-        // Retrieve the batch ID.
-        let batch_id = certificate.batch_id();
         // Compute the author of the batch.
         let author = certificate.author();
 
@@ -727,7 +723,7 @@ impl<N: Network> Storage<N> {
         match self.rounds.write().entry(round) {
             Entry::Occupied(mut entry) => {
                 // Remove the round to certificate ID entry.
-                entry.get_mut().swap_remove(&(certificate_id, batch_id, author));
+                entry.get_mut().swap_remove(&(certificate_id, author));
                 // If the round is empty, remove it.
                 if entry.get().is_empty() {
                     entry.swap_remove();
@@ -740,7 +736,7 @@ impl<N: Network> Storage<N> {
         // Remove the unprocessed certificate.
         self.unprocessed_certificates.write().pop(&certificate_id);
         // Remove the batch ID.
-        self.batch_ids.write().swap_remove(&batch_id);
+        self.batch_ids.write().swap_remove(&certificate_id);
         // Remove the transmission entries in the certificate from storage.
         self.transmissions.remove_transmissions(&certificate_id, certificate.transmission_ids());
         // Return successfully.
@@ -886,7 +882,7 @@ impl<N: Network> Storage<N> {
     }
 
     /// Returns an iterator over the `(round, (certificate ID, batch ID, author))` entries.
-    pub fn rounds_iter(&self) -> impl Iterator<Item = (u64, IndexSet<(Field<N>, Field<N>, Address<N>)>)> {
+    pub fn rounds_iter(&self) -> impl Iterator<Item = (u64, IndexSet<(Field<N>, Address<N>)>)> {
         self.rounds.read().clone().into_iter()
     }
 
@@ -917,19 +913,17 @@ impl<N: Network> Storage<N> {
         let round = certificate.round();
         // Retrieve the certificate ID.
         let certificate_id = certificate.id();
-        // Retrieve the batch ID.
-        let batch_id = certificate.batch_id();
         // Retrieve the author of the batch.
         let author = certificate.author();
 
         // Insert the round to certificate ID entry.
-        self.rounds.write().entry(round).or_default().insert((certificate_id, batch_id, author));
+        self.rounds.write().entry(round).or_default().insert((certificate_id, author));
         // Obtain the certificate's transmission ids.
         let transmission_ids = certificate.transmission_ids().clone();
         // Insert the certificate.
         self.certificates.write().insert(certificate_id, certificate);
         // Insert the batch ID.
-        self.batch_ids.write().insert(batch_id, round);
+        self.batch_ids.write().insert(certificate_id, round);
 
         // Construct the dummy missing transmissions (for testing purposes).
         let missing_transmissions = transmission_ids
@@ -952,7 +946,7 @@ pub(crate) mod tests {
     use snarkos_node_bft_ledger_service::MockLedgerService;
     use snarkos_node_bft_storage_service::BFTMemoryService;
     use snarkvm::{
-        ledger::narwhal::Data,
+        ledger::narwhal::{Data, batch_certificate::test_helpers::sample_batch_certificate_for_round_with_committee},
         prelude::{Rng, TestRng},
     };
 
@@ -964,7 +958,7 @@ pub(crate) mod tests {
     /// Asserts that the storage matches the expected layout.
     pub fn assert_storage<N: Network>(
         storage: &Storage<N>,
-        rounds: &[(u64, IndexSet<(Field<N>, Field<N>, Address<N>)>)],
+        rounds: &[(u64, IndexSet<(Field<N>, Address<N>)>)],
         certificates: &[(Field<N>, BatchCertificate<N>)],
         batch_ids: &[(Field<N>, u64)],
         transmissions: &HashMap<TransmissionID<N>, (Transmission<N>, IndexSet<Field<N>>)>,
@@ -1042,8 +1036,6 @@ pub(crate) mod tests {
         let certificate_id = certificate.id();
         // Retrieve the round.
         let round = certificate.round();
-        // Retrieve the batch ID.
-        let batch_id = certificate.batch_id();
         // Retrieve the author of the batch.
         let author = certificate.author();
 
@@ -1062,11 +1054,11 @@ pub(crate) mod tests {
         // Check that the underlying storage representation is correct.
         {
             // Construct the expected layout for 'rounds'.
-            let rounds = [(round, indexset! { (certificate_id, batch_id, author) })];
+            let rounds = [(round, indexset! { (certificate_id, author) })];
             // Construct the expected layout for 'certificates'.
             let certificates = [(certificate_id, certificate.clone())];
             // Construct the expected layout for 'batch_ids'.
-            let batch_ids = [(batch_id, round)];
+            let batch_ids = [(certificate_id, round)];
             // Assert the storage is well-formed.
             assert_storage(&storage, &rounds, &certificates, &batch_ids, &transmissions);
         }
@@ -1108,17 +1100,15 @@ pub(crate) mod tests {
         let certificate_id = certificate.id();
         // Retrieve the round.
         let round = certificate.round();
-        // Retrieve the batch ID.
-        let batch_id = certificate.batch_id();
         // Retrieve the author of the batch.
         let author = certificate.author();
 
         // Construct the expected layout for 'rounds'.
-        let rounds = [(round, indexset! { (certificate_id, batch_id, author) })];
+        let rounds = [(round, indexset! { (certificate_id, author) })];
         // Construct the expected layout for 'certificates'.
         let certificates = [(certificate_id, certificate.clone())];
         // Construct the expected layout for 'batch_ids'.
-        let batch_ids = [(batch_id, round)];
+        let batch_ids = [(certificate_id, round)];
         // Construct the sample 'transmissions'.
         let (missing_transmissions, transmissions) = sample_transmissions(&certificate, rng);
 
@@ -1142,6 +1132,213 @@ pub(crate) mod tests {
         assert!(storage.contains_certificate(certificate_id));
         // Check that the underlying storage representation remains unchanged.
         assert_storage(&storage, &rounds, &certificates, &batch_ids, &transmissions);
+    }
+
+    /// Test that `check_incoming_certificate` does not reject a valid cert.
+    #[test]
+    fn test_valid_incoming_certificate() {
+        let rng = &mut TestRng::default();
+
+        // Sample a committee.
+        let (committee, private_keys) =
+            snarkvm::ledger::committee::test_helpers::sample_committee_and_keys_for_round(0, 5, rng);
+        // Initialize the ledger.
+        let ledger = Arc::new(MockLedgerService::new(committee));
+        // Initialize the storage.
+        let storage = Storage::<CurrentNetwork>::new(ledger, Arc::new(BFTMemoryService::new()), 1);
+
+        // Go through many rounds of valid certificates and ensure they're accepted.
+        let mut previous_certs = IndexSet::default();
+
+        for round in 1..=100 {
+            let mut new_certs = IndexSet::default();
+
+            // Generate one cert per validator
+            for private_key in private_keys.iter() {
+                let other_keys: Vec<_> = private_keys.iter().cloned().filter(|k| k != private_key).collect();
+
+                let certificate = sample_batch_certificate_for_round_with_committee(
+                    round,
+                    previous_certs.clone(),
+                    private_key,
+                    &other_keys,
+                    rng,
+                );
+                storage.check_incoming_certificate(&certificate).expect("Valid certificate rejected");
+                new_certs.insert(certificate.id());
+
+                // Construct the sample 'transmissions'.
+                let (missing_transmissions, _transmissions) = sample_transmissions(&certificate, rng);
+                storage.insert_certificate_atomic(certificate, Default::default(), missing_transmissions);
+            }
+
+            previous_certs = new_certs;
+        }
+    }
+
+    /// Make sure that we reject all certificates without sufficient signatures early.
+    #[test]
+    fn test_invalid_incoming_certificate_missing_signature() {
+        let rng = &mut TestRng::default();
+
+        // Sample a committee.
+        let (committee, private_keys) =
+            snarkvm::ledger::committee::test_helpers::sample_committee_and_keys_for_round(0, 10, rng);
+        // Initialize the ledger.
+        let ledger = Arc::new(MockLedgerService::new(committee));
+        // Initialize the storage.
+        let storage = Storage::<CurrentNetwork>::new(ledger, Arc::new(BFTMemoryService::new()), 1);
+
+        // Go through many rounds of valid certificates and ensure they're accepted.
+        let mut previous_certs = IndexSet::default();
+
+        for round in 1..=5 {
+            let mut new_certs = IndexSet::default();
+
+            // Generate one cert per validator
+            for private_key in private_keys.iter() {
+                if round < 5 {
+                    let other_keys: Vec<_> = private_keys.iter().cloned().filter(|k| k != private_key).collect();
+
+                    let certificate = sample_batch_certificate_for_round_with_committee(
+                        round,
+                        previous_certs.clone(),
+                        private_key,
+                        &other_keys,
+                        rng,
+                    );
+                    storage.check_incoming_certificate(&certificate).expect("Valid certificate rejected");
+                    new_certs.insert(certificate.id());
+
+                    // Construct the sample 'transmissions'.
+                    let (missing_transmissions, _transmissions) = sample_transmissions(&certificate, rng);
+                    storage.insert_certificate_atomic(certificate, Default::default(), missing_transmissions);
+                } else {
+                    // Pick a few signers, but not enough to form a quorum.
+                    let other_keys: Vec<_> = private_keys[0..=3].iter().cloned().filter(|k| k != private_key).collect();
+
+                    let certificate = sample_batch_certificate_for_round_with_committee(
+                        round,
+                        previous_certs.clone(),
+                        private_key,
+                        &other_keys,
+                        rng,
+                    );
+                    assert!(storage.check_incoming_certificate(&certificate).is_err());
+                }
+            }
+
+            previous_certs = new_certs;
+        }
+    }
+
+    /// Verify that `insert_certificate` rejects certs with less edges than required.
+    #[test]
+    fn test_invalid_certificate_insufficient_previous_certs() {
+        let rng = &mut TestRng::default();
+
+        // Sample a committee.
+        let (committee, private_keys) =
+            snarkvm::ledger::committee::test_helpers::sample_committee_and_keys_for_round(0, 10, rng);
+        // Initialize the ledger.
+        let ledger = Arc::new(MockLedgerService::new(committee));
+        // Initialize the storage.
+        let storage = Storage::<CurrentNetwork>::new(ledger, Arc::new(BFTMemoryService::new()), 1);
+
+        // Go through many rounds of valid certificates and ensure they're accepted.
+        let mut previous_certs = IndexSet::default();
+
+        for round in 1..=6 {
+            let mut new_certs = IndexSet::default();
+
+            // Generate one cert per validator
+            for private_key in private_keys.iter() {
+                let other_keys: Vec<_> = private_keys.iter().cloned().filter(|k| k != private_key).collect();
+
+                let certificate = sample_batch_certificate_for_round_with_committee(
+                    round,
+                    previous_certs.clone(),
+                    private_key,
+                    &other_keys,
+                    rng,
+                );
+
+                // Construct the sample 'transmissions'.
+                let (_missing_transmissions, transmissions) = sample_transmissions(&certificate, rng);
+                let transmissions = transmissions.into_iter().map(|(k, (t, _))| (k, t)).collect();
+
+                if round <= 5 {
+                    new_certs.insert(certificate.id());
+                    storage
+                        .insert_certificate(certificate, transmissions, Default::default())
+                        .expect("Valid certificate rejected");
+                } else {
+                    assert!(storage.insert_certificate(certificate, transmissions, Default::default()).is_err());
+                }
+            }
+
+            if round < 5 {
+                previous_certs = new_certs;
+            } else {
+                // Remove more than half of the previous certs.
+                previous_certs = new_certs.into_iter().skip(6).collect();
+            }
+        }
+    }
+
+    /// Verify that `insert_certificate` rejects certs that do not increment the round number.
+    #[test]
+    fn test_invalid_certificate_wrong_round_number() {
+        let rng = &mut TestRng::default();
+
+        // Sample a committee.
+        let (committee, private_keys) =
+            snarkvm::ledger::committee::test_helpers::sample_committee_and_keys_for_round(0, 10, rng);
+        // Initialize the ledger.
+        let ledger = Arc::new(MockLedgerService::new(committee));
+        // Initialize the storage.
+        let storage = Storage::<CurrentNetwork>::new(ledger, Arc::new(BFTMemoryService::new()), 1);
+
+        // Go through many rounds of valid certificates and ensure they're accepted.
+        let mut previous_certs = IndexSet::default();
+
+        for round in 1..=6 {
+            let mut new_certs = IndexSet::default();
+
+            // Generate one cert per validator
+            for private_key in private_keys.iter() {
+                let cert_round = round.min(5); // In the sixth round, do not increment
+                let other_keys: Vec<_> = private_keys.iter().cloned().filter(|k| k != private_key).collect();
+
+                let certificate = sample_batch_certificate_for_round_with_committee(
+                    cert_round,
+                    previous_certs.clone(),
+                    private_key,
+                    &other_keys,
+                    rng,
+                );
+
+                // Construct the sample 'transmissions'.
+                let (_missing_transmissions, transmissions) = sample_transmissions(&certificate, rng);
+                let transmissions = transmissions.into_iter().map(|(k, (t, _))| (k, t)).collect();
+
+                if round <= 5 {
+                    new_certs.insert(certificate.id());
+                    storage
+                        .insert_certificate(certificate, transmissions, Default::default())
+                        .expect("Valid certificate rejected");
+                } else {
+                    assert!(storage.insert_certificate(certificate, transmissions, Default::default()).is_err());
+                }
+            }
+
+            if round < 5 {
+                previous_certs = new_certs;
+            } else {
+                // Remove more than half of the previous certs.
+                previous_certs = new_certs.into_iter().skip(6).collect();
+            }
+        }
     }
 }
 
@@ -1360,17 +1557,15 @@ pub mod prop_tests {
 
         // Retrieve the round.
         let round = certificate.round();
-        // Retrieve the batch ID.
-        let batch_id = certificate.batch_id();
         // Retrieve the author of the batch.
         let author = certificate.author();
 
         // Construct the expected layout for 'rounds'.
-        let rounds = [(round, indexset! { (certificate_id, batch_id, author) })];
+        let rounds = [(round, indexset! { (certificate_id, author) })];
         // Construct the expected layout for 'certificates'.
         let certificates = [(certificate_id, certificate.clone())];
         // Construct the expected layout for 'batch_ids'.
-        let batch_ids = [(batch_id, round)];
+        let batch_ids = [(certificate_id, round)];
 
         // Insert the certificate.
         let missing_transmissions: HashMap<TransmissionID<CurrentNetwork>, Transmission<CurrentNetwork>> =
