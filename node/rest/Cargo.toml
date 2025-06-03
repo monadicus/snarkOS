@@ -33,10 +33,10 @@ locktick = [
 version = "1.0.79"
 
 [dependencies.axum]
-version = "0.7"
+version = "0.8"
 
 [dependencies.axum-extra]
-version = "0.9.0"
+version = "0.10"
 features = [ "erased-json", "typed-header" ]
 
 [dependencies.http]
@@ -102,13 +102,13 @@ version = "0.3"
 version = "1"
 
 [dependencies.tower]
-version = "0.4"
+version = "0.5"
 
 [dependencies.tower_governor]
-version = "0.3"
+version = "0.7"
 
 [dependencies.tower-http]
-version = "0.5"
+version = "0.6"
 features = [ "cors", "trace" ]
 
 [dependencies.tracing]
