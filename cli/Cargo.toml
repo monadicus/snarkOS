@@ -46,6 +46,9 @@ version = "1"
 [dependencies.anyhow]
 version = "1.0.79"
 
+[dependencies.base64]
+version = "0.22"
+
 [dependencies.bincode]
 version = "1.0"
 

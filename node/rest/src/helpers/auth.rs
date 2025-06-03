@@ -35,14 +35,8 @@ use serde::{Deserialize, Serialize};
 /// The time a jwt token is valid for.
 pub const EXPIRATION: i64 = 10 * 365 * 24 * 60 * 60; // 10 years.
 
-/// Returns the JWT secret for the node instance.
-fn jwt_secret() -> &'static Vec<u8> {
-    static SECRET: OnceCell<Vec<u8>> = OnceCell::new();
-    SECRET.get_or_init(|| {
-        let seed: [u8; 16] = ::rand::thread_rng().gen();
-        seed.to_vec()
-    })
-}
+/// The JWT secret for the REST server.
+static JWT_SECRET: OnceCell<Vec<u8>> = OnceCell::new();
 
 /// The Json web token claims.
 #[derive(Debug, Deserialize, Serialize)]
@@ -56,8 +50,18 @@ pub struct Claims {
 }
 
 impl Claims {
-    pub fn new<N: Network>(address: Address<N>) -> Self {
-        let issued_at = OffsetDateTime::now_utc().unix_timestamp();
+    pub fn new<N: Network>(address: Address<N>, jwt_secret: Option<Vec<u8>>, jwt_timestamp: Option<i64>) -> Self {
+        if let Some(secret) = jwt_secret {
+            JWT_SECRET.set(secret)
+        } else {
+            JWT_SECRET.set({
+                let seed: [u8; 16] = ::rand::thread_rng().gen();
+                seed.to_vec()
+            })
+        }
+        .expect("Failed to set JWT secret: already initialized");
+
+        let issued_at = jwt_timestamp.unwrap_or_else(|| OffsetDateTime::now_utc().unix_timestamp());
         let expiration = issued_at.saturating_add(EXPIRATION);
 
         Self { sub: address.to_string(), iat: issued_at, exp: expiration }
@@ -70,7 +74,7 @@ impl Claims {
 
     /// Returns the json web token string.
     pub fn to_jwt_string(&self) -> Result<String> {
-        encode(&Header::default(), &self, &EncodingKey::from_secret(jwt_secret())).map_err(|e| anyhow!(e))
+        encode(&Header::default(), &self, &EncodingKey::from_secret(JWT_SECRET.get().unwrap())).map_err(|e| anyhow!(e))
     }
 }
 
@@ -80,7 +84,11 @@ pub async fn auth_middleware(request: Request<Body>, next: Next) -> Result<Respo
     let auth: TypedHeader<Authorization<Bearer>> =
         parts.extract().await.map_err(|_| StatusCode::UNAUTHORIZED.into_response())?;
 
-    match decode::<Claims>(auth.token(), &DecodingKey::from_secret(jwt_secret()), &Validation::new(Algorithm::HS256)) {
+    match decode::<Claims>(
+        auth.token(),
+        &DecodingKey::from_secret(JWT_SECRET.get().unwrap()),
+        &Validation::new(Algorithm::HS256),
+    ) {
         Ok(decoded) => {
             let claims = decoded.claims;
             if claims.is_expired() {

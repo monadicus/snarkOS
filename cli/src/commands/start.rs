@@ -34,6 +34,7 @@ use snarkvm::{
 
 use aleo_std::StorageMode;
 use anyhow::{Context, Result, bail, ensure};
+use base64::prelude::{BASE64_STANDARD, Engine};
 use clap::Parser;
 use colored::Colorize;
 use core::str::FromStr;
@@ -129,6 +130,12 @@ pub struct Start {
     /// Specify the requests per second (RPS) rate limit per IP for the REST server
     #[clap(default_value = "10", long = "rest-rps")]
     pub rest_rps: u32,
+    /// Specify the JWT secret for the REST server (16B, base64-encoded).
+    #[clap(long)]
+    pub jwt_secret: Option<String>,
+    /// Specify the JWT creation timestamp; can be any time in the last 10 years.
+    #[clap(long)]
+    pub jwt_timestamp: Option<i64>,
     /// If the flag is set, the node will not initialize the REST server
     #[clap(long)]
     pub norest: bool,
@@ -586,7 +593,20 @@ impl Start {
                 if let Some(rest_ip) = rest_ip {
                     println!("🌐 Starting the REST server at {}.\n", rest_ip.to_string().bold());
 
-                    if let Ok(jwt_token) = snarkos_node_rest::Claims::new(account.address()).to_jwt_string() {
+                    let jwt_secret = if let Some(jwt_b64) = &self.jwt_secret {
+                        if self.jwt_timestamp.is_none() {
+                            bail!("The '--jwt-timestamp' flag must be set if the '--jwt-secret' flag is set");
+                        }
+                        let jwt_bytes = BASE64_STANDARD.decode(jwt_b64).map_err(|_| anyhow::anyhow!("Invalid JWT secret"))?;
+                        if jwt_bytes.len() != 16 {
+                            bail!("The JWT secret must be 16 bytes long");
+                        }
+                        Some(jwt_bytes)
+                    } else {
+                        None
+                    };
+
+                    if let Ok(jwt_token) = snarkos_node_rest::Claims::new(account.address(), jwt_secret, self.jwt_timestamp).to_jwt_string() {
                         println!("🔑 Your one-time JWT token is {}\n", jwt_token.dimmed());
                     }
                 }
