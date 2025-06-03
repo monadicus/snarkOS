@@ -821,41 +821,36 @@ impl<N: Network> Primary<N> {
         // Inserts the missing transmissions into the workers.
         self.insert_missing_transmissions_into_workers(peer_ip, missing_transmissions.into_iter())?;
 
-        // Initialize a counter to track the total proposal cost.
-        let mut proposal_cost = 0u64;
+        // Ensure the transaction doesn't bring the proposal above the spend limit.
+        let block_height = self.ledger.latest_block_height() + 1;
+        if N::CONSENSUS_VERSION(block_height)? >= ConsensusVersion::V5 {
+            let mut proposal_cost = 0u64;
+            for transmission_id in batch_header.transmission_ids() {
+                let worker_id = assign_to_worker(*transmission_id, self.num_workers())?;
+                let Some(worker) = self.workers.get(worker_id as usize) else {
+                    debug!("Unable to find worker {worker_id}");
+                    return Ok(());
+                };
 
-        for transmission_id in batch_header.transmission_ids() {
-            let worker_id = assign_to_worker(*transmission_id, self.num_workers())?;
-            let Some(worker) = self.workers.get(worker_id as usize) else {
-                debug!("Unable to find worker {worker_id}");
-                return Ok(());
-            };
+                let Some(transmission) = worker.get_transmission(*transmission_id) else {
+                    debug!("Unable to find transmission '{}' in worker '{worker_id}", fmt_id(transmission_id));
+                    return Ok(());
+                };
 
-            let Some(transmission) = worker.get_transmission(*transmission_id) else {
-                debug!("Unable to find transmission '{}' in worker '{worker_id}", fmt_id(transmission_id));
-                return Ok(());
-            };
-
-            // If the transmission is a transaction, check that it satisfies the required properties.
-            if let (TransmissionID::Transaction(transaction_id, _), Transmission::Transaction(transaction)) =
-                (transmission_id, transmission)
-            {
-                // Deserialize the transaction. If the transaction exceeds the maximum size, then return an error.
-                let transaction = spawn_blocking!({
-                    match transaction {
-                        Data::Object(transaction) => Ok(transaction),
-                        Data::Buffer(bytes) => {
-                            Ok(Transaction::<N>::read_le(&mut bytes.take(N::MAX_TRANSACTION_SIZE as u64))?)
+                // If the transmission is a transaction, compute its execution cost.
+                if let (TransmissionID::Transaction(transaction_id, _), Transmission::Transaction(transaction)) =
+                    (transmission_id, transmission)
+                {
+                    // Deserialize the transaction. If the transaction exceeds the maximum size, then return an error.
+                    let transaction = spawn_blocking!({
+                        match transaction {
+                            Data::Object(transaction) => Ok(transaction),
+                            Data::Buffer(bytes) => {
+                                Ok(Transaction::<N>::read_le(&mut bytes.take(N::MAX_TRANSACTION_SIZE as u64))?)
+                            }
                         }
-                    }
-                })?;
+                    })?;
 
-                // Get the current block height.
-                let block_height = self.ledger.latest_block_height() + 1;
-
-                // If the `ConsensusVersion` is greater than or equal to V5:
-                //   - ensure the transaction doesn't bring the proposal above the spend limit.
-                if N::CONSENSUS_VERSION(block_height)? >= ConsensusVersion::V5 {
                     // Compute the transaction spent cost (in microcredits).
                     // Note: We purposefully discard this transaction if we are unable to compute the spent cost.
                     let Ok(cost) = self.ledger.transaction_spent_cost_in_microcredits(*transaction_id, transaction)
