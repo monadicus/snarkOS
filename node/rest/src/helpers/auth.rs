@@ -96,8 +96,8 @@ pub async fn auth_middleware(request: Request<Body>, next: Next) -> Result<Respo
             }
         }
 
-        Err(_) => {
-            return Err(StatusCode::UNAUTHORIZED.into_response());
+        Err(err) => {
+            return Err((StatusCode::UNAUTHORIZED, err.to_string()).into_response());
         }
     }
 
