@@ -67,11 +67,6 @@ impl Claims {
         Self { sub: address.to_string(), iat: issued_at, exp: expiration }
     }
 
-    /// Returns true if the token is expired.
-    pub fn is_expired(&self) -> bool {
-        OffsetDateTime::now_utc().unix_timestamp() >= self.exp
-    }
-
     /// Returns the json web token string.
     pub fn to_jwt_string(&self) -> Result<String> {
         encode(&Header::default(), &self, &EncodingKey::from_secret(JWT_SECRET.get().unwrap())).map_err(|e| anyhow!(e))
@@ -84,21 +79,13 @@ pub async fn auth_middleware(request: Request<Body>, next: Next) -> Result<Respo
     let auth: TypedHeader<Authorization<Bearer>> =
         parts.extract().await.map_err(|_| StatusCode::UNAUTHORIZED.into_response())?;
 
-    match decode::<Claims>(
+    if let Err(err) = decode::<Claims>(
         auth.token(),
         &DecodingKey::from_secret(JWT_SECRET.get().unwrap()),
         &Validation::new(Algorithm::HS256),
     ) {
-        Ok(decoded) => {
-            let claims = decoded.claims;
-            if claims.is_expired() {
-                return Err((StatusCode::UNAUTHORIZED, "Expired JSON Web Token".to_owned()).into_response());
-            }
-        }
-
-        Err(err) => {
-            return Err((StatusCode::UNAUTHORIZED, err.to_string()).into_response());
-        }
+        warn!("Request authorization error: {err}");
+        return Err(StatusCode::UNAUTHORIZED.into_response());
     }
 
     // Reconstruct the request.
