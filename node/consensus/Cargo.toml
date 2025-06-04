@@ -58,9 +58,6 @@ optional = true
 [dependencies.parking_lot]
 version = "0.12"
 
-[dependencies.rand]
-version = "0.8"
-
 [dependencies.snarkos-account]
 path = "../../account"
 version = "=3.7.1"
@@ -80,10 +77,6 @@ path = "../bft/storage-service"
 version = "=3.7.1"
 default-features = false
 features = [ "persistent" ]
-
-[dependencies.snarkos-node-sync]
-path = "../sync"
-version = "=3.7.1"
 
 [dependencies.snarkvm]
 workspace = true
