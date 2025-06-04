@@ -113,3 +113,6 @@ features = [ "cors", "trace" ]
 
 [dependencies.tracing]
 version = "0.1"
+
+[dev-dependencies.base64]
+version = "0.22"
