@@ -106,3 +106,37 @@ pub async fn auth_middleware(request: Request<Body>, next: Next) -> Result<Respo
 
     Ok(next.run(request).await)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use base64::prelude::*;
+    use snarkvm::prelude::{Address, MainnetV0};
+
+    #[test]
+    fn check_const_jwt_value() {
+        // Arbitrary input values to check against the expected value.
+        let secret = "FVPjEPVAKh2f0EkRCpQkqA==";
+        let timestamp = 174437065;
+
+        let secret_bytes = BASE64_STANDARD.decode(secret).unwrap();
+
+        // A fixed seed, as the address also forms part of the JWT.
+        let mut rng = TestRng::fixed(12345);
+        let pk = PrivateKey::<MainnetV0>::new(&mut rng).unwrap();
+        let addr = Address::try_from(pk).unwrap();
+
+        let claims = Claims::new(addr, Some(secret_bytes), Some(timestamp));
+        let jwt_str = claims.to_jwt_string().unwrap();
+
+        assert_eq!(
+            jwt_str,
+            "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.\
+            eyJzdWIiOiJhbGVvMTBrbmtlbHZuZDU1ZnNhYX\
+            JtMjV3Y2g3cDlzdWYydHFsZ3d5NWs0bnh3bXM2\
+            ZDI2Mnh5ZnFtMnRjY3IiLCJpYXQiOjE3NDQzNz\
+            A2NSwiZXhwIjo0ODk3OTcwNjV9.HcTvPC7jQyq\
+            NaPqsC2XHZl3Yji_OHxo5TyKLSKVxirI"
+        );
+    }
+}
