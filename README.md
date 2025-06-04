@@ -25,6 +25,8 @@
 * [6. Development Guide](#6-development-guide)
   * [6.1 Quick Start](#61-quick-start)
   * [6.2 Operations](#62-operations)
+  * [6.3 Local Devnet](#63-local-devnet)
+  * [6.4 Feature Flags](#64-feature-flags)
 * [7. Contributors](#7-contributors)
 * [8. License](#8-license)
 
@@ -469,7 +471,7 @@ cargo run --release -- clean --dev <NODE_ID>
 
 ## 6.4 Feature Flags
 
-By default, the metrics feature is turnned on for some internal crates.
+By default, the metrics feature is turned on for some internal crates.
 
 * **history** -
   Enables a /history REST endpoint.
