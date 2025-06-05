@@ -543,7 +543,7 @@ impl Start {
         if cfg!(feature = "test_network") && self.dev.is_none() {
             bail!("The 'test_network' feature is enabled, but the '--dev' flag is not set");
         }
-        
+
         // Parse the trusted peers to connect to.
         let mut trusted_peers = self.parse_trusted_peers()?;
         // Parse the trusted validators to connect to.
