@@ -400,15 +400,32 @@ jobs:
     steps:
       - checkout
       - setup_environment:
-          cache_key: v3.3.1-rust-1.83.0--cache
+          cache_key: v3.3.1-rust-1.83.0-machete-cache
       - run:
           name: Check for unused dependencies
-          no_output_timeout: 35m
+          no_output_timeout: 10m
           command: |
             cargo install cargo-machete@0.7.0
             cargo machete
       - clear_environment:
           cache_key: v3.3.1-rust-1.83.0-machete-cache
+
+  check-cargo-audit:
+    docker:
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+    resource_class: << pipeline.parameters.medium >>
+    steps:
+      - checkout
+      - setup_environment:
+          cache_key: v3.3.1-rust-1.83.0-cargo-audit-cache
+      - run:
+          name: Check for security vulnerabilities
+          no_output_timeout: 10m
+          command: |
+            cargo install cargo-audit@0.21.2 --locked
+            cargo audit -D warnings
+      - clear_environment:
+          cache_key: v3.3.1-rust-1.83.0-cargo-audit-cache
 
   check-clippy:
     docker:
@@ -466,6 +483,7 @@ workflows:
       - check-fmt
       - check-clippy
       - check-unused-dependencies
+      - check-cargo-audit
       - devnet-test
 
   windows-workflow:
