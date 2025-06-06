@@ -543,9 +543,6 @@ impl Start {
         if cfg!(feature = "test_network") && self.dev.is_none() {
             bail!("The 'test_network' feature is enabled, but the '--dev' flag is not set");
         }
-        if cfg!(feature = "test_network") && N::ID == MainnetV0::ID {
-            bail!("The 'test_network' feature is enabled, but you are trying to use mainnet. This is not supported.");
-        }
 
         // Parse the trusted peers to connect to.
         let mut trusted_peers = self.parse_trusted_peers()?;
