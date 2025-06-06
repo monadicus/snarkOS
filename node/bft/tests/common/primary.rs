@@ -176,6 +176,7 @@ impl TestNetwork {
                     Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), MEMORY_POOL_PORT + id as u16)),
                     &[],
                     StorageMode::new_test(None),
+                    None,
                 )
                 .unwrap();
                 (bft.primary().clone(), Some(bft))
@@ -188,6 +189,7 @@ impl TestNetwork {
                     Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), MEMORY_POOL_PORT + id as u16)),
                     &[],
                     StorageMode::new_test(None),
+                    None,
                 )
                 .unwrap();
                 (primary, None)
