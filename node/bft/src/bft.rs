@@ -79,7 +79,7 @@ pub struct BFT<N: Network> {
     leader_certificate_timer: Arc<AtomicI64>,
     /// The consensus sender.
     consensus_sender: Arc<OnceCell<ConsensusSender<N>>>,
-    /// The spawned handles.
+    /// Handles for all spawned tasks.
     handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
     /// The BFT lock.
     lock: Arc<TMutex<()>>,
@@ -107,6 +107,9 @@ impl<N: Network> BFT<N> {
     }
 
     /// Run the BFT instance.
+    ///
+    /// This will return as soon as all required tasks are spawned.
+    /// The function must not be called more than once per instance.
     pub async fn run(
         &mut self,
         consensus_sender: Option<ConsensusSender<N>>,

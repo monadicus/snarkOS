@@ -25,11 +25,11 @@ use snarkos_node_bft::{
     Primary,
     helpers::{
         ConsensusReceiver,
-        PrimaryReceiver,
         PrimarySender,
         Storage as NarwhalStorage,
         fmt_id,
         init_consensus_channels,
+        init_primary_channels,
     },
     spawn_blocking,
 };
@@ -54,10 +54,7 @@ use lru::LruCache;
 #[cfg(not(feature = "locktick"))]
 use parking_lot::Mutex;
 use std::{future::Future, net::SocketAddr, num::NonZeroUsize, sync::Arc, time::Duration};
-use tokio::{
-    sync::{OnceCell, oneshot},
-    task::JoinHandle,
-};
+use tokio::{sync::oneshot, task::JoinHandle};
 
 #[cfg(feature = "metrics")]
 use std::collections::HashMap;
@@ -90,6 +87,12 @@ impl<N: Network> Default for TransactionsQueue<N> {
     }
 }
 
+/// Wrapper around `BFT` that adds additional functionality, such as a mempool.
+///
+/// Consensus acts as a rate limiter to prevents workers in BFT from being overloaded.
+/// Each worker maintains a ready queue (which is essentially also a mempool), but verifies transactions/solutions
+/// before enquing them.
+/// Consensus only passes more transactions/solutions to the BFT layer if its ready queues are not already full.
 #[derive(Clone)]
 pub struct Consensus<N: Network> {
     /// The ledger.
@@ -97,7 +100,7 @@ pub struct Consensus<N: Network> {
     /// The BFT.
     bft: BFT<N>,
     /// The primary sender.
-    primary_sender: Arc<OnceCell<PrimarySender<N>>>,
+    primary_sender: PrimarySender<N>,
     /// The unconfirmed solutions queue.
     solutions_queue: Arc<Mutex<LruCache<SolutionID<N>, Solution<N>>>>,
     /// The unconfirmed transactions queue.
@@ -108,30 +111,32 @@ pub struct Consensus<N: Network> {
     seen_transactions: Arc<Mutex<LruCache<N::TransactionID, ()>>>,
     #[cfg(feature = "metrics")]
     transmissions_queue_timestamps: Arc<Mutex<HashMap<TransmissionID<N>, i64>>>,
-    /// The spawned handles.
+    /// The handles of all spawned tasks.
     handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
 }
 
 impl<N: Network> Consensus<N> {
-    /// Initializes a new instance of consensus.
-    pub fn new(
+    /// Initializes a new instance of consensus and spawn its background tasks.
+    pub async fn new(
         account: Account<N>,
         ledger: Arc<dyn LedgerService<N>>,
         ip: Option<SocketAddr>,
         trusted_validators: &[SocketAddr],
         storage_mode: StorageMode,
     ) -> Result<Self> {
+        // Initialize the primary channels.
+        let (primary_sender, primary_receiver) = init_primary_channels::<N>();
         // Initialize the Narwhal transmissions.
         let transmissions = Arc::new(BFTPersistentStorage::open(storage_mode.clone())?);
         // Initialize the Narwhal storage.
         let storage = NarwhalStorage::new(ledger.clone(), transmissions, BatchHeader::<N>::MAX_GC_ROUNDS as u64);
         // Initialize the BFT.
         let bft = BFT::new(account, storage, ledger.clone(), ip, trusted_validators, storage_mode)?;
-        // Return the consensus.
-        Ok(Self {
+        // Create a new instance of Consensus.
+        let mut _self = Self {
             ledger,
             bft,
-            primary_sender: Default::default(),
+            primary_sender,
             solutions_queue: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(CAPACITY_FOR_SOLUTIONS).unwrap()))),
             transactions_queue: Default::default(),
             seen_solutions: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(1 << 16).unwrap()))),
@@ -139,52 +144,38 @@ impl<N: Network> Consensus<N> {
             #[cfg(feature = "metrics")]
             transmissions_queue_timestamps: Default::default(),
             handles: Default::default(),
-        })
-    }
+        };
 
-    /// Run the consensus instance.
-    pub async fn run(&mut self, primary_sender: PrimarySender<N>, primary_receiver: PrimaryReceiver<N>) -> Result<()> {
         info!("Starting the consensus instance...");
-        // Set the primary sender.
-        self.primary_sender.set(primary_sender.clone()).expect("Primary sender already set");
 
         // First, initialize the consensus channels.
         let (consensus_sender, consensus_receiver) = init_consensus_channels();
         // Then, start the consensus handlers.
-        self.start_handlers(consensus_receiver);
-        // Lastly, the consensus.
-        self.bft.run(Some(consensus_sender), primary_sender, primary_receiver).await?;
-        Ok(())
+        _self.start_handlers(consensus_receiver);
+        // Lastly, also start BFTs handlers.
+        _self.bft.run(Some(consensus_sender), _self.primary_sender.clone(), primary_receiver).await?;
+
+        Ok(_self)
     }
 
-    /// Returns the ledger.
-    pub const fn ledger(&self) -> &Arc<dyn LedgerService<N>> {
-        &self.ledger
-    }
-
-    /// Returns the BFT.
+    /// Returns the underlying `BFT` struct.
     pub const fn bft(&self) -> &BFT<N> {
         &self.bft
-    }
-
-    /// Returns the primary sender.
-    pub fn primary_sender(&self) -> &PrimarySender<N> {
-        self.primary_sender.get().expect("Primary sender not set")
     }
 }
 
 impl<N: Network> Consensus<N> {
-    /// Returns the number of unconfirmed transmissions.
+    /// Returns the number of unconfirmed transmissions in the BFT's workers (not in the mempool).
     pub fn num_unconfirmed_transmissions(&self) -> usize {
         self.bft.num_unconfirmed_transmissions()
     }
 
-    /// Returns the number of unconfirmed ratifications.
+    /// Returns the number of unconfirmed ratifications in the BFT's workers (not in the mempool).
     pub fn num_unconfirmed_ratifications(&self) -> usize {
         self.bft.num_unconfirmed_ratifications()
     }
 
-    /// Returns the number of solutions.
+    /// Returns the number unconfirmed solutions in the BFT's workers (not in the mempool).
     pub fn num_unconfirmed_solutions(&self) -> usize {
         self.bft.num_unconfirmed_solutions()
     }
@@ -283,7 +274,8 @@ impl<N: Network> Consensus<N> {
 }
 
 impl<N: Network> Consensus<N> {
-    /// Adds the given unconfirmed solution to the memory pool.
+    /// Adds the given unconfirmed solution to the memory pool, which will then eventually be passed
+    /// to the BFT layer for inclusion in a batch.
     pub async fn add_unconfirmed_solution(&self, solution: Solution<N>) -> Result<()> {
         // Calculate the transmission checksum.
         let checksum = Data::<Solution<N>>::Buffer(solution.to_bytes_le()?.into()).to_checksum::<N>()?;
@@ -319,8 +311,9 @@ impl<N: Network> Consensus<N> {
         self.process_unconfirmed_solutions().await
     }
 
-    /// Processes unconfirmed transactions in the memory pool.
-    pub async fn process_unconfirmed_solutions(&self) -> Result<()> {
+    /// Processes unconfirmed solutions in the mempool, and passes them to the BFT layer
+    /// (if sufficient space is available).
+    async fn process_unconfirmed_solutions(&self) -> Result<()> {
         // If the memory pool of this node is full, return early.
         let num_unconfirmed_solutions = self.num_unconfirmed_solutions();
         let num_unconfirmed_transmissions = self.num_unconfirmed_transmissions();
@@ -345,11 +338,11 @@ impl<N: Network> Consensus<N> {
             let solution_id = solution.id();
             trace!("Adding unconfirmed solution '{}' to the memory pool...", fmt_id(solution_id));
             // Send the unconfirmed solution to the primary.
-            if let Err(e) = self.primary_sender().send_unconfirmed_solution(solution_id, Data::Object(solution)).await {
+            if let Err(e) = self.primary_sender.send_unconfirmed_solution(solution_id, Data::Object(solution)).await {
                 // If the BFT is synced, then log the warning.
                 if self.bft.is_synced() {
                     // If error occurs after the first 10 blocks of the epoch, log it as a warning, otherwise ignore.
-                    if self.ledger().latest_block_height() % N::NUM_BLOCKS_PER_EPOCH > 10 {
+                    if self.ledger.latest_block_height() % N::NUM_BLOCKS_PER_EPOCH > 10 {
                         warn!("Failed to add unconfirmed solution '{}' to the memory pool - {e}", fmt_id(solution_id))
                     };
                 }
@@ -358,7 +351,8 @@ impl<N: Network> Consensus<N> {
         Ok(())
     }
 
-    /// Adds the given unconfirmed transaction to the memory pool.
+    /// Adds the given unconfirmed transaction to the memory pool, which will then eventually be passed
+    /// to the BFT layer for inclusion in a batch.
     pub async fn add_unconfirmed_transaction(&self, transaction: Transaction<N>) -> Result<()> {
         // Calculate the transmission checksum.
         let checksum = Data::<Transaction<N>>::Buffer(transaction.to_bytes_le()?.into()).to_checksum::<N>()?;
@@ -402,8 +396,9 @@ impl<N: Network> Consensus<N> {
         }
     }
 
-    /// Processes unconfirmed transactions in the memory pool.
-    pub async fn process_unconfirmed_transactions(&self) -> Result<()> {
+    /// Processes unconfirmed transctions in the mempool, and passes them to the BFT layer
+    /// (if sufficient space is available).
+    async fn process_unconfirmed_transactions(&self) -> Result<()> {
         // If the memory pool of this node is full, return early.
         let num_unconfirmed_transmissions = self.num_unconfirmed_transmissions();
         if num_unconfirmed_transmissions >= Primary::<N>::MAX_TRANSMISSIONS_TOLERANCE {
@@ -439,7 +434,7 @@ impl<N: Network> Consensus<N> {
             trace!("Adding unconfirmed transaction '{}' to the memory pool...", fmt_id(transaction_id));
             // Send the unconfirmed transaction to the primary.
             if let Err(e) =
-                self.primary_sender().send_unconfirmed_transaction(transaction_id, Data::Object(transaction)).await
+                self.primary_sender.send_unconfirmed_transaction(transaction_id, Data::Object(transaction)).await
             {
                 // If the BFT is synced, then log the warning.
                 if self.bft.is_synced() {
@@ -456,6 +451,8 @@ impl<N: Network> Consensus<N> {
 
 impl<N: Network> Consensus<N> {
     /// Starts the consensus handlers.
+    ///
+    /// This is only invoked once, in the constructor.
     fn start_handlers(&self, consensus_receiver: ConsensusReceiver<N>) {
         let ConsensusReceiver { mut rx_consensus_subdag } = consensus_receiver;
 
@@ -468,6 +465,9 @@ impl<N: Network> Consensus<N> {
         });
 
         // Process the unconfirmed transactions in the memory pool.
+        //
+        // TODO (kaimast): This shouldn't happen periodically but only when new batches/blocks are accepted
+        // by the BFT layer, after which the worker's ready queue may have capacity for more transactions/solutions.
         let self_ = self.clone();
         self.spawn(async move {
             loop {
@@ -485,7 +485,7 @@ impl<N: Network> Consensus<N> {
         });
     }
 
-    /// Processes the committed subdag and transmissions from the BFT.
+    /// Attempts to build a new block from the given subDAG, and (tries to) advance the legder to it.
     async fn process_bft_subdag(
         &self,
         subdag: Subdag<N>,
@@ -508,7 +508,7 @@ impl<N: Network> Consensus<N> {
         callback.send(result).ok();
     }
 
-    /// Attempts to advance to the next block.
+    /// Attempts to advance the ledger to the next block, and upadtes the metrics (if enabled) accordingly.
     fn try_advance_to_next_block(
         &self,
         subdag: Subdag<N>,
@@ -535,6 +535,9 @@ impl<N: Network> Consensus<N> {
             // Clear the worker solutions.
             self.bft.primary().clear_worker_solutions();
         }
+
+        // TODO(kaimast): This should also remove any transmissions/solutions contained in the block from the mempool.
+        // Removal currently happens when Consensus eventually passes them to the worker, which then just discards them.
 
         #[cfg(feature = "metrics")]
         {
@@ -585,11 +588,11 @@ impl<N: Network> Consensus<N> {
             (TransmissionID::Ratification, Transmission::Ratification) => return Ok(()),
             (TransmissionID::Solution(solution_id, _), Transmission::Solution(solution)) => {
                 // Send the solution to the primary.
-                self.primary_sender().tx_unconfirmed_solution.send((solution_id, solution, callback)).await?;
+                self.primary_sender.tx_unconfirmed_solution.send((solution_id, solution, callback)).await?;
             }
             (TransmissionID::Transaction(transaction_id, _), Transmission::Transaction(transaction)) => {
                 // Send the transaction to the primary.
-                self.primary_sender().tx_unconfirmed_transaction.send((transaction_id, transaction, callback)).await?;
+                self.primary_sender.tx_unconfirmed_transaction.send((transaction_id, transaction, callback)).await?;
             }
             _ => bail!("Mismatching `(transmission_id, transmission)` pair in consensus"),
         }
@@ -602,7 +605,7 @@ impl<N: Network> Consensus<N> {
         self.handles.lock().push(tokio::spawn(future));
     }
 
-    /// Shuts down the BFT.
+    /// Shuts down the consensus and BFT layers.
     pub async fn shut_down(&self) {
         info!("Shutting down consensus...");
         // Shut down the BFT.
