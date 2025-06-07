@@ -1133,7 +1133,7 @@ impl<N: Network> Primary<N> {
 impl<N: Network> Primary<N> {
     /// Starts the primary handlers.
     ///
-    /// For each receiver in the `primary_receiver` struct, there will be a dedicated tasks
+    /// For each receiver in the `primary_receiver` struct, there will be a dedicated task
     /// that awaits new data and handles it accordingly.
     /// Additionally, this spawns a task that periodically issues PrimaryPings and one that periodically
     /// tries to move the the next round of batches.
