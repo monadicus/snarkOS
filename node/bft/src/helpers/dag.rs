@@ -22,7 +22,7 @@ use snarkvm::{
 use indexmap::IndexSet;
 use std::collections::{BTreeMap, HashMap};
 
-/// Maintains an directed acyclic graph (DAG) of batches, from which we build a totally-ordered blockchain.
+/// Maintains a directed acyclic graph (DAG) of certificates, from which we build a totally-ordered blockchain.
 ///
 /// The DAG is updated in rounds, where each validator adds at most one new batch.
 /// Certificates older than GC are removed, as they are not longer needed.
