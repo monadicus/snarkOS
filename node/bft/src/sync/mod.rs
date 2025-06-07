@@ -562,8 +562,6 @@ impl<N: Network> Sync<N> {
     async fn sync_storage_with_block(&self, block: Block<N>) -> Result<()> {
         // Acquire the sync lock.
         let _lock = self.sync_lock.lock().await;
-        // Acquire the latest block responses lock.
-        let mut latest_block_responses = self.latest_block_responses.lock().await;
 
         // If this block has already been processed, return early.
         // TODO(kaimast): Should we remove the response here?
@@ -571,6 +569,9 @@ impl<N: Network> Sync<N> {
             debug!("Ledger is already synced with block at height {}. Will not sync.", block.height());
             return Ok(());
         }
+
+        // Acquire the latest block responses lock.
+        let mut latest_block_responses = self.latest_block_responses.lock().await;
 
         if latest_block_responses.contains_key(&block.height()) {
             debug!("An unconfirmed block is queued already for height {}. Will not sync.", block.height());
