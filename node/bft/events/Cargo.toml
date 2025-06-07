@@ -1,6 +1,6 @@
 [package]
 name = "snarkos-node-bft-events"
-version = "3.5.0"
+version = "3.7.1"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Events for the gateway in a decentralized operating system"
 homepage = "https://aleo.org"
@@ -18,8 +18,7 @@ edition = "2021"
 
 [features]
 default = [ ]
-metrics = [ "dep:metrics", "snarkvm/metrics" ]
-test_targets = [ "snarkvm/test_targets" ]
+metrics = [ "snarkvm/metrics" ]
 
 [dependencies.anyhow]
 version = "1.0"
@@ -31,21 +30,12 @@ version = "1"
 version = "2.1"
 features = [ "serde", "rayon" ]
 
-[dependencies.metrics]
-package = "snarkos-node-metrics"
-path = "../../metrics"
-version = "=3.5.0"
-optional = true
-
-[dependencies.rayon]
-version = "1"
-
 [dependencies.serde]
 version = "1"
 
 [dependencies.snarkos-node-sync-locators]
 path = "../../sync/locators"
-version = "=3.5.0"
+version = "=3.7.1"
 
 [dependencies.snarkvm]
 workspace = true

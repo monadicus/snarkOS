@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -39,8 +39,9 @@ pub use outbound::*;
 mod routing;
 pub use routing::*;
 
-use crate::messages::NodeType;
+use crate::messages::{Message, NodeType};
 use snarkos_account::Account;
+use snarkos_node_bft_ledger_service::LedgerService;
 use snarkos_node_tcp::{Config, P2P, Tcp, is_bogon_ip, is_unspecified_or_broadcast_ip};
 
 use snarkvm::prelude::{Address, Network, PrivateKey, ViewKey};
@@ -81,6 +82,8 @@ pub struct InnerRouter<N: Network> {
     node_type: NodeType,
     /// The account of the node.
     account: Account<N>,
+    /// The ledger service.
+    ledger: Arc<dyn LedgerService<N>>,
     /// The cache.
     cache: Cache<N>,
     /// The resolver.
@@ -131,6 +134,7 @@ impl<N: Network> Router<N> {
         node_ip: SocketAddr,
         node_type: NodeType,
         account: Account<N>,
+        ledger: Arc<dyn LedgerService<N>>,
         trusted_peers: &[SocketAddr],
         max_peers: u16,
         rotate_external_peers: bool,
@@ -144,6 +148,7 @@ impl<N: Network> Router<N> {
             tcp,
             node_type,
             account,
+            ledger,
             cache: Default::default(),
             resolver: Default::default(),
             trusted_peers: trusted_peers.iter().copied().collect(),
@@ -161,11 +166,18 @@ impl<N: Network> Router<N> {
 
 impl<N: Network> Router<N> {
     /// Attempts to connect to the given peer IP.
+    ///
+    /// Returns None if we are already connected to the peer or cannot connect.
+    /// Otherwise, it returns a handle to the tokio tasks that sets up the connection.
     pub fn connect(&self, peer_ip: SocketAddr) -> Option<JoinHandle<bool>> {
         // Return early if the attempt is against the protocol rules.
-        if let Err(forbidden_message) = self.check_connection_attempt(peer_ip) {
-            warn!("{forbidden_message}");
-            return None;
+        match self.check_connection_attempt(peer_ip) {
+            Ok(true) => return None,
+            Ok(false) => {}
+            Err(forbidden_message) => {
+                warn!("{forbidden_message}");
+                return None;
+            }
         }
 
         let router = self.clone();
@@ -187,8 +199,13 @@ impl<N: Network> Router<N> {
         }))
     }
 
-    /// Ensure we are allowed to connect to the given peer.
-    fn check_connection_attempt(&self, peer_ip: SocketAddr) -> Result<()> {
+    /// Checks if we can and are allowed to connect to the given peer.
+    ///
+    /// # Return Values
+    /// - `Ok(true)` if already connected (or connecting) to the peer.
+    /// - `Ok(false)` if not connected to the peer but allowed to.
+    /// - `Err(err)` if not allowed to connect to the peer.
+    fn check_connection_attempt(&self, peer_ip: SocketAddr) -> Result<bool> {
         // Ensure the peer IP is not this node.
         if self.is_local_ip(&peer_ip) {
             bail!("Dropping connection attempt to '{peer_ip}' (attempted to self-connect)")
@@ -199,7 +216,8 @@ impl<N: Network> Router<N> {
         }
         // Ensure the node is not already connected to this peer.
         if self.is_connected(&peer_ip) {
-            bail!("Dropping connection attempt to '{peer_ip}' (already connected)")
+            debug!("Dropping connection attempt to '{peer_ip}' (already connected)");
+            return Ok(true);
         }
         // Ensure the peer is not restricted.
         if self.is_restricted(&peer_ip) {
@@ -207,12 +225,15 @@ impl<N: Network> Router<N> {
         }
         // Ensure the node is not already connecting to this peer.
         match self.connecting_peers.lock().entry(peer_ip) {
-            Entry::Vacant(entry) => entry.insert(None),
-            Entry::Occupied(_) => {
-                bail!("Dropping connection attempt to '{peer_ip}' (already shaking hands as the initiator)")
+            Entry::Vacant(entry) => {
+                entry.insert(None);
+                Ok(false)
             }
-        };
-        Ok(())
+            Entry::Occupied(_) => {
+                debug!("Dropping connection attempt to '{peer_ip}' (already shaking hands as the initiator)");
+                Ok(true)
+            }
+        }
     }
 
     /// Disconnects from the given peer IP, if the peer is connected.
@@ -249,6 +270,24 @@ impl<N: Network> Router<N> {
     /// Returns `true` if the given IP is not this node, is not a bogon address, and is not unspecified.
     pub fn is_valid_peer_ip(&self, ip: &SocketAddr) -> bool {
         !self.is_local_ip(ip) && !is_bogon_ip(ip.ip()) && !is_unspecified_or_broadcast_ip(ip.ip())
+    }
+
+    /// Returns `true` if the message version is valid.
+    pub fn is_valid_message_version(&self, message_version: u32) -> bool {
+        // Determine the minimum message version this node will accept, based on its role.
+        // - Provers always operate at the latest message version.
+        // - Validators and clients may accept older versions, depending on their current block height.
+        let lowest_accepted_message_version = match self.node_type {
+            // Provers should always use the latest version.
+            NodeType::Prover => Message::<N>::latest_message_version(),
+            // Validators and clients accept messages from lower version based on the migration height.
+            NodeType::Validator | NodeType::Client => {
+                Message::<N>::lowest_accepted_message_version(self.ledger.latest_block_height())
+            }
+        };
+
+        // Check if the incoming message version is valid.
+        message_version >= lowest_accepted_message_version
     }
 
     /// Returns the node type.
@@ -425,26 +464,26 @@ impl<N: Network> Router<N> {
         } else if N::ID == snarkvm::console::network::MainnetV0::ID {
             // Mainnet contains the following bootstrap peers.
             vec![
-                SocketAddr::from_str("34.105.20.52:4130").unwrap(),
-                SocketAddr::from_str("35.231.118.193:4130").unwrap(),
-                SocketAddr::from_str("35.204.253.77:4130").unwrap(),
-                SocketAddr::from_str("34.87.188.140:4130").unwrap(),
+                SocketAddr::from_str("35.231.67.219:4130").unwrap(),
+                SocketAddr::from_str("34.73.195.196:4130").unwrap(),
+                SocketAddr::from_str("34.23.225.202:4130").unwrap(),
+                SocketAddr::from_str("34.148.16.111:4130").unwrap(),
             ]
         } else if N::ID == snarkvm::console::network::TestnetV0::ID {
             // TestnetV0 contains the following bootstrap peers.
             vec![
-                SocketAddr::from_str("34.168.118.156:4130").unwrap(),
-                SocketAddr::from_str("35.231.152.213:4130").unwrap(),
-                SocketAddr::from_str("34.17.53.129:4130").unwrap(),
-                SocketAddr::from_str("35.200.149.162:4130").unwrap(),
+                SocketAddr::from_str("34.138.104.159:4130").unwrap(),
+                SocketAddr::from_str("35.231.46.237:4130").unwrap(),
+                SocketAddr::from_str("34.148.251.155:4130").unwrap(),
+                SocketAddr::from_str("35.190.141.234:4130").unwrap(),
             ]
         } else if N::ID == snarkvm::console::network::CanaryV0::ID {
             // CanaryV0 contains the following bootstrap peers.
             vec![
-                SocketAddr::from_str("34.74.24.41:4130").unwrap(),
-                SocketAddr::from_str("35.228.3.69:4130").unwrap(),
-                SocketAddr::from_str("34.124.178.133:4130").unwrap(),
-                SocketAddr::from_str("34.125.137.231:4130").unwrap(),
+                SocketAddr::from_str("34.139.88.58:4130").unwrap(),
+                SocketAddr::from_str("34.139.252.207:4130").unwrap(),
+                SocketAddr::from_str("35.185.98.12:4130").unwrap(),
+                SocketAddr::from_str("35.231.106.26:4130").unwrap(),
             ]
         } else {
             // Unrecognized networks contain no bootstrap peers.
@@ -486,7 +525,7 @@ impl<N: Network> Router<N> {
                 return;
             }
             None => {
-                warn!("Couldn't promote {peer_ip} from \"connecting\" to \"connected\": Public/listen address unkown");
+                warn!("Couldn't promote {peer_ip} from \"connecting\" to \"connected\": Public/listen address unknown");
                 return;
             }
         };

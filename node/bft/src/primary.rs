@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkOS library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -44,7 +44,7 @@ use crate::{
 use snarkos_account::Account;
 use snarkos_node_bft_events::PrimaryPing;
 use snarkos_node_bft_ledger_service::LedgerService;
-use snarkos_node_sync::{BlockSync, DUMMY_SELF_IP};
+use snarkos_node_sync::DUMMY_SELF_IP;
 use snarkvm::{
     console::{
         prelude::*,
@@ -84,13 +84,11 @@ use tokio::{sync::OnceCell, task::JoinHandle};
 /// A helper type for an optional proposed batch.
 pub type ProposedBatch<N> = RwLock<Option<Proposal<N>>>;
 
-/// The primary logic of a node.
-/// AleoBFT adopts a primary-worker architecture as described in the Narwhal and Tusk paper (Section 4.2).
 #[derive(Clone)]
 pub struct Primary<N: Network> {
-    /// The sync module enables fetching data from other validators.
+    /// The sync module.
     sync: Sync<N>,
-    /// The gateway allows talking to other nodes in the validator set.
+    /// The gateway.
     gateway: Gateway<N>,
     /// The storage.
     storage: Storage<N>,
@@ -106,7 +104,7 @@ pub struct Primary<N: Network> {
     latest_proposed_batch_timestamp: Arc<RwLock<i64>>,
     /// The recently-signed batch proposals.
     signed_proposals: Arc<RwLock<SignedProposals<N>>>,
-    /// The handles for all background tasks spawned by this primary.
+    /// The spawned handles.
     handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
     /// The lock for propose_batch.
     propose_lock: Arc<TMutex<u64>>,
@@ -123,7 +121,6 @@ impl<N: Network> Primary<N> {
         account: Account<N>,
         storage: Storage<N>,
         ledger: Arc<dyn LedgerService<N>>,
-        block_sync: Arc<BlockSync<N>>,
         ip: Option<SocketAddr>,
         trusted_validators: &[SocketAddr],
         storage_mode: StorageMode,
@@ -132,7 +129,7 @@ impl<N: Network> Primary<N> {
         let gateway =
             Gateway::new(account, storage.clone(), ledger.clone(), ip, trusted_validators, storage_mode.dev())?;
         // Initialize the sync module.
-        let sync = Sync::new(gateway.clone(), storage.clone(), ledger.clone(), block_sync);
+        let sync = Sync::new(gateway.clone(), storage.clone(), ledger.clone());
 
         // Initialize the primary instance.
         Ok(Self {
@@ -301,7 +298,7 @@ impl<N: Network> Primary<N> {
         self.workers.iter().map(|worker| worker.num_ratifications()).sum()
     }
 
-    /// Returns the number of solutions.
+    /// Returns the number of unconfirmed solutions.
     pub fn num_unconfirmed_solutions(&self) -> usize {
         self.workers.iter().map(|worker| worker.num_solutions()).sum()
     }
@@ -365,6 +362,8 @@ impl<N: Network> Primary<N> {
         let previous_round = round.saturating_sub(1);
 
         // If the current round is 0, return early.
+        // This can actually never happen, because of the invariant that the current round is never 0
+        // (see [`StorageInner::current_round`]).
         ensure!(round > 0, "Round 0 cannot have transaction batches");
 
         // If the current storage round is below the latest proposal round, then return early.
@@ -737,7 +736,7 @@ impl<N: Network> Primary<N> {
             self.signed_proposals.read().get(&batch_author).copied()
         {
             // If the signed round is ahead of the peer's batch round, do not sign the proposal.
-            // Note: while this may be valid behaviour, additional formal analysis and testing will need to be done before allowing it.
+            // Note: while this may be valid behavior, additional formal analysis and testing will need to be done before allowing it.
             if signed_round > batch_header.round() {
                 bail!(
                     "Peer ({batch_author}) proposed a batch for a previous round ({}), latest signed round: {signed_round}",
@@ -1277,7 +1276,7 @@ impl<N: Network> Primary<N> {
                 };
                 // If there is no proposed batch, attempt to propose a batch.
                 // Note: Do NOT spawn a task around this function call. Proposing a batch is a critical path,
-                // and only one batch needs be proposed at a time.
+                // and only one batch needs to be proposed at a time.
                 if let Err(e) = self_.propose_batch().await {
                     warn!("Cannot propose a batch - {e}");
                 }
@@ -1368,24 +1367,27 @@ impl<N: Network> Primary<N> {
                     continue;
                 }
                 // Attempt to increment to the next round.
-                let next_round = self_.current_round().saturating_add(1);
+                let current_round = self_.current_round();
+                let next_round = current_round.saturating_add(1);
                 // Determine if the quorum threshold is reached for the current round.
                 let is_quorum_threshold_reached = {
-                    // Retrieve the certificate authors for the next round.
-                    let authors = self_.storage.get_certificate_authors_for_round(next_round);
+                    // Retrieve the certificate authors for the current round.
+                    let authors = self_.storage.get_certificate_authors_for_round(current_round);
                     // If there are no certificates, then skip this check.
                     if authors.is_empty() {
                         continue;
                     }
-                    let Ok(committee_lookback) = self_.ledger.get_committee_lookback_for_round(next_round) else {
-                        warn!("Failed to retrieve the committee lookback for round {next_round}");
+                    // Retrieve the committee lookback for the current round.
+                    let Ok(committee_lookback) = self_.ledger.get_committee_lookback_for_round(current_round) else {
+                        warn!("Failed to retrieve the committee lookback for round {current_round}");
                         continue;
                     };
+                    // Check if the quorum threshold is reached for the current round.
                     committee_lookback.is_quorum_threshold_reached(&authors)
                 };
                 // Attempt to increment to the next round if the quorum threshold is reached.
                 if is_quorum_threshold_reached {
-                    debug!("Quorum threshold reached for round {}", next_round);
+                    debug!("Quorum threshold reached for round {}", current_round);
                     if let Err(e) = self_.try_increment_to_the_next_round(next_round).await {
                         warn!("Failed to increment to the next round - {e}");
                     }
@@ -1546,10 +1548,10 @@ impl<N: Network> Primary<N> {
     fn check_proposal_timestamp(&self, previous_round: u64, author: Address<N>, timestamp: i64) -> Result<()> {
         // Retrieve the timestamp of the previous timestamp to check against.
         let previous_timestamp = match self.storage.get_certificate_for_round_with_author(previous_round, author) {
-            // Ensure that the previous certificate was created at least `MIN_BATCH_DELAY_IN_SECS` seconds ago.
+            // Ensure that the previous certificate was created at least `MIN_BATCH_DELAY_IN_MS` seconds ago.
             Some(certificate) => certificate.timestamp(),
             None => match self.gateway.account().address() == author {
-                // If we are the author, then ensure the previous proposal was created at least `MIN_BATCH_DELAY_IN_SECS` seconds ago.
+                // If we are the author, then ensure the previous proposal was created at least `MIN_BATCH_DELAY_IN_MS` seconds ago.
                 true => *self.latest_proposed_batch_timestamp.read(),
                 // If we do not see a previous certificate for the author, then proceed optimistically.
                 false => return Ok(()),
@@ -1560,7 +1562,7 @@ impl<N: Network> Primary<N> {
         let elapsed = timestamp
             .checked_sub(previous_timestamp)
             .ok_or_else(|| anyhow!("Timestamp cannot be before the previous certificate at round {previous_round}"))?;
-        // Ensure that the previous certificate was created at least `MIN_BATCH_DELAY_IN_SECS` seconds ago.
+        // Ensure that the previous certificate was created at least `MIN_BATCH_DELAY_IN_MS` seconds ago.
         match elapsed < MIN_BATCH_DELAY_IN_SECS as i64 {
             true => bail!("Timestamp is too soon after the previous certificate at round {previous_round}"),
             false => Ok(()),
@@ -1691,7 +1693,7 @@ impl<N: Network> Primary<N> {
             bail!("Round {batch_round} is too far in the past")
         }
 
-        // If node is not in sync mode and the node is not synced. Then return an error.
+        // If node is not in sync mode and the node is not synced, then return an error.
         if !IS_SYNCING && !self.is_synced() {
             bail!(
                 "Failed to process batch header `{}` at round {batch_round} from '{peer_ip}' (node is syncing)",
@@ -1907,7 +1909,6 @@ mod tests {
     use super::*;
     use snarkos_node_bft_ledger_service::MockLedgerService;
     use snarkos_node_bft_storage_service::BFTMemoryService;
-    use snarkos_node_sync::BlockSync;
     use snarkvm::{
         ledger::{
             committee::{Committee, MIN_VALIDATOR_STAKE},
@@ -1951,9 +1952,7 @@ mod tests {
 
         // Initialize the primary.
         let account = accounts[account_index].1.clone();
-        let block_sync = Arc::new(BlockSync::new(ledger.clone()));
-        let mut primary =
-            Primary::new(account, storage, ledger, block_sync, None, &[], StorageMode::Test(None)).unwrap();
+        let mut primary = Primary::new(account, storage, ledger, None, &[], StorageMode::new_test(None)).unwrap();
 
         // Construct a worker instance.
         primary.workers = Arc::from([Worker::new(
@@ -2139,7 +2138,7 @@ mod tests {
         (certificate, transmissions)
     }
 
-    // Create a certificate chain up to, but not including, the specified round in the primary storage.
+    // Create a certificate chain up to round in primary storage.
     fn store_certificate_chain(
         primary: &Primary<CurrentNetwork>,
         accounts: &[(SocketAddr, Account<CurrentNetwork>)],
@@ -2373,7 +2372,7 @@ mod tests {
         // The author must be known to resolver to pass propose checks.
         primary.gateway.resolver().insert_peer(peer_ip, peer_ip, peer_account.1.address());
         // The primary must be considered synced.
-        primary.sync.try_block_sync().await;
+        primary.sync.block_sync().try_block_sync(&primary.gateway.clone()).await;
 
         // Try to process the batch proposal from the peer, should succeed.
         assert!(
@@ -2446,7 +2445,7 @@ mod tests {
         // The author must be known to resolver to pass propose checks.
         primary.gateway.resolver().insert_peer(peer_ip, peer_ip, peer_account.1.address());
         // The primary must be considered synced.
-        primary.sync.try_block_sync().await;
+        primary.sync.block_sync().try_block_sync(&primary.gateway.clone()).await;
 
         // Try to process the batch proposal from the peer, should succeed.
         primary.process_batch_propose_from_peer(peer_ip, (*proposal.batch_header()).clone().into()).await.unwrap();
@@ -2480,7 +2479,7 @@ mod tests {
         // The author must be known to resolver to pass propose checks.
         primary.gateway.resolver().insert_peer(peer_ip, peer_ip, peer_account.1.address());
         // The primary must be considered synced.
-        primary.sync.try_block_sync().await;
+        primary.sync.block_sync().try_block_sync(&primary.gateway.clone()).await;
 
         // Try to process the batch proposal from the peer, should error.
         assert!(
@@ -2525,7 +2524,7 @@ mod tests {
         // The author must be known to resolver to pass propose checks.
         primary.gateway.resolver().insert_peer(peer_ip, peer_ip, peer_account.1.address());
         // The primary must be considered synced.
-        primary.sync.try_block_sync().await;
+        primary.sync.block_sync().try_block_sync(&primary.gateway.clone()).await;
 
         // Try to process the batch proposal from the peer, should error.
         assert!(
@@ -2539,7 +2538,6 @@ mod tests {
         );
     }
 
-    /// Tests that the minimum batch delay is enforced as expected, i.e., that proposals with timestamps that are too close to the previous proposal are rejected.
     #[tokio::test]
     async fn test_batch_propose_from_peer_with_past_timestamp() {
         let round = 2;
@@ -2552,23 +2550,13 @@ mod tests {
         // Create a valid proposal with an author that isn't the primary.
         let peer_account = &accounts[1];
         let peer_ip = peer_account.0;
-
-        // Use a timestamp that is too early.
-        // Set it to something that is less than the minimum batch delay
-        // Note, that the minimum delay is currently 1, so this will be equal to the last timestamp
-        let last_timestamp = primary
-            .storage
-            .get_certificate_for_round_with_author(round - 1, peer_account.1.address())
-            .expect("No previous proposal exists")
-            .timestamp();
-        let invalid_timestamp = last_timestamp + (MIN_BATCH_DELAY_IN_SECS as i64) - 1;
-
+        let past_timestamp = now() - 100; // Use a timestamp that is in the past.
         let proposal = create_test_proposal(
             &peer_account.1,
             primary.ledger.current_committee().unwrap(),
             round,
             previous_certificates,
-            invalid_timestamp,
+            past_timestamp,
             1,
             &mut rng,
         );
@@ -2581,7 +2569,7 @@ mod tests {
         // The author must be known to resolver to pass propose checks.
         primary.gateway.resolver().insert_peer(peer_ip, peer_ip, peer_account.1.address());
         // The primary must be considered synced.
-        primary.sync.try_block_sync().await;
+        primary.sync.block_sync().try_block_sync(&primary.gateway.clone()).await;
 
         // Try to process the batch proposal from the peer, should error.
         assert!(
@@ -2589,7 +2577,6 @@ mod tests {
         );
     }
 
-    /// Check that proposals rejected that have timestamps older than the previous proposal.
     #[tokio::test]
     async fn test_batch_propose_from_peer_over_spend_limit() {
         let mut rng = TestRng::default();
@@ -2613,9 +2600,7 @@ mod tests {
         let round = 1;
         let peer_account = &accounts[2];
         let peer_ip = peer_account.0;
-
         let timestamp = now() + MIN_BATCH_DELAY_IN_SECS as i64;
-
         let proposal =
             create_test_proposal(&peer_account.1, committee, round, Default::default(), timestamp, 4, &mut rng);
 
@@ -2628,10 +2613,9 @@ mod tests {
         // The author must be known to resolver to pass propose checks.
         primary_v4.gateway.resolver().insert_peer(peer_ip, peer_ip, peer_account.1.address());
         primary_v5.gateway.resolver().insert_peer(peer_ip, peer_ip, peer_account.1.address());
-
         // The primary must be considered synced.
-        primary_v4.sync.try_block_sync().await;
-        primary_v5.sync.try_block_sync().await;
+        primary_v4.sync.block_sync().try_block_sync(&primary_v4.gateway.clone()).await;
+        primary_v5.sync.block_sync().try_block_sync(&primary_v5.gateway.clone()).await;
 
         // Check the spend limit is enforced from V5 onwards.
         assert!(
@@ -2640,7 +2624,6 @@ mod tests {
                 .await
                 .is_ok()
         );
-
         assert!(
             primary_v5
                 .process_batch_propose_from_peer(peer_ip, (*proposal.batch_header()).clone().into())

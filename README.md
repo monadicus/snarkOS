@@ -25,6 +25,8 @@
 * [6. Development Guide](#6-development-guide)
   * [6.1 Quick Start](#61-quick-start)
   * [6.2 Operations](#62-operations)
+  * [6.3 Local Devnet](#63-local-devnet)
+  * [6.4 Feature Flags](#64-feature-flags)
 * [7. Contributors](#7-contributors)
 * [8. License](#8-license)
 
@@ -176,6 +178,35 @@ To start a validator, you can also run the following command from the `snarkOS` 
 ./run-validator.sh
 ```
 
+### 3.2.1 Enable Validator Telemetry Metrics (Optional)
+
+Validator telemetry allows you to track participation in consensus. This is optional and can be enabled using the `telemetry` feature flag.
+
+Once enabled, telemetry metrics are available through:
+
+1. Node logs 
+2. REST API endpoints
+    ``` 
+    // GET /{network}/validators/participation
+    // GET /{network}/validators/participation?metadata={true}
+    ```
+
+You can enable telemetry in one of the following ways:
+
+#### 1. Enable via [installation](#2.3-installation)
+
+Add the `telemetry` feature flag to the installation command.
+```
+cargo install --locked --path . --features telemetry
+```
+
+#### 2. Enable via `./run-validator.sh`
+
+Run the `./run-validator.sh` script and enable telemetry when prompted:
+```
+Do you want to enable validator telemetry? (y/n, default: y):
+```
+
 ## 3.3 Run an Aleo Prover
 
 Start by following the instructions in the [Build Guide](#2-build-guide).
@@ -251,7 +282,7 @@ nvcc --version   # Check installed CUDA version
 2. Sign a message with your private key using `snarkos account sign --raw -m "Message" --private-key-file=<PRIVATE_KEY_FILE>`
 3. Verify your signature with `snarkos account verify --raw -m "Message" -s sign1SignatureHere -a aleo1YourAccountAddress`
 
-Note, using the `--raw` flag with the command will sign plaintext messages as bytes rather than [Aleo](https://developer.aleo.org/aleo/language#data-types-and-values) values such as `1u8` or `100field`.
+Note, using the `--raw` flag with the command will sign plaintext messages as bytes rather than [Aleo values](https://developer.aleo.org/guides/aleo/language#data-types-and-values) such as `1u8` or `100field`.
 
 
 ## 5. Command Line Interface
@@ -440,7 +471,7 @@ cargo run --release -- clean --dev <NODE_ID>
 
 ## 6.4 Feature Flags
 
-By default, the metrics feature is turnned on for some internal crates.
+By default, the metrics feature is turned on for some internal crates.
 
 * **history** -
   Enables a /history REST endpoint.
