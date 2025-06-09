@@ -8,6 +8,8 @@ network_name="mainnet"
 # Stopping conditions
 checkpoint_height=3
 rollback_height=10
+num_checkpoints=0
+remaining_checkpoints=2
 
 # Use fixed JWT values in order to be able to create checkpoints
 jwt_secret="ZGJjaGVja3BvaW50dGVzdA=="
@@ -55,7 +57,8 @@ check_heights() {
 create_checkpoints() {
   for ((node_index = 0; node_index < $total_validators; node_index++)); do
     port=$((3030 + node_index))
-    result=$(curl -s -X "POST" -H "Authorization: Bearer ${jwt[node_index]}" "http://127.0.0.1:$port/$network_name/db_backup?path=/tmp/checkpoint$node_index" || echo "fail")
+    suffix="${node_index}_$1"
+    result=$(curl -s -X "POST" -H "Authorization: Bearer ${jwt[node_index]}" "http://127.0.0.1:$port/$network_name/db_backup?path=/tmp/checkpoint_$suffix" || echo "fail")
 
     # Track highest height for reporting
     if [ "$result" = "fail" ]; then
@@ -73,19 +76,26 @@ sleep 15
 
 # Check heights periodically with a timeout
 total_wait=0
-checkpoints_created=false
+checkpoint_created=false
 while [ $total_wait -lt 300 ]; do  # 5 minutes max
   # Apply short-circuiting
-  if [[ $checkpoints_created = true ]] || check_heights "$checkpoint_height"; then
-    if [[ $checkpoints_created = false ]]; then
+  if [[ $checkpoint_created = true ]] || check_heights "$checkpoint_height"; then
+    if [[ $checkpoint_created = false ]]; then
       # Create checkpoints at the specified height
-      create_checkpoints
-      checkpoints_created=true
+      create_checkpoints $num_checkpoints
+      checkpoint_created=true
+      checkpoint_height=$((checkpoint_height+2))
+      num_checkpoints=$((num_checkpoints+1))
+
+      echo "num_checkpoints: $num_checkpoints"
+      sleep 2
     fi
 
     # Wait until the specified rollback height is reached
     if check_heights "$rollback_height"; then
       echo "All nodes reached rollback height."
+
+      checkpoint_created=false
 
       # Gracefully shut down the validators
       for pid in "${PIDS[@]}"; do
@@ -96,11 +106,17 @@ while [ $total_wait -lt 300 ]; do  # 5 minutes max
 
       for ((validator_index = 0; validator_index < $total_validators; validator_index++)); do
         # Remove the original ledger
-        snarkos clean --network $network_id --dev $validator_index
+        if (( num_checkpoints == 1 )); then
+          snarkos clean --network $network_id --dev $validator_index
+        else
+          suffix="${validator_index}_$((num_checkpoints-2))"
+          snarkos clean --network $network_id --dev $validator_index --path=/tmp/checkpoint_$suffix
+        fi
         # Wait until the cleanup concludes
         sleep 1
         # Restart using the checkpoint
-        snarkos start --nodisplay --network $network_id --dev $validator_index --dev-num-validators $total_validators --validator --storage /tmp/checkpoint$validator_index &
+        suffix="${validator_index}_$((num_checkpoints-1))"
+        snarkos start --nodisplay --network $network_id --dev $validator_index --dev-num-validators $total_validators --validator --jwt-secret $jwt_secret --jwt-timestamp $jwt_ts --storage /tmp/checkpoint_$suffix &
         PIDS[$validator_index]=$!
         echo "Restarted validator $validator_index with PID ${PIDS[$validator_index]}"
         # Add 1-second delay between starting nodes to avoid hitting rate limits
@@ -111,20 +127,25 @@ while [ $total_wait -lt 300 ]; do  # 5 minutes max
         echo "Node height after restart: $height"
 
         # Ensure that the height is below the rollback height
-        if [[ "$height" =~ ^[0-9]+$ ]] && [ $height -ge $rollback_height ]; then
+        if [[ "$height" =~ ^[0-9]+$ ]] && (( height >= rollback_height )) && (( height < checkpoint_height )); then
           echo "❌ Test failed!"
           exit 1
         fi
       done
 
-      echo "SUCCESS!"
+      if (( remaining_checkpoints == 0 )); then
+        echo "SUCCESS!"
 
-      # Cleanup: kill all processes
-      for pid in "${PIDS[@]}"; do
-        kill -9 $pid 2>/dev/null || true
-      done
+        # Cleanup: kill all processes
+        for pid in "${PIDS[@]}"; do
+          kill -9 $pid 2>/dev/null || true
+        done
 
-      exit 0
+        exit 0
+      fi
+
+      remaining_checkpoints=$((remaining_checkpoints-1))
+
     fi
   fi
 
