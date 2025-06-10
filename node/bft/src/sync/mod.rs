@@ -451,7 +451,7 @@ impl<N: Network> Sync<N> {
 
         // Retrieve the next block height.
         // This variable is used to index blocks that are added to the ledger;
-        // it is incremented as blocks as added.
+        // it is incremented as blocks are added.
         // So 'current' means 'currently being added'.
         let mut current_height = sync_height + 1;
         trace!("Try advancing with block responses (at block {current_height})");
