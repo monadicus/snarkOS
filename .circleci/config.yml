@@ -339,6 +339,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: node/sync
+          flags: --release
           cache_key: v3.3.1-rust-1.83.0-node-sync-cache
 
   node-sync-communication-service:

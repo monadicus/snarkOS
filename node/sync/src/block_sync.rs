@@ -1042,6 +1042,22 @@ mod tests {
         BlockSync::<CurrentNetwork>::new(BlockSyncMode::Router, Arc::new(sample_ledger_service(height)), sample_tcp())
     }
 
+    /// Returns a vector of randomly sampled block heights in [0, max_height].
+    ///
+    /// The maximum value will always be included in the result.
+    fn generate_block_heights(max_height: u32, num_values: usize) -> Vec<u32> {
+        assert!(num_values > 0, "Cannot generate an empty vector");
+        assert!((max_height as usize) >= num_values);
+
+        let mut rng = TestRng::default();
+
+        let mut heights: Vec<u32> = (0..(max_height - 1)).choose_multiple(&mut rng, num_values);
+
+        heights.push(max_height);
+
+        heights
+    }
+
     /// Returns a duplicate sync pool with a different ledger height.
     fn duplicate_sync_at_new_height(sync: &BlockSync<CurrentNetwork>, height: u32) -> BlockSync<CurrentNetwork> {
         BlockSync::<CurrentNetwork> {
@@ -1122,7 +1138,7 @@ mod tests {
 
     #[test]
     fn test_latest_block_height() {
-        for height in 0..100_002u32 {
+        for height in generate_block_heights(100_001, 5000) {
             let sync = sample_sync_at_height(height);
             assert_eq!(sync.ledger.latest_block_height(), height);
         }
@@ -1130,7 +1146,7 @@ mod tests {
 
     #[test]
     fn test_get_block_height() {
-        for height in 0..100_002u32 {
+        for height in generate_block_heights(100_001, 5000) {
             let sync = sample_sync_at_height(height);
             assert_eq!(sync.ledger.get_block_height(&(Field::<CurrentNetwork>::from_u32(0)).into()).unwrap(), 0);
             assert_eq!(
@@ -1142,7 +1158,7 @@ mod tests {
 
     #[test]
     fn test_get_block_hash() {
-        for height in 0..100_002u32 {
+        for height in generate_block_heights(100_001, 5000) {
             let sync = sample_sync_at_height(height);
             assert_eq!(sync.ledger.get_block_hash(0).unwrap(), (Field::<CurrentNetwork>::from_u32(0)).into());
             assert_eq!(sync.ledger.get_block_hash(height).unwrap(), (Field::<CurrentNetwork>::from_u32(height)).into());
