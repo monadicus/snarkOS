@@ -22,7 +22,6 @@ locktick = [ "dep:locktick", "snarkvm/locktick" ]
 parallel = [ "rayon" ]
 cuda = [ "snarkvm/cuda" ]
 metrics = [ "dep:snarkos-node-metrics" ]
-test_targets = [ "snarkvm/test_targets" ]
 
 [dependencies.anyhow]
 version = "1.0.79"

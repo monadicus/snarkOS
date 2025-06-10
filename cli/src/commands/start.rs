@@ -33,7 +33,7 @@ use snarkvm::{
 };
 
 use aleo_std::StorageMode;
-use anyhow::{Result, bail, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use clap::Parser;
 use colored::Colorize;
 use core::str::FromStr;
@@ -76,19 +76,23 @@ impl FromStr for BondedBalances {
 
 /// Starts the snarkOS node.
 #[derive(Clone, Debug, Parser)]
+#[command(group(
+    // Ensure at most one node type is specified
+    clap::ArgGroup::new("node_type").required(false).multiple(false)
+))]
 pub struct Start {
-    /// Specify the network ID of this node
-    #[clap(default_value = "0", long = "network")]
+    /// Specify the network ID of this node (0 = mainnet, 1 = testnet, 2 = canary)
+    #[clap(default_value_t=MainnetV0::ID, long = "network", value_parser = clap::value_parser!(u16).range((MainnetV0::ID as i64)..=(CanaryV0::ID as i64)))]
     pub network: u16,
 
-    /// Specify this node as a validator
-    #[clap(long = "validator")]
+    /// Start the node as a validator
+    #[clap(long = "validator", group = "node_type")]
     pub validator: bool,
-    /// Specify this node as a prover
-    #[clap(long = "prover")]
+    /// Start the node as a prover
+    #[clap(long = "prover", group = "node_type")]
     pub prover: bool,
-    /// Specify this node as a client
-    #[clap(long = "client")]
+    /// Start the node as a client (default)
+    #[clap(long = "client", group = "node_type")]
     pub client: bool,
 
     /// Specify the account private key of the node
@@ -110,7 +114,9 @@ pub struct Start {
     /// Specify the IP address and port of the validator(s) to connect to
     #[clap(default_value = "", long = "validators")]
     pub validators: String,
-    /// If the flag is set, a validator will allow untrusted peers to connect
+    /// If the flag is set, a validator will allow untrusted peers to connect.
+    /// Client and Prover nodes ignore the flag and always allow untrusted peers
+    /// to connect.
     #[clap(long = "allow-external-peers")]
     pub allow_external_peers: bool,
     /// If the flag is set, a client will periodically evict more external peers
@@ -182,35 +188,39 @@ impl Start {
             crate::helpers::initialize_logger(self.verbosity, self.nodisplay, self.logfile.clone(), shutdown.clone());
         // Initialize the runtime.
         Self::runtime().block_on(async move {
+            // Error messages.
+            let node_parse_error = || "Failed to parse node arguments";
+            let display_start_error = || "Failed to initialize the display";
+
             // Clone the configurations.
             let mut cli = self.clone();
             // Parse the network.
             match cli.network {
                 MainnetV0::ID => {
                     // Parse the node from the configurations.
-                    let node = cli.parse_node::<MainnetV0>(shutdown.clone()).await.expect("Failed to parse the node");
+                    let node = cli.parse_node::<MainnetV0>(shutdown.clone()).await.with_context(node_parse_error)?;
                     // If the display is enabled, render the display.
                     if !cli.nodisplay {
                         // Initialize the display.
-                        Display::start(node, log_receiver).expect("Failed to initialize the display");
+                        Display::start(node, log_receiver).with_context(display_start_error)?;
                     }
                 }
                 TestnetV0::ID => {
                     // Parse the node from the configurations.
-                    let node = cli.parse_node::<TestnetV0>(shutdown.clone()).await.expect("Failed to parse the node");
+                    let node = cli.parse_node::<TestnetV0>(shutdown.clone()).await.with_context(node_parse_error)?;
                     // If the display is enabled, render the display.
                     if !cli.nodisplay {
                         // Initialize the display.
-                        Display::start(node, log_receiver).expect("Failed to initialize the display");
+                        Display::start(node, log_receiver).with_context(display_start_error)?;
                     }
                 }
                 CanaryV0::ID => {
                     // Parse the node from the configurations.
-                    let node = cli.parse_node::<CanaryV0>(shutdown.clone()).await.expect("Failed to parse the node");
+                    let node = cli.parse_node::<CanaryV0>(shutdown.clone()).await.with_context(node_parse_error)?;
                     // If the display is enabled, render the display.
                     if !cli.nodisplay {
                         // Initialize the display.
-                        Display::start(node, log_receiver).expect("Failed to initialize the display");
+                        Display::start(node, log_receiver).with_context(display_start_error)?;
                     }
                 }
                 _ => panic!("Invalid network ID specified"),
@@ -218,9 +228,8 @@ impl Start {
             // Note: Do not move this. The pending await must be here otherwise
             // other snarkOS commands will not exit.
             std::future::pending::<()>().await;
-        });
-
-        Ok(String::new())
+            Ok(String::new())
+        })
     }
 }
 
@@ -504,7 +513,8 @@ impl Start {
         }
     }
 
-    /// Returns the node type, from the given configurations.
+    /// Returns the node type specified in the command-line arguments.
+    /// This will return `NodeType::Client` if no node type was specified by the user.
     const fn parse_node_type(&self) -> NodeType {
         if self.validator {
             NodeType::Validator
@@ -522,9 +532,12 @@ impl Start {
         println!("{}", crate::helpers::welcome_message());
 
         // Check if we are running with the lower coinbase and proof targets. This should only be
-        // allowed in --dev mode.
-        if cfg!(feature = "test_targets") && self.dev.is_none() {
-            bail!("The 'test_targets' feature is enabled, but the '--dev' flag is not set");
+        // allowed in --dev mode and should not be allowed in mainnet mode.
+        if cfg!(feature = "test_network") && self.dev.is_none() {
+            bail!("The 'test_network' feature is enabled, but the '--dev' flag is not set");
+        }
+        if cfg!(feature = "test_network") && N::ID == MainnetV0::ID {
+            bail!("The 'test_network' feature is enabled, but you are trying to use mainnet. This is not supported.");
         }
 
         // Parse the trusted peers to connect to.

@@ -38,7 +38,6 @@ cuda = [
   "snarkos-node-bft-ledger-service/cuda",
   "snarkos-node-sync/cuda"
 ]
-test_targets = [ "snarkvm/test_targets" ]
 
 [dependencies.aleo-std]
 workspace = true
@@ -143,10 +142,10 @@ features = [ "codec" ]
 version = "0.1"
 
 [dev-dependencies.axum]
-version = "0.7"
+version = "0.8"
 
 [dev-dependencies.axum-extra]
-version = "0.9"
+version = "0.10"
 default-features = false
 features = [ "erased-json" ]
 
@@ -197,7 +196,7 @@ features = [ "test-helpers" ]
 version = "0.3.1"
 
 [dev-dependencies.tower-http]
-version = "0.5"
+version = "0.6"
 features = [ "fs", "trace" ]
 
 [dev-dependencies.tracing-subscriber]
