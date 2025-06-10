@@ -17,7 +17,7 @@ mod router;
 
 use crate::traits::NodeInterface;
 use snarkos_account::Account;
-use snarkos_node_bft::{helpers::init_primary_channels, ledger_service::CoreLedgerService, spawn_blocking};
+use snarkos_node_bft::{ledger_service::CoreLedgerService, spawn_blocking};
 use snarkos_node_consensus::Consensus;
 use snarkos_node_rest::Rest;
 use snarkos_node_router::{
@@ -132,18 +132,16 @@ impl<N: Network, C: ConsensusStorage<N>> Validator<N, C> {
         let sync = Arc::new(BlockSync::new(ledger_service.clone()));
 
         // Initialize the consensus layer.
-        let mut consensus = Consensus::new(
+        let consensus = Consensus::new(
             account.clone(),
             ledger_service.clone(),
             sync.clone(),
             bft_ip,
             trusted_validators,
             storage_mode.clone(),
-        )?;
-        // Initialize the primary channels.
-        let (primary_sender, primary_receiver) = init_primary_channels::<N>();
-        // Start the consensus.
-        consensus.run(primary_sender, primary_receiver).await?;
+        )
+        .await?;
+
         // Initialize the node.
         let mut node = Self {
             ledger: ledger.clone(),

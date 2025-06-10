@@ -1135,6 +1135,13 @@ impl<N: Network> Primary<N> {
 
 impl<N: Network> Primary<N> {
     /// Starts the primary handlers.
+    ///
+    /// For each receiver in the `primary_receiver` struct, there will be a dedicated task
+    /// that awaits new data and handles it accordingly.
+    /// Additionally, this spawns a task that periodically issues PrimaryPings and one that periodically
+    /// tries to move the the next round of batches.
+    ///
+    /// This function is called exactly once, in `Self::run()`.
     fn start_handlers(&self, primary_receiver: PrimaryReceiver<N>) {
         let PrimaryReceiver {
             mut rx_batch_propose,
@@ -1145,7 +1152,7 @@ impl<N: Network> Primary<N> {
             mut rx_unconfirmed_transaction,
         } = primary_receiver;
 
-        // Start the primary ping.
+        // Start the primary ping sender.
         let self_ = self.clone();
         self.spawn(async move {
             loop {
@@ -1281,7 +1288,7 @@ impl<N: Network> Primary<N> {
             }
         });
 
-        // Process the proposed batch.
+        // Start the proposed batch handler.
         let self_ = self.clone();
         self.spawn(async move {
             while let Some((peer_ip, batch_propose)) = rx_batch_propose.recv().await {
@@ -1302,7 +1309,7 @@ impl<N: Network> Primary<N> {
             }
         });
 
-        // Process the batch signature.
+        // Start the batch signature handler.
         let self_ = self.clone();
         self.spawn(async move {
             while let Some((peer_ip, batch_signature)) = rx_batch_signature.recv().await {
@@ -1323,7 +1330,7 @@ impl<N: Network> Primary<N> {
             }
         });
 
-        // Process the certified batch.
+        // Start the certified batch handler.
         let self_ = self.clone();
         self.spawn(async move {
             while let Some((peer_ip, batch_certificate)) = rx_batch_certified.recv().await {
@@ -1350,7 +1357,8 @@ impl<N: Network> Primary<N> {
             }
         });
 
-        // Periodically try to increment to the next round.
+        // This task periodically tries to move to the next round.
+        //
         // Note: This is necessary to ensure that the primary is not stuck on a previous round
         // despite having received enough certificates to advance to the next round.
         let self_ = self.clone();
@@ -1364,24 +1372,27 @@ impl<N: Network> Primary<N> {
                     continue;
                 }
                 // Attempt to increment to the next round.
-                let next_round = self_.current_round().saturating_add(1);
+                let current_round = self_.current_round();
+                let next_round = current_round.saturating_add(1);
                 // Determine if the quorum threshold is reached for the current round.
                 let is_quorum_threshold_reached = {
-                    // Retrieve the certificate authors for the next round.
-                    let authors = self_.storage.get_certificate_authors_for_round(next_round);
+                    // Retrieve the certificate authors for the current round.
+                    let authors = self_.storage.get_certificate_authors_for_round(current_round);
                     // If there are no certificates, then skip this check.
                     if authors.is_empty() {
                         continue;
                     }
-                    let Ok(committee_lookback) = self_.ledger.get_committee_lookback_for_round(next_round) else {
-                        warn!("Failed to retrieve the committee lookback for round {next_round}");
+                    // Retrieve the committee lookback for the current round.
+                    let Ok(committee_lookback) = self_.ledger.get_committee_lookback_for_round(current_round) else {
+                        warn!("Failed to retrieve the committee lookback for round {current_round}");
                         continue;
                     };
+                    // Check if the quorum threshold is reached for the current round.
                     committee_lookback.is_quorum_threshold_reached(&authors)
                 };
                 // Attempt to increment to the next round if the quorum threshold is reached.
                 if is_quorum_threshold_reached {
-                    debug!("Quorum threshold reached for round {}", next_round);
+                    debug!("Quorum threshold reached for round {}", current_round);
                     if let Err(e) = self_.try_increment_to_the_next_round(next_round).await {
                         warn!("Failed to increment to the next round - {e}");
                     }
@@ -1389,7 +1400,7 @@ impl<N: Network> Primary<N> {
             }
         });
 
-        // Process the unconfirmed solutions.
+        // Start a handler to process new unconfirmed solutions.
         let self_ = self.clone();
         self.spawn(async move {
             while let Some((solution_id, solution, callback)) = rx_unconfirmed_solution.recv().await {
@@ -1415,7 +1426,7 @@ impl<N: Network> Primary<N> {
             }
         });
 
-        // Process the unconfirmed transactions.
+        // Start a handler to process new unconfirmed transactions.
         let self_ = self.clone();
         self.spawn(async move {
             while let Some((transaction_id, transaction, callback)) = rx_unconfirmed_transaction.recv().await {

@@ -38,6 +38,12 @@ cuda = [
   "snarkos-node-bft-ledger-service/cuda",
   "snarkos-node-sync/cuda"
 ]
+test = [
+  # "snarkvm/test" this breaks some of the tests
+  "snarkvm/test-helpers",
+  "snarkos-node-bft-ledger-service/test",
+  "snarkos-node-bft-storage-service/test"
+]
 
 [dependencies.aleo-std]
 workspace = true
@@ -86,9 +92,6 @@ version = "0.12"
 version = "0.8"
 
 [dependencies.rayon]
-version = "1"
-
-[dependencies.serde]
 version = "1"
 
 [dependencies.sha2]
@@ -179,18 +182,9 @@ version = "0.4"
 [dev-dependencies.rayon]
 version = "1"
 
-[dev-dependencies.snarkos-node-bft-ledger-service]
-path = "./ledger-service"
-default-features = false
+[dev-dependencies.snarkos-node-bft]
+path = "."
 features = [ "test" ]
-
-[dev-dependencies.snarkos-node-bft-storage-service]
-path = "./storage-service"
-features = [ "test" ]
-
-[dev-dependencies.snarkvm]
-workspace = true
-features = [ "test-helpers" ]
 
 [dev-dependencies.test-strategy]
 version = "0.3.1"
@@ -204,7 +198,7 @@ version = "0.3"
 features = [ "env-filter" ]
 
 [dev-dependencies.tracing-test]
-version = "0.1"
+version = "0.2"
 
 [dev-dependencies.mockall]
 version = "0.12.1"

@@ -18,7 +18,7 @@ edition = "2021"
 
 [features]
 default = [ "parallel" ]
-parallel = [ "rayon" ]
+parallel = [ ] #TODO(kaimast): is this still used?
 timer = [ "aleo-std/timer" ]
 locktick = [
   "dep:locktick",
@@ -32,7 +32,6 @@ locktick = [
   "snarkvm/locktick"
 ]
 metrics = [
-  "dep:metrics",
   "snarkos-node-bft/metrics",
   "snarkos-node-consensus/metrics",
   "snarkos-node-router/metrics",
@@ -67,9 +66,6 @@ version = "2"
 version = "0.3"
 features = [ "sink" ]
 
-[dependencies.indexmap]
-version = "2.1"
-
 [dependencies.locktick]
 version = "0.3"
 features = [ "parking_lot" ]
@@ -77,12 +73,6 @@ optional = true
 
 [dependencies.lru]
 version = "0.12.1"
-
-[dependencies.metrics]
-package = "snarkos-node-metrics"
-path = "./metrics"
-version = "=3.7.1"
-optional = true
 
 [dependencies.num_cpus]
 version = "1"
@@ -96,10 +86,6 @@ version = "0.12"
 [dependencies.rand]
 version = "0.8"
 default-features = false
-
-[dependencies.rayon]
-version = "1"
-optional = true
 
 [dependencies.serde_json]
 version = "1"
@@ -172,3 +158,8 @@ features = [ "env-filter", "fmt" ]
 
 [dev-dependencies.rand_chacha]
 version = "0.3.0"
+
+[package.metadata.cargo-machete]
+ignored = [
+  "serde_json", # Need to set preserve_order feature
+]

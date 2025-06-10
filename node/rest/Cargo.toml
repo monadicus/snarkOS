@@ -101,9 +101,6 @@ version = "0.3"
 [dependencies.tokio]
 version = "1"
 
-[dependencies.tower]
-version = "0.5"
-
 [dependencies.tower_governor]
 version = "0.7"
 
@@ -113,3 +110,11 @@ features = [ "cors", "trace" ]
 
 [dependencies.tracing]
 version = "0.1"
+
+[dev-dependencies.base64]
+workspace = true
+
+[package.metadata.cargo-machete]
+ignored = [
+  "snarkvm-synthesizer", # Needed for locktick feature
+]
