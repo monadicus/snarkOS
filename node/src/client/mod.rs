@@ -28,10 +28,10 @@ use snarkos_node_router::{
     Routing,
     messages::{Message, NodeType, UnconfirmedSolution, UnconfirmedTransaction},
 };
-use snarkos_node_sync::{BLOCK_REQUEST_BATCH_DELAY, BlockSync};
+use snarkos_node_sync::{BLOCK_REQUEST_BATCH_DELAY, BlockSync, Ping};
 use snarkos_node_tcp::{
     P2P,
-    protocols::{Disconnect, Handshake, OnConnect, Reading, Writing},
+    protocols::{Disconnect, Handshake, OnConnect, Reading},
 };
 use snarkvm::{
     console::network::Network,
@@ -124,6 +124,8 @@ pub struct Client<N: Network, C: ConsensusStorage<N>> {
     handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
     /// The shutdown signal.
     shutdown: Arc<AtomicBool>,
+    /// Keeps track of sending pings.
+    ping: Arc<Ping<N>>,
 }
 
 impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
@@ -177,15 +179,19 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
         .await?;
 
         // Initialize the sync module.
-        let sync = BlockSync::new(ledger_service.clone());
+        let sync = Arc::new(BlockSync::new(ledger_service.clone()));
+
+        // Set up the ping logic.
+        let ping = Arc::new(Ping::new(router.clone(), sync.clone()));
 
         // Initialize the node.
         let mut node = Self {
             ledger: ledger.clone(),
             router,
             rest: None,
-            sync: Arc::new(sync),
+            sync,
             genesis,
+            ping,
             puzzle: ledger.puzzle().clone(),
             solution_queue: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(CAPACITY_FOR_SOLUTIONS).unwrap()))),
             deploy_queue: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(CAPACITY_FOR_DEPLOYMENTS).unwrap()))),
@@ -277,7 +283,11 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
         if block_requests.is_empty() && self.sync.has_pending_responses() {
             // Try to advance the ledger with the sync pool.
             trace!("No block requests to send, but there are still pending block responses.");
-            self.sync.try_advancing_block_synchronization();
+            let has_new_blocks = self.sync.try_advancing_block_synchronization();
+
+            if has_new_blocks {
+                self.ping.on_new_blocks();
+            }
         } else {
             // Issues the block requests in batches.
             for requests in block_requests.chunks(DataBlocks::<N>::MAXIMUM_NUMBER_OF_BLOCKS as usize) {

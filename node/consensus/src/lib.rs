@@ -35,7 +35,8 @@ use snarkos_node_bft::{
 };
 use snarkos_node_bft_ledger_service::LedgerService;
 use snarkos_node_bft_storage_service::BFTPersistentStorage;
-use snarkos_node_sync::BlockSync;
+use snarkos_node_sync::{BlockSync, Ping};
+
 use snarkvm::{
     ledger::{
         block::Transaction,
@@ -114,6 +115,8 @@ pub struct Consensus<N: Network> {
     transmissions_queue_timestamps: Arc<Mutex<HashMap<TransmissionID<N>, i64>>>,
     /// The handles of all spawned tasks.
     handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
+    /// The ping logic.
+    ping: Arc<Ping<N>>,
 }
 
 impl<N: Network> Consensus<N> {
@@ -125,6 +128,7 @@ impl<N: Network> Consensus<N> {
         ip: Option<SocketAddr>,
         trusted_validators: &[SocketAddr],
         storage_mode: StorageMode,
+        ping: Arc<Ping<N>>,
     ) -> Result<Self> {
         // Initialize the primary channels.
         let (primary_sender, primary_receiver) = init_primary_channels::<N>();
@@ -146,6 +150,7 @@ impl<N: Network> Consensus<N> {
             #[cfg(feature = "metrics")]
             transmissions_queue_timestamps: Default::default(),
             handles: Default::default(),
+            ping: ping.clone(),
         };
 
         info!("Starting the consensus instance...");
@@ -155,7 +160,7 @@ impl<N: Network> Consensus<N> {
         // Then, start the consensus handlers.
         _self.start_handlers(consensus_receiver);
         // Lastly, also start BFTs handlers.
-        _self.bft.run(Some(consensus_sender), _self.primary_sender.clone(), primary_receiver).await?;
+        _self.bft.run(Some(ping), Some(consensus_sender), _self.primary_sender.clone(), primary_receiver).await?;
 
         Ok(_self)
     }
@@ -540,6 +545,9 @@ impl<N: Network> Consensus<N> {
             // Clear the worker solutions.
             self.bft.primary().clear_worker_solutions();
         }
+
+        // Notify peers that we have a new block.
+        self.ping.on_new_blocks();
 
         // TODO(kaimast): This should also remove any transmissions/solutions contained in the block from the mempool.
         // Removal currently happens when Consensus eventually passes them to the worker, which then just discards them.

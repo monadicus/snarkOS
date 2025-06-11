@@ -291,16 +291,20 @@ impl<N: Network> BlockSync<N> {
 
     /// Attempts to advance synchronization by processing completed block responses.
     ///
+    /// Returns true, if new blocks were added to the ledger.
+    ///
     /// Validators will not call this function, but instead execute `snarkos_node_bft::Sync::try_advancing_block_synchronization`
     /// which also updates the BFT state.
     #[inline]
-    pub fn try_advancing_block_synchronization(&self) {
+    pub fn try_advancing_block_synchronization(&self) -> bool {
         // Acquire the lock to ensure this function is called only once at a time.
         // If the lock is already acquired, return early.
         let Some(_lock) = self.advance_with_sync_blocks_lock.try_lock() else {
             trace!("Skipping attempt to advance block synchronziation as it is already in progress");
-            return;
+            return false;
         };
+
+        let mut new_blocks = false;
 
         // Start with the current height.
         let mut current_height = self.ledger.latest_block_height();
@@ -340,8 +344,11 @@ impl<N: Network> BlockSync<N> {
                 break;
             }
             // Update the latest height.
+            new_blocks = true;
             current_height = self.ledger.latest_block_height();
         }
+
+        new_blocks
     }
 }
 

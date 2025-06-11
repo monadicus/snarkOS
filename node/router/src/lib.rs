@@ -39,10 +39,13 @@ pub use outbound::*;
 mod routing;
 pub use routing::*;
 
-use crate::messages::{Message, NodeType};
+mod writing;
+
+use crate::messages::{Message, MessageCodec, NodeType};
+
 use snarkos_account::Account;
 use snarkos_node_bft_ledger_service::LedgerService;
-use snarkos_node_tcp::{Config, P2P, Tcp, is_bogon_ip, is_unspecified_or_broadcast_ip};
+use snarkos_node_tcp::{Config, ConnectionSide, P2P, Tcp, is_bogon_ip, is_unspecified_or_broadcast_ip};
 
 use snarkvm::prelude::{Address, Network, PrivateKey, ViewKey};
 
@@ -64,6 +67,9 @@ use std::{
 };
 use tokio::task::JoinHandle;
 
+/// The router keeps track of connected and connecting peers.
+/// The actual network communication happens in Inbound/Outbound,
+/// which is implemented by Validator, Prover, and Client.
 #[derive(Clone)]
 pub struct Router<N: Network>(Arc<InnerRouter<N>>);
 
@@ -113,14 +119,14 @@ pub struct InnerRouter<N: Network> {
 
 impl<N: Network> Router<N> {
     /// The minimum permitted interval between connection attempts for an IP; anything shorter is considered malicious.
-    #[cfg(not(any(test)))]
+    #[cfg(not(test))]
     const CONNECTION_ATTEMPTS_SINCE_SECS: i64 = 10;
     /// The maximum number of candidate peers permitted to be stored in the node.
     const MAXIMUM_CANDIDATE_PEERS: usize = 10_000;
     /// The maximum number of connection failures permitted by an inbound connecting peer.
     const MAXIMUM_CONNECTION_FAILURES: usize = 5;
     /// The maximum amount of connection attempts withing a 10 second threshold
-    #[cfg(not(any(test)))]
+    #[cfg(not(test))]
     const MAX_CONNECTION_ATTEMPTS: usize = 10;
     /// The duration in seconds after which a connected peer is considered inactive or
     /// disconnected if no message has been received in the meantime.

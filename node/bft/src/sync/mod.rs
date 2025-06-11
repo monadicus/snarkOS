@@ -24,7 +24,7 @@ use crate::{
 };
 use snarkos_node_bft_events::{CertificateRequest, CertificateResponse, Event};
 use snarkos_node_bft_ledger_service::LedgerService;
-use snarkos_node_sync::{BLOCK_REQUEST_BATCH_DELAY, BlockSync, locators::BlockLocators};
+use snarkos_node_sync::{BLOCK_REQUEST_BATCH_DELAY, BlockSync, Ping, locators::BlockLocators};
 use snarkos_node_tcp::P2P;
 use snarkvm::{
     console::{network::Network, types::Field},
@@ -180,7 +180,7 @@ impl<N: Network> Sync<N> {
     ///
     /// When this function returns sucessfully, the sync module will have spawned background tasks
     /// that fetch blocks from other validators.
-    pub async fn run(&self, sync_receiver: SyncReceiver<N>) -> Result<()> {
+    pub async fn run(&self, ping: Option<Arc<Ping<N>>>, sync_receiver: SyncReceiver<N>) -> Result<()> {
         info!("Starting the sync module...");
 
         // Start the block sync loop.
@@ -195,7 +195,12 @@ impl<N: Network> Sync<N> {
                 // Sleep briefly to avoid triggering spam detection.
                 tokio::time::sleep(Duration::from_millis(PRIMARY_PING_IN_MS)).await;
 
-                self_.try_block_sync().await;
+                let new_blocks = self_.try_block_sync().await;
+                if new_blocks {
+                    if let Some(ping) = &ping {
+                        ping.on_new_blocks();
+                    }
+                }
             }
         });
 
@@ -292,20 +297,28 @@ impl<N: Network> Sync<N> {
 
     /// Execute one iteration of block synchronization.
     ///
+    /// Returns true if we made progress. Returning true does *not* imply being fully synced.
+    ///
     /// This is called periodically by a tokio background task spawned in `Self::run`.
     /// Some unit tests also call this function directly to manually trigger block synchronization.
-    pub(crate) async fn try_block_sync(&self) {
+    pub(crate) async fn try_block_sync(&self) -> bool {
         self.issue_block_requests().await;
 
-        // Sync the storage with the blocks.
-        if let Err(err) = self.try_advancing_block_synchronization().await {
-            error!("Block synchronization failed - {err}");
-        }
+        // Sync the storage with the blocks
+        let new_blocks = match self.try_advancing_block_synchronization().await {
+            Ok(new_blocks) => new_blocks,
+            Err(err) => {
+                error!("Block synchronization failed - {err}");
+                false
+            }
+        };
 
         // If the node is synced, clear the `latest_block_responses`.
         if self.is_synced() {
             self.latest_block_responses.lock().await.clear();
         }
+
+        new_blocks
     }
 }
 
@@ -431,6 +444,8 @@ impl<N: Network> Sync<N> {
     ///
     /// This is the validator's version of `BlockSync::try_advancing_block_synchronization` and is called periodically at runtime.
     ///
+    /// This returns Ok(true) if we successfully advanced the ledger by at least one new block.
+    ///
     /// A key difference to `BlockSync`'s versions is that it will only add blocks to the ledger once they have been confirmed by the network.
     /// If blocks are not confirmed yet, they will be kept in [`Self::latest_block_responses`].
     /// It will also pass certificates from synced blocks to the BFT module so that consensus can progress as expected
@@ -438,7 +453,7 @@ impl<N: Network> Sync<N> {
     ///
     /// If the node falls behind more than GC rounds, this function calls [`Self::sync_storage_without_bft`] instead,
     /// which syncs without updating the BFT state.
-    async fn try_advancing_block_synchronization(&self) -> Result<()> {
+    async fn try_advancing_block_synchronization(&self) -> Result<bool> {
         // Acquire the response lock.
         let _lock = self.response_lock.lock().await;
 
@@ -505,6 +520,7 @@ impl<N: Network> Sync<N> {
         }
 
         // Try to advance the ledger with sync blocks.
+        let mut new_blocks = false;
         while let Some(block) = self.block_sync.peek_next_block(current_height) {
             info!("Syncing the BFT to block {}...", block.height());
             // Sync the storage with the block.
@@ -512,6 +528,7 @@ impl<N: Network> Sync<N> {
                 Ok(_) => {
                     // Update the current height if sync succeeds.
                     current_height += 1;
+                    new_blocks = true;
                 }
                 Err(e) => {
                     // Mark the current height as processed in block_sync.
@@ -520,7 +537,8 @@ impl<N: Network> Sync<N> {
                 }
             }
         }
-        Ok(())
+
+        Ok(new_blocks)
     }
 
     /// Syncs the ledger with the given block without updating the BFT.

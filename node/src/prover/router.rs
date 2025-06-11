@@ -64,7 +64,7 @@ where
         // Promote the peer's status from "connecting" to "connected".
         self.router().insert_connected_peer(peer_ip);
         // Send the first `Ping` message to the peer.
-        self.send_ping(peer_ip, None);
+        self.router().send_ping(peer_ip, None);
     }
 }
 
@@ -108,7 +108,7 @@ impl<N: Network, C: ConsensusStorage<N>> Reading for Prover<N, C> {
         if let Err(error) = self.inbound(peer_addr, message).await {
             if let Some(peer_ip) = self.router().resolve_to_listener(&peer_addr) {
                 warn!("Disconnecting from '{peer_addr}' - {error}");
-                Outbound::send(self, peer_ip, Message::Disconnect(DisconnectReason::ProtocolViolation.into()));
+                self.router().send(peer_ip, Message::Disconnect(DisconnectReason::ProtocolViolation.into()));
                 // Disconnect from this peer.
                 self.router().disconnect(peer_ip);
             }
@@ -128,7 +128,7 @@ impl<N: Network, C: ConsensusStorage<N>> Heartbeat<N> for Prover<N, C> {
             // Choose the peer with the highest block height.
             if let Some((peer_ip, _)) = sync_peers.into_iter().max_by_key(|(_, height)| *height) {
                 // Request the puzzle from the peer.
-                Outbound::send(self, peer_ip, Message::PuzzleRequest(PuzzleRequest));
+                self.router().send(peer_ip, Message::PuzzleRequest(PuzzleRequest));
             }
         }
     }
@@ -182,7 +182,7 @@ impl<N: Network, C: ConsensusStorage<N>> Inbound<N> for Prover<N, C> {
         }
 
         // Send a `Pong` message to the peer.
-        Outbound::send(self, peer_ip, Message::Pong(Pong { is_fork: Some(false) }));
+        self.router().send(peer_ip, Message::Pong(Pong { is_fork: Some(false) }));
         true
     }
 
@@ -196,7 +196,7 @@ impl<N: Network, C: ConsensusStorage<N>> Inbound<N> for Prover<N, C> {
             // Check that the peer is still connected.
             if self_clone.router().is_connected(&peer_ip) {
                 // Send a `Ping` message to the peer.
-                self_clone.send_ping(peer_ip, None);
+                self_clone.router().send_ping(peer_ip, None);
             }
         });
         true
