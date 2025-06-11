@@ -372,6 +372,8 @@ impl<N: Network> BFT<N> {
     }
 
     /// Returns `true` if the timer for the leader certificate has expired.
+    ///
+    /// This is always true for a new BFT instance.
     fn is_timer_expired(&self) -> bool {
         self.leader_certificate_timer.load(Ordering::SeqCst) + MAX_LEADER_CERTIFICATE_DELAY_IN_SECS <= now()
     }
@@ -1058,7 +1060,7 @@ mod tests {
 
         // Set up the BFT logic.
         let bft = initialize_bft(account.clone(), storage.clone(), ledger.clone())?;
-        assert!(bft.is_timer_expired()); // 0 + 5 < now()
+        assert!(bft.is_timer_expired());
 
         // Store is at round 1, and we are checking for round 2.
         // Ensure this call fails on an even round.
@@ -1080,7 +1082,7 @@ mod tests {
 
         // Set up the BFT logic.
         let bft = initialize_bft(account.clone(), storage.clone(), ledger.clone())?;
-        assert!(bft.is_timer_expired()); // 0 + 5 < now()
+        assert!(bft.is_timer_expired());
 
         // Ensure this call fails on an even round.
         let result = bft.is_leader_quorum_or_nonleaders_available(2);
@@ -1121,7 +1123,7 @@ mod tests {
 
         // Set up the BFT logic.
         let bft = initialize_bft(account.clone(), storage.clone(), ledger.clone())?;
-        assert!(bft.is_timer_expired()); // 0 + 5 < now()
+        assert!(bft.is_timer_expired());
 
         // Set the leader certificate.
         let leader_certificate = sample_batch_certificate_for_round(2, rng);
@@ -1166,7 +1168,7 @@ mod tests {
 
         // Initialize the BFT.
         let bft = initialize_bft(account.clone(), storage.clone(), ledger.clone())?;
-        assert!(bft.is_timer_expired()); // 0 + 5 < now()
+        assert!(bft.is_timer_expired());
 
         // Ensure this call fails on an odd round.
         let result = bft.update_leader_certificate_to_even_round(1);
