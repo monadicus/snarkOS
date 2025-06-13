@@ -72,16 +72,8 @@ impl<N: Network, C: ConsensusStorage<N>> OnConnect for Client<N, C> {
         if self.router.bootstrap_peers().contains(&peer_ip) {
             self.router().send(peer_ip, Message::PeerRequest(PeerRequest));
         }
-        // Retrieve the block locators.
-        let block_locators = match self.sync.get_block_locators() {
-            Ok(block_locators) => Some(block_locators),
-            Err(e) => {
-                error!("Failed to get block locators: {e}");
-                return;
-            }
-        };
         // Send the first `Ping` message to the peer.
-        self.router().send_ping(peer_ip, block_locators);
+        self.ping.on_peer_connected(peer_ip);
     }
 }
 

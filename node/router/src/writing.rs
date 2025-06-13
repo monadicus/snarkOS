@@ -23,8 +23,12 @@ use tokio::sync::oneshot;
 
 impl<N: Network> Router<N> {
     /// Sends a "Ping" message to the given peer.
-    pub fn send_ping(&self, peer_ip: SocketAddr, block_locators: Option<BlockLocators<N>>) {
-        self.send(peer_ip, Message::Ping(messages::Ping::new(self.node_type(), block_locators)));
+    ///
+    /// Returns false if the peer does not exist or disconnected.
+    #[must_use]
+    pub fn send_ping(&self, peer_ip: SocketAddr, block_locators: Option<BlockLocators<N>>) -> bool {
+        let result = self.send(peer_ip, Message::Ping(messages::Ping::new(self.node_type(), block_locators)));
+        result.is_some()
     }
 
     /// Sends the given message to specified peer.
@@ -32,6 +36,8 @@ impl<N: Network> Router<N> {
     /// This function returns as soon as the message is queued to be sent,
     /// without waiting for the actual delivery; instead, the caller is provided with a [`oneshot::Receiver`]
     /// which can be used to determine when and whether the message has been delivered.
+    ///
+    /// This returns None, if the peer does not exist or disconnected.
     pub fn send(&self, peer_ip: SocketAddr, message: Message<N>) -> Option<oneshot::Receiver<io::Result<()>>> {
         // Determine whether to send the message.
         if !self.can_send(peer_ip, &message) {

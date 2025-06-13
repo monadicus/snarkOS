@@ -114,7 +114,9 @@ impl<N: Network> Ping<N> {
     pub fn on_peer_connected(&self, peer_ip: SocketAddr) {
         // Send the first ping.
         let locators = self.inner.lock().block_locators.clone();
-        self.router.send_ping(peer_ip, locators);
+        if !self.router.send_ping(peer_ip, locators) {
+            warn!("Peer {peer_ip} connected and immediately disconnected?");
+        }
     }
 
     /// Notify the ping logic that new blocks were created or synced.
@@ -177,11 +179,12 @@ impl<N: Network> Ping<N> {
 
             // Send new ping
             let locators = inner.block_locators.clone();
-            router.send_ping(peer_ip, locators.clone());
-
-            // Update state
+            let success = router.send_ping(peer_ip, locators.clone());
             inner.next_ping.pop_first();
-            inner.next_ping.insert(now + Self::MAX_PING_INTERVAL, peer_ip);
+
+            if !success {
+                trace!("Failed to send ping to peer {peer_ip}. Disconnected.");
+            }
         }
     }
 
@@ -192,7 +195,11 @@ impl<N: Network> Ping<N> {
 
         for peer_ip in peers {
             let locators = inner.block_locators.clone();
-            router.send_ping(peer_ip, locators);
+            let success = router.send_ping(peer_ip, locators);
+
+            if !success {
+                trace!("Failed to send ping to peer {peer_ip}. Disconnected.");
+            }
         }
     }
 }
