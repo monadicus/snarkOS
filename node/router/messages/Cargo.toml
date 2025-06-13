@@ -53,7 +53,7 @@ workspace = true
 features = [ "algorithms", "test-helpers" ]
 
 [dev-dependencies.proptest]
-version = "1.4.0"
+workspace = true
 
 [dev-dependencies.test-strategy]
 version = "0.3.1"

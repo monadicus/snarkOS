@@ -50,6 +50,9 @@ rev = "45f3223"
 #version = "=3.7.1"
 features = [ "circuit", "console", "rocks" ]
 
+[workspace.dependencies.proptest]
+version = "=1.6.0" # Remove this once we upgrade to rand 0.9
+
 [workspace.dependencies.base64]
 version = "0.22"
 

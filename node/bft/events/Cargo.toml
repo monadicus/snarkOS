@@ -48,7 +48,7 @@ features = [ "codec" ]
 version = "0.1"
 
 [dev-dependencies.proptest]
-version = "1.4.0"
+workspace = true
 
 [dev-dependencies.snarkvm]
 workspace = true
