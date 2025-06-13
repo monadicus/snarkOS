@@ -182,7 +182,8 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
         let sync = Arc::new(BlockSync::new(ledger_service.clone()));
 
         // Set up the ping logic.
-        let ping = Arc::new(Ping::new(router.clone(), sync.clone()));
+        let locators = sync.get_block_locators()?;
+        let ping = Arc::new(Ping::new(router.clone(), locators));
 
         // Initialize the node.
         let mut node = Self {
@@ -286,7 +287,10 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
             let has_new_blocks = self.sync.try_advancing_block_synchronization();
 
             if has_new_blocks {
-                self.ping.on_new_blocks();
+                match self.sync.get_block_locators() {
+                    Ok(locators) => self.ping.update_block_locators(locators),
+                    Err(err) => error!("Failed to get block locators: {err}"),
+                }
             }
         } else {
             // Issues the block requests in batches.

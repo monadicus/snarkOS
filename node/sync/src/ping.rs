@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{BlockSync, locators::BlockLocators};
+use crate::locators::BlockLocators;
 use snarkos_node_router::Router;
 use snarkvm::prelude::Network;
 
@@ -33,17 +33,17 @@ use tokio::{sync::Notify, time::timeout};
 /// for when a peer should next be pinged.
 ///
 /// TODO (kaimast): maybe keep track of the last ping too, to not trigger spam detection?
-#[derive(Default)]
-struct PingInner {
+struct PingInner<N: Network> {
     /// The next time we should ping a peer.
     next_ping: BTreeMap<Instant, SocketAddr>,
+    /// The most recent block locators.
+    block_locators: BlockLocators<N>,
 }
 
 /// Manages sending Ping messages to all connected peers.
 pub struct Ping<N: Network> {
     router: Router<N>,
-    sync: Arc<BlockSync<N>>,
-    inner: Arc<Mutex<PingInner>>,
+    inner: Arc<Mutex<PingInner<N>>>,
     notify: Arc<Notify>,
 }
 
@@ -53,22 +53,25 @@ impl<N: Network> Ping<N> {
 
     /// Create a new instance of the ping logic.
     /// There should only be one per node.
-    pub fn new(router: Router<N>, sync: Arc<BlockSync<N>>) -> Self {
+    ///
+    /// # Usage
+    /// Initialize this with the most up-to-date block locators and call
+    /// update_block_locators, whenever a new block is received/createed.
+    pub fn new(router: Router<N>, block_locators: BlockLocators<N>) -> Self {
         let notify = Arc::new(Notify::default());
-        let inner = Arc::new(Mutex::new(PingInner::default()));
+        let inner = Arc::new(Mutex::new(PingInner { next_ping: Default::default(), block_locators }));
 
         {
             let inner = inner.clone();
-            let sync = sync.clone();
             let router = router.clone();
             let notify = notify.clone();
 
             tokio::spawn(async move {
-                Self::ping_task(&inner, &*sync, &router, &notify).await;
+                Self::ping_task(&inner, &router, &notify).await;
             });
         }
 
-        Self { inner, sync, router, notify }
+        Self { inner, router, notify }
     }
 
     /// Notify the ping logic that we received a Pong response.
@@ -84,25 +87,20 @@ impl<N: Network> Ping<N> {
     /// Notify the ping logic that a new peer connected.
     pub fn on_peer_connected(&self, peer_ip: SocketAddr) {
         // Send the first ping.
-        let locators = match self.sync.get_block_locators() {
-            Ok(block_locators) => Some(block_locators),
-            Err(err) => {
-                error!("Failed to get block locators: {err}");
-                return;
-            }
-        };
-
-        self.router.send_ping(peer_ip, locators);
+        let locators = self.inner.lock().block_locators.clone();
+        self.router.send_ping(peer_ip, Some(locators));
     }
 
     /// Notify the ping logic that new blocks were created or synced.
-    pub fn on_new_blocks(&self) {
+    pub fn update_block_locators(&self, locators: BlockLocators<N>) {
+        self.inner.lock().block_locators = locators;
+
         // wake up the ping task
         self.notify.notify_one();
     }
 
     /// Background task that periodically sends out new ping messages.
-    async fn ping_task(inner: &Mutex<PingInner>, sync: &BlockSync<N>, router: &Router<N>, notify: &Notify) {
+    async fn ping_task(inner: &Mutex<PingInner<N>>, router: &Router<N>, notify: &Notify) {
         let mut new_block = false;
 
         loop {
@@ -113,10 +111,10 @@ impl<N: Network> Ping<N> {
 
                 // Ping peers.
                 if new_block {
-                    Self::ping_all_peers(&mut inner, sync, router);
+                    Self::ping_all_peers(&mut inner, router);
                     new_block = false;
                 } else {
-                    Self::ping_expired_peers(now, &mut inner, sync, router);
+                    Self::ping_expired_peers(now, &mut inner, router);
                 }
 
                 // Figure out how long to sleep.
@@ -136,9 +134,7 @@ impl<N: Network> Ping<N> {
     }
 
     /// Ping all peers that have an expired timer.
-    fn ping_expired_peers(now: Instant, inner: &mut PingInner, sync: &BlockSync<N>, router: &Router<N>) {
-        let mut block_locators: Option<BlockLocators<N>> = None;
-
+    fn ping_expired_peers(now: Instant, inner: &mut PingInner<N>, router: &Router<N>) {
         loop {
             // Find next peer to contact.
             let peer_ip = {
@@ -153,21 +149,9 @@ impl<N: Network> Ping<N> {
                 *peer_ip
             };
 
-            // Try to cache the block locators
-            if let Some(locators) = &block_locators {
-                router.send_ping(peer_ip, Some(locators.clone()));
-            } else {
-                let locators = match sync.get_block_locators() {
-                    Ok(block_locators) => block_locators,
-                    Err(err) => {
-                        error!("Failed to get block locators: {err}");
-                        return;
-                    }
-                };
-
-                router.send_ping(peer_ip, Some(locators.clone()));
-                block_locators = Some(locators);
-            }
+            // Send new ping
+            let locators = inner.block_locators.clone();
+            router.send_ping(peer_ip, Some(locators.clone()));
 
             // Update state
             inner.next_ping.pop_first();
@@ -176,21 +160,13 @@ impl<N: Network> Ping<N> {
     }
 
     /// Ping all known peers.
-    fn ping_all_peers(inner: &mut PingInner, sync: &BlockSync<N>, router: &Router<N>) {
-        let locators = match sync.get_block_locators() {
-            Ok(block_locators) => block_locators,
-            Err(err) => {
-                error!("Failed to get block locators: {err}");
-                return;
-            }
-        };
-
-        // Remove timers.
+    fn ping_all_peers(inner: &mut PingInner<N>, router: &Router<N>) {
         let peers: Vec<SocketAddr> = inner.next_ping.values().copied().collect();
         inner.next_ping.clear();
 
         for peer_ip in peers {
-            router.send_ping(peer_ip, Some(locators.clone()));
+            let locators = inner.block_locators.clone();
+            router.send_ping(peer_ip, Some(locators));
         }
     }
 }

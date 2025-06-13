@@ -117,6 +117,8 @@ pub struct Consensus<N: Network> {
     handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
     /// The ping logic.
     ping: Arc<Ping<N>>,
+    /// The block sync logic.
+    block_sync: Arc<BlockSync<N>>,
 }
 
 impl<N: Network> Consensus<N> {
@@ -137,11 +139,12 @@ impl<N: Network> Consensus<N> {
         // Initialize the Narwhal storage.
         let storage = NarwhalStorage::new(ledger.clone(), transmissions, BatchHeader::<N>::MAX_GC_ROUNDS as u64);
         // Initialize the BFT.
-        let bft = BFT::new(account, storage, ledger.clone(), block_sync, ip, trusted_validators, storage_mode)?;
+        let bft = BFT::new(account, storage, ledger.clone(), block_sync.clone(), ip, trusted_validators, storage_mode)?;
         // Create a new instance of Consensus.
         let mut _self = Self {
             ledger,
             bft,
+            block_sync,
             primary_sender,
             solutions_queue: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(CAPACITY_FOR_SOLUTIONS).unwrap()))),
             transactions_queue: Default::default(),
@@ -547,7 +550,8 @@ impl<N: Network> Consensus<N> {
         }
 
         // Notify peers that we have a new block.
-        self.ping.on_new_blocks();
+        let locators = self.block_sync.get_block_locators()?;
+        self.ping.update_block_locators(locators);
 
         // TODO(kaimast): This should also remove any transmissions/solutions contained in the block from the mempool.
         // Removal currently happens when Consensus eventually passes them to the worker, which then just discards them.
