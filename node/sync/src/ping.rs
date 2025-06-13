@@ -37,7 +37,8 @@ struct PingInner<N: Network> {
     /// The next time we should ping a peer.
     next_ping: BTreeMap<Instant, SocketAddr>,
     /// The most recent block locators.
-    block_locators: BlockLocators<N>,
+    /// (or None if this node does not offer block sync)
+    block_locators: Option<BlockLocators<N>>,
 }
 
 /// Manages sending Ping messages to all connected peers.
@@ -45,6 +46,12 @@ pub struct Ping<N: Network> {
     router: Router<N>,
     inner: Arc<Mutex<PingInner<N>>>,
     notify: Arc<Notify>,
+}
+
+impl<N: Network> PingInner<N> {
+    fn new(block_locators: Option<BlockLocators<N>>) -> Self {
+        Self { block_locators, next_ping: Default::default() }
+    }
 }
 
 impl<N: Network> Ping<N> {
@@ -56,10 +63,29 @@ impl<N: Network> Ping<N> {
     ///
     /// # Usage
     /// Initialize this with the most up-to-date block locators and call
-    /// update_block_locators, whenever a new block is received/createed.
+    /// update_block_locators, whenever a new block is received/created.
     pub fn new(router: Router<N>, block_locators: BlockLocators<N>) -> Self {
         let notify = Arc::new(Notify::default());
-        let inner = Arc::new(Mutex::new(PingInner { next_ping: Default::default(), block_locators }));
+        let inner = Arc::new(Mutex::new(PingInner::new(Some(block_locators))));
+
+        {
+            let inner = inner.clone();
+            let router = router.clone();
+            let notify = notify.clone();
+
+            tokio::spawn(async move {
+                Self::ping_task(&inner, &router, &notify).await;
+            });
+        }
+
+        Self { inner, router, notify }
+    }
+
+    /// Same as [`Self::new`] but for nodes that peers cannot sync from
+    /// such as provers.
+    pub fn new_nosync(router: Router<N>) -> Self {
+        let notify = Arc::new(Notify::default());
+        let inner = Arc::new(Mutex::new(PingInner::new(None)));
 
         {
             let inner = inner.clone();
@@ -88,12 +114,12 @@ impl<N: Network> Ping<N> {
     pub fn on_peer_connected(&self, peer_ip: SocketAddr) {
         // Send the first ping.
         let locators = self.inner.lock().block_locators.clone();
-        self.router.send_ping(peer_ip, Some(locators));
+        self.router.send_ping(peer_ip, locators);
     }
 
     /// Notify the ping logic that new blocks were created or synced.
     pub fn update_block_locators(&self, locators: BlockLocators<N>) {
-        self.inner.lock().block_locators = locators;
+        self.inner.lock().block_locators = Some(locators);
 
         // wake up the ping task
         self.notify.notify_one();
@@ -151,7 +177,7 @@ impl<N: Network> Ping<N> {
 
             // Send new ping
             let locators = inner.block_locators.clone();
-            router.send_ping(peer_ip, Some(locators.clone()));
+            router.send_ping(peer_ip, locators.clone());
 
             // Update state
             inner.next_ping.pop_first();
@@ -166,7 +192,7 @@ impl<N: Network> Ping<N> {
 
         for peer_ip in peers {
             let locators = inner.block_locators.clone();
-            router.send_ping(peer_ip, Some(locators));
+            router.send_ping(peer_ip, locators);
         }
     }
 }

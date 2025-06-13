@@ -64,7 +64,7 @@ where
         // Promote the peer's status from "connecting" to "connected".
         self.router().insert_connected_peer(peer_ip);
         // Send the first `Ping` message to the peer.
-        self.router().send_ping(peer_ip, None);
+        self.ping.on_peer_connected(peer_ip);
     }
 }
 
@@ -76,18 +76,6 @@ impl<N: Network, C: ConsensusStorage<N>> Disconnect for Prover<N, C> {
             self.sync.remove_peer(&peer_ip);
             self.router.remove_connected_peer(peer_ip);
         }
-    }
-}
-
-#[async_trait]
-impl<N: Network, C: ConsensusStorage<N>> Writing for Prover<N, C> {
-    type Codec = MessageCodec<N>;
-    type Message = Message<N>;
-
-    /// Creates an [`Encoder`] used to write the outbound messages to the target stream.
-    /// The `side` parameter indicates the connection side **from the node's perspective**.
-    fn codec(&self, _addr: SocketAddr, _side: ConnectionSide) -> Self::Codec {
-        Default::default()
     }
 }
 
@@ -188,17 +176,7 @@ impl<N: Network, C: ConsensusStorage<N>> Inbound<N> for Prover<N, C> {
 
     /// Sleeps for a period and then sends a `Ping` message to the peer.
     fn pong(&self, peer_ip: SocketAddr, _message: Pong) -> bool {
-        // Spawn an asynchronous task for the `Ping` request.
-        let self_clone = self.clone();
-        tokio::spawn(async move {
-            // Sleep for the preset time before sending a `Ping` request.
-            tokio::time::sleep(Duration::from_secs(Self::PING_SLEEP_IN_SECS)).await;
-            // Check that the peer is still connected.
-            if self_clone.router().is_connected(&peer_ip) {
-                // Send a `Ping` message to the peer.
-                self_clone.router().send_ping(peer_ip, None);
-            }
-        });
+        self.ping.on_pong_received(peer_ip);
         true
     }
 
