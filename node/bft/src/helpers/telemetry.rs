@@ -36,11 +36,18 @@ use std::{collections::BTreeMap, sync::Arc};
 //  - Various stake weight considerations
 //  - The latest seen IP address of each validator (useful for debugging purposes)
 
+/// The participation scores for each validator.
+///     Certificate Score: The % of rounds the validator has a valid certificate
+///     Signature Score: The % of certificates the validator has a valid signature for
+///     Combined Score: The weighted score using the certificate and signature scores
+type ParticipationScores = (f64, f64, f64);
+
 /// Tracker for the participation metrics of validators.
 #[derive(Clone, Debug)]
 pub struct Telemetry<N: Network> {
     /// The certificates seen for each round
     /// A mapping of `round` to set of certificate IDs.
+    /// Note that this map is sorted to allow grouped iteration over rounds.
     tracked_certificates: Arc<RwLock<BTreeMap<u64, IndexSet<Field<N>>>>>,
 
     /// The total number of signatures seen for a validator, including for their own certificates.
@@ -51,11 +58,8 @@ pub struct Telemetry<N: Network> {
     /// A mapping of `address` to a list of rounds.
     validator_certificates: Arc<RwLock<IndexMap<Address<N>, IndexSet<u64>>>>,
 
-    /// The certificate, signature, and combined participation scores for each validator.
-    ///     Certificate Score: The % of rounds the validator has a valid certificate
-    ///     Signature Score: The % of certificates the validator has a valid signature for
-    ///     Combined Score: The weighted score using the certificate and signature scores
-    participation_scores: Arc<RwLock<IndexMap<Address<N>, (f64, f64, f64)>>>,
+    /// The certificate, signature, and participation scores for each validator.
+    participation_scores: Arc<RwLock<IndexMap<Address<N>, ParticipationScores>>>,
 }
 
 impl<N: Network> Default for Telemetry<N> {
