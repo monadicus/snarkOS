@@ -41,6 +41,13 @@ pub(crate) struct Metadata {
     all: Option<bool>,
 }
 
+/// The return value for a `status` query.
+#[derive(Copy, Clone, Serialize)]
+struct NodeStatus {
+    is_synced: bool,
+    ledger_height: u32,
+}
+
 impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
     // GET /<network>/block/height/latest
     pub(crate) async fn get_block_height_latest(State(rest): State<Self>) -> ErasedJson {
@@ -115,6 +122,14 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
             Ok(json) => json,
             Err(err) => Err(RestError(format!("Failed to get blocks '{start_height}..{end_height}' - {err}"))),
         }
+    }
+
+    // GET /<network>/status
+    pub(crate) async fn get_status(State(rest): State<Self>) -> Result<ErasedJson, RestError> {
+        Ok(ErasedJson::pretty(NodeStatus {
+            is_synced: rest.routing.is_block_synced(),
+            ledger_height: rest.ledger.latest_height(),
+        }))
     }
 
     // GET /<network>/height/{blockHash}
