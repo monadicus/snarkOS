@@ -1,6 +1,6 @@
 [package]
 name = "snarkos-node-rest"
-version = "3.7.1"
+version = "3.8.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A REST API server for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -28,16 +28,15 @@ locktick = [
   "snarkos-node-router/locktick",
   "snarkvm-synthesizer/locktick"
 ]
-test_targets = [ "snarkvm/test_targets" ]
 
 [dependencies.anyhow]
 version = "1.0.79"
 
 [dependencies.axum]
-version = "0.7"
+version = "0.8"
 
 [dependencies.axum-extra]
-version = "0.9.0"
+version = "0.10"
 features = [ "erased-json", "typed-header" ]
 
 [dependencies.http]
@@ -72,17 +71,17 @@ features = [ "preserve_order" ]
 
 [dependencies.snarkos-node-consensus]
 path = "../consensus"
-version = "=3.7.1"
+version = "=3.8.0"
 
 [dependencies.snarkos-node-router]
 path = "../router"
-version = "=3.7.1"
+version = "=3.8.0"
 
 [dependencies.snarkvm-synthesizer]
 #path = "../../../snarkVM/synthesizer"
-git = "https://github.com/ProvableHQ/snarkVM.git"
-rev = "8242f0a"
-#version = "=3.7.1"
+#git = "https://github.com/ProvableHQ/snarkVM.git"
+#rev = "0d744e9"
+version = "=3.8.0"
 default-features = false
 optional = true
 
@@ -103,13 +102,13 @@ version = "0.3"
 version = "1"
 
 [dependencies.tower]
-version = "0.4"
+version = "0.5"
 
 [dependencies.tower_governor]
-version = "0.3"
+version = "0.7"
 
 [dependencies.tower-http]
-version = "0.5"
+version = "0.6"
 features = [ "cors", "trace" ]
 
 [dependencies.tracing]
