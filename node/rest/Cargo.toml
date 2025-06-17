@@ -80,8 +80,7 @@ version = "=3.7.1"
 [dependencies.snarkvm-synthesizer] # If this is updated, the rev in the main `Cargo.toml` must be updated as well.
 #path = "../../../snarkVM/synthesizer"
 git = "https://github.com/ProvableHQ/snarkVM.git"
-#rev = "45f3223"
-branch = "feat/reject-old-execs-after-upgrade+staging"
+rev = "a015246"
 ##version = "=3.7.1"
 default-features = false
 optional = true
