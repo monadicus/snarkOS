@@ -150,6 +150,7 @@ features = [ "env-filter" ]
 
 [dependencies.ureq]
 version = "2.9"
+features = ["json"]
 
 [dependencies.zeroize]
 version = "1"
