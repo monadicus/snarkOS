@@ -18,7 +18,7 @@ edition = "2021"
 
 [features]
 default = [ "parallel" ]
-locktick = [ "snarkvm/locktick" ]
+locktick = [ "dep:locktick", "snarkvm/locktick" ]
 parallel = [ "rayon" ]
 cuda = [ "snarkvm/cuda" ]
 metrics = [ "dep:snarkos-node-metrics" ]
@@ -31,6 +31,11 @@ version = "1.0"
 
 [dependencies.colored]
 version = "2"
+
+[dependencies.locktick]
+version = "0.3"
+features = [ "parking_lot" ]
+optional = true
 
 [dependencies.parking_lot]
 version = "0.12"
