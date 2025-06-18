@@ -20,6 +20,7 @@ use snarkvm::{
         network::{CanaryV0, MainnetV0, Network, TestnetV0},
         program::ProgramOwner,
     },
+    ledger::store::helpers::memory::BlockMemory,
     prelude::{
         PrivateKey,
         ProgramID,
@@ -103,7 +104,7 @@ impl Deploy {
     /// Construct and process the deployment transaction.
     fn construct_deployment<N: Network, A: Aleo<Network = N, BaseField = N::Field>>(&self) -> Result<String> {
         // Specify the query
-        let query = Query::from(&self.query);
+        let query = Query::<N, BlockMemory<N>>::from(&self.query);
 
         // Retrieve the private key.
         let private_key = PrivateKey::from_str(&self.private_key)?;
@@ -150,7 +151,7 @@ impl Deploy {
                         deployment_id,
                         rng,
                     )?;
-                    vm.execute_fee_authorization(fee_authorization, Some(query), rng)?
+                    vm.execute_fee_authorization(fee_authorization, Some(&query), rng)?
                 }
                 None => {
                     let fee_authorization = vm.authorize_fee_public(
@@ -160,7 +161,7 @@ impl Deploy {
                         deployment_id,
                         rng,
                     )?;
-                    vm.execute_fee_authorization(fee_authorization, Some(query), rng)?
+                    vm.execute_fee_authorization(fee_authorization, Some(&query), rng)?
                 }
             };
             // Construct the owner.
