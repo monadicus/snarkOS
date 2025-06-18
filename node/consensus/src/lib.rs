@@ -529,6 +529,9 @@ impl<N: Network> Consensus<N> {
         self.ledger.check_next_block(&next_block)?;
         // Advance to the next block.
         self.ledger.advance_to_next_block(&next_block)?;
+        #[cfg(feature = "telemetry")]
+        // Fetch the latest committee
+        let latest_committee = self.ledger.current_committee()?;
 
         // If the next block starts a new epoch, clear the existing solutions.
         if next_block.height() % N::NUM_BLOCKS_PER_EPOCH == 0 {
@@ -558,6 +561,23 @@ impl<N: Network> Consensus<N> {
             metrics::gauge(metrics::blocks::PROOF_TARGET, proof_target as f64);
             metrics::gauge(metrics::blocks::COINBASE_TARGET, coinbase_target as f64);
             metrics::gauge(metrics::blocks::CUMULATIVE_PROOF_TARGET, cumulative_proof_target as f64);
+
+            #[cfg(feature = "telemetry")]
+            {
+                // Retrieve the latest participation scores.
+                let participation_scores =
+                    self.bft().primary().gateway().validator_telemetry().get_participation_scores(&latest_committee);
+
+                // Log the participation scores.
+                for (address, participation_score) in participation_scores {
+                    metrics::histogram_label(
+                        metrics::consensus::VALIDATOR_PARTICIPATION,
+                        "validator_address",
+                        address.to_string(),
+                        participation_score,
+                    )
+                }
+            }
         }
         Ok(())
     }
