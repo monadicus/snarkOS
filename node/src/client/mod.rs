@@ -63,9 +63,12 @@ use std::{
             Ordering::{Acquire, Relaxed},
         },
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
-use tokio::{task::JoinHandle, time::sleep};
+use tokio::{
+    task::JoinHandle,
+    time::{sleep, timeout},
+};
 
 /// The maximum number of deployments to verify in parallel.
 /// Note: worst case memory to verify a deployment (MAX_DEPLOYMENT_CONSTRAINTS = 1 << 20) is ~2 GiB.
@@ -238,10 +241,14 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
 }
 
 impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
+    const SYNC_INTERVAL: Duration = std::time::Duration::from_secs(5);
+
     /// Initializes the sync pool.
     fn initialize_sync(&self) {
         // Start the sync loop.
         let _self = self.clone();
+        let mut last_update = Instant::now();
+
         self.handles.lock().push(tokio::spawn(async move {
             loop {
                 // If the Ctrl-C handler registered the signal, stop the node.
@@ -250,17 +257,33 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
                     break;
                 }
 
-                // Sleep briefly to avoid triggering spam detection.
-                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                // Make sure we do not sync too often
+                let now = Instant::now();
+                let elapsed = now.saturating_duration_since(last_update);
+                let sleep_time = Self::SYNC_INTERVAL.saturating_sub(elapsed);
+
+                if !sleep_time.is_zero() {
+                    sleep(sleep_time).await;
+                }
 
                 // Perform the sync routine.
                 _self.try_block_sync().await;
+                last_update = now;
             }
         }));
     }
 
     /// Client-side version of `snarkvm_node_bft::Sync::try_block_sync()`.
     async fn try_block_sync(&self) {
+        // Sleep briefly to avoid triggering spam detection.
+        let _ = timeout(Self::SYNC_INTERVAL, self.sync.wait_for_update()).await;
+
+        // Do not attempt to sync if there are not blocks to sync.
+        // This prevents redudant log messages and performing unnecessary computation.
+        if !self.sync.can_block_sync() {
+            return;
+        }
+
         // First see if any peers need removal.
         let peers_to_ban = self.sync.remove_timed_out_block_requests();
         for peer_ip in peers_to_ban {
@@ -277,13 +300,12 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
         // Prepare the block requests, if any.
         // In the process, we update the state of `is_block_synced` for the sync module.
         let (block_requests, sync_peers) = self.sync.prepare_block_requests();
-        trace!("Prepared {} block requests", block_requests.len());
 
         // If there are no block requests, but there are pending block responses in the sync pool,
         // then try to advance the ledger using these pending block responses.
         if block_requests.is_empty() && self.sync.has_pending_responses() {
             // Try to advance the ledger with the sync pool.
-            trace!("No block requests to send, but there are still pending block responses.");
+            trace!("No block requests to send. Will process pending responses.");
             let has_new_blocks = self.sync.try_advancing_block_synchronization();
 
             if has_new_blocks {
@@ -292,7 +314,14 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
                     Err(err) => error!("Failed to get block locators: {err}"),
                 }
             }
+        } else if block_requests.is_empty() {
+            warn!(
+                "Not block synced yet, and there are no outstanding block requests or \
+                 new block requests to send"
+            );
         } else {
+            trace!("Prepared {} new block requests.", block_requests.len());
+
             // Issues the block requests in batches.
             for requests in block_requests.chunks(DataBlocks::<N>::MAXIMUM_NUMBER_OF_BLOCKS as usize) {
                 if !self.sync.send_block_requests(self, &sync_peers, requests).await {
@@ -494,7 +523,7 @@ impl<N: Network, C: ConsensusStorage<N>> NodeInterface<N> for Client<N, C> {
         self.shutdown.store(true, std::sync::atomic::Ordering::Release);
 
         // Abort the tasks.
-        trace!("Shutting down the validator...");
+        trace!("Stopping backgroudn tasks...");
         self.handles.lock().iter().for_each(|handle| handle.abort());
 
         // Shut down the router.

@@ -553,6 +553,9 @@ impl<N: Network> Consensus<N> {
         let locators = self.block_sync.get_block_locators()?;
         self.ping.update_block_locators(locators);
 
+        // Make block sync aware of the new block.
+        self.block_sync.set_sync_height(next_block.height());
+
         // TODO(kaimast): This should also remove any transmissions/solutions contained in the block from the mempool.
         // Removal currently happens when Consensus eventually passes them to the worker, which then just discards them.
 

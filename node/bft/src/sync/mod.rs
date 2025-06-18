@@ -152,17 +152,11 @@ impl<N: Network> Sync<N> {
             });
         }
 
-        // We might be further ahead than the ledger, if there are queued
-        // responses.
-        let current_height = {
-            let responses = self.latest_block_responses.lock().await;
-            if let Some((height, _)) = responses.last_key_value() { *height } else { self.ledger.latest_block_height() }
-        };
-
         // Prepare the block requests, if any.
         // In the process, we update the state of `is_block_synced` for the sync module.
-        let (block_requests, sync_peers) = self.block_sync.prepare_block_requests_at_height(current_height);
-        trace!("Prepared {} block requests", block_requests.len());
+        let (block_requests, sync_peers) = self.block_sync.prepare_block_requests();
+
+        trace!("Prepared {num_requests} block requests", num_requests = block_requests.len());
 
         // Sends the block requests to the sync peers.
         for requests in block_requests.chunks(DataBlocks::<N>::MAXIMUM_NUMBER_OF_BLOCKS as usize) {
@@ -305,23 +299,22 @@ impl<N: Network> Sync<N> {
     /// This is called periodically by a tokio background task spawned in `Self::run`.
     /// Some unit tests also call this function directly to manually trigger block synchronization.
     pub(crate) async fn try_block_sync(&self) -> bool {
+        // Do not attept to sync if there are no blocks to sync.
+        // This prevents redudant log messages and performing unnecessary computation.
+        if !self.block_sync.can_block_sync() {
+            return false;
+        }
+
         self.issue_block_requests().await;
 
         // Sync the storage with the blocks
-        let new_blocks = match self.try_advancing_block_synchronization().await {
+        match self.try_advancing_block_synchronization().await {
             Ok(new_blocks) => new_blocks,
             Err(err) => {
                 error!("Block synchronization failed - {err}");
                 false
             }
-        };
-
-        // If the node is synced, clear the `latest_block_responses`.
-        if self.is_synced() {
-            self.latest_block_responses.lock().await.clear();
         }
-
-        new_blocks
     }
 }
 
@@ -439,7 +432,16 @@ impl<N: Network> Sync<N> {
             }
         }
 
+        self.block_sync.set_sync_height(block_height);
+
         Ok(())
+    }
+
+    /// Returns which height we are synchronized to.
+    /// If there are queued block responses, this might be higher than the latest block in the ledger.
+    async fn current_sync_height(&self) -> u32 {
+        let responses = self.latest_block_responses.lock().await;
+        if let Some((height, _)) = responses.last_key_value() { *height } else { self.ledger.latest_block_height() }
     }
 
     /// Aims to advance synchronization using any recent block responses
@@ -460,26 +462,15 @@ impl<N: Network> Sync<N> {
         // Acquire the response lock.
         let _lock = self.response_lock.lock().await;
 
-        // Figure out which height we are synchronized to.
-        // If there are queued block responses, this might be higher than the latest block in the ledger.
-        let sync_height = {
-            let responses = self.latest_block_responses.lock().await;
-            if let Some((height, _)) = responses.last_key_value() { *height } else { self.ledger.latest_block_height() }
-        };
-
         // Retrieve the next block height.
         // This variable is used to index blocks that are added to the ledger;
         // it is incremented as blocks are added.
         // So 'current' means 'currently being added'.
-        let mut current_height = sync_height + 1;
+        let mut current_height = self.current_sync_height().await + 1;
         trace!("Try advancing with block responses (at block {current_height})");
 
         // Retrieve the maximum block height of the peers.
-        let tip = self
-            .block_sync
-            .find_sync_peers_at_height(sync_height)
-            .map(|(x, _)| x.into_values().max().unwrap_or(0))
-            .unwrap_or(0);
+        let tip = self.block_sync.find_sync_peers().map(|(x, _)| x.into_values().max().unwrap_or(0)).unwrap_or(0);
 
         // Determine the maximum number of blocks corresponding to rounds
         // that would not have been garbage collected, i.e. that would be kept in storage.
@@ -541,6 +532,11 @@ impl<N: Network> Sync<N> {
             }
         }
 
+        // Make the underlying `BlockSync` instance aware of the new sync height.
+        if new_blocks {
+            self.block_sync.set_sync_height(current_height);
+        }
+
         Ok(new_blocks)
     }
 
@@ -564,6 +560,9 @@ impl<N: Network> Sync<N> {
             self_.storage.sync_round_with_block(block.round());
             // Mark the block height as processed in block_sync.
             self_.block_sync.remove_block_response(block.height());
+
+            // Make the underlying `BlockSync` instance aware of the new sync height.
+            self_.block_sync.set_sync_height(block.height());
 
             Ok(())
         })
