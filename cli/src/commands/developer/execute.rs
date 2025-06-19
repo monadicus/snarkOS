@@ -16,6 +16,7 @@
 use super::Developer;
 use snarkvm::{
     console::network::{CanaryV0, MainnetV0, Network, TestnetV0},
+    ledger::store::helpers::memory::BlockMemory,
     prelude::{
         Address,
         Identifier,
@@ -109,7 +110,7 @@ impl Execute {
     /// Construct and process the execution transaction.
     fn construct_execution<N: Network>(&self) -> Result<String> {
         // Specify the query
-        let query = Query::from(&self.query);
+        let query = Query::<N, BlockMemory<N>>::from(&self.query);
 
         // Retrieve the private key.
         let key_str = match (self.private_key.as_ref(), self.private_key_file.as_ref()) {

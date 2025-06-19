@@ -16,6 +16,7 @@
 use super::Developer;
 use snarkvm::{
     console::network::{CanaryV0, MainnetV0, Network, TestnetV0},
+    ledger::store::helpers::memory::BlockMemory,
     prelude::{
         Address,
         Locator,
@@ -103,7 +104,7 @@ impl TransferPrivate {
     /// Construct and process the `transfer_private` transaction.
     fn construct_transfer_private<N: Network>(&self) -> Result<String> {
         // Specify the query
-        let query = Query::from(&self.query);
+        let query = Query::<N, BlockMemory<N>>::from(&self.query);
 
         // Retrieve the recipient.
         let recipient = Address::<N>::from_str(&self.recipient)?;

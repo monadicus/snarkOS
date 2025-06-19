@@ -18,13 +18,16 @@ use snarkvm::{
         committee::Committee,
         narwhal::{BatchCertificate, BatchHeader, Subdag},
     },
-    prelude::{Address, Field, Network, cfg_iter},
+    prelude::{Address, Field, Network, cfg_chunks, cfg_iter},
 };
 
 use indexmap::{IndexMap, IndexSet};
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::RwLock;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
 use rayon::prelude::*;
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 // TODO: Consider other metrics to track:
 //  - Response time
@@ -36,12 +39,19 @@ use std::sync::Arc;
 //  - Various stake weight considerations
 //  - The latest seen IP address of each validator (useful for debugging purposes)
 
+/// The participation scores for each validator.
+///     Certificate Score: The % of rounds the validator has a valid certificate
+///     Signature Score: The % of certificates the validator has a valid signature for
+///     Combined Score: The weighted score using the certificate and signature scores
+type ParticipationScores = (f64, f64, f64);
+
 /// Tracker for the participation metrics of validators.
 #[derive(Clone, Debug)]
 pub struct Telemetry<N: Network> {
     /// The certificates seen for each round
     /// A mapping of `round` to set of certificate IDs.
-    tracked_certificates: Arc<RwLock<IndexMap<u64, IndexSet<Field<N>>>>>,
+    /// Note that this map is sorted to allow grouped iteration over rounds.
+    tracked_certificates: Arc<RwLock<BTreeMap<u64, IndexSet<Field<N>>>>>,
 
     /// The total number of signatures seen for a validator, including for their own certificates.
     /// A mapping of `address` to a mapping of `round` to `count`.
@@ -51,8 +61,8 @@ pub struct Telemetry<N: Network> {
     /// A mapping of `address` to a list of rounds.
     validator_certificates: Arc<RwLock<IndexMap<Address<N>, IndexSet<u64>>>>,
 
-    /// The certificate and signature participation scores for each validator.
-    participation_scores: Arc<RwLock<IndexMap<Address<N>, (f64, f64)>>>,
+    /// The certificate, signature, and participation scores for each validator.
+    participation_scores: Arc<RwLock<IndexMap<Address<N>, ParticipationScores>>>,
 }
 
 impl<N: Network> Default for Telemetry<N> {
@@ -76,16 +86,6 @@ impl<N: Network> Telemetry<N> {
     // TODO (raychu86): Consider using committee lookback here.
     /// Fetch the participation scores for each validator in the committee set.
     pub fn get_participation_scores(&self, committee: &Committee<N>) -> IndexMap<Address<N>, f64> {
-        // Calculate the combined score with custom weights:
-        // - 90% certificate participation score
-        // - 10% signature participation score
-        fn weighted_score(certificate_score: f64, signature_score: f64) -> f64 {
-            let score = (0.9 * certificate_score) + (0.1 * signature_score);
-
-            // Truncate to the last 2 decimal places.
-            (score * 100.0).round() / 100.0
-        }
-
         // Fetch the participation scores.
         let participation_scores = self.participation_scores.read();
         // Calculate the weighted score for each validator.
@@ -93,10 +93,8 @@ impl<N: Network> Telemetry<N> {
             .members()
             .iter()
             .map(|(address, _)| {
-                let score = participation_scores
-                    .get(address)
-                    .map(|(certificate_score, signature_score)| weighted_score(*certificate_score, *signature_score))
-                    .unwrap_or(0.0);
+                let score =
+                    participation_scores.get(address).map(|(_, _, combined_score)| *combined_score).unwrap_or(0.0);
                 (*address, score)
             })
             .collect()
@@ -163,13 +161,22 @@ impl<N: Network> Telemetry<N> {
 
     /// Calculate and update the participation scores for each validator.
     pub fn update_participation_scores(&self) {
+        // Calculate the combined score with custom weights:
+        // - 90% certificate participation score
+        // - 10% signature participation score
+        fn weighted_score(certificate_score: f64, signature_score: f64) -> f64 {
+            let score = (0.9 * certificate_score) + (0.1 * signature_score);
+
+            // Truncate to the last 2 decimal places.
+            (score * 100.0).round() / 100.0
+        }
+
         // Fetch the certificates and signatures.
         let tracked_certificates = self.tracked_certificates.read();
         let validator_signatures = self.validator_signatures.read();
         let validator_certificates = self.validator_certificates.read();
 
         // Fetch the total number of certificates.
-        let num_certificate_rounds = tracked_certificates.len();
         let total_certificates = validator_certificates.values().map(|rounds| rounds.len()).sum::<usize>();
 
         // Calculate the signature participation scores for each validator.
@@ -182,10 +189,18 @@ impl<N: Network> Telemetry<N> {
             .collect();
 
         // Calculate the certificate participation scores for each validator.
+        // This score is based on how many certificates the validator has included in every two rounds.
+        let tracked_rounds: Vec<_> = tracked_certificates.keys().skip_while(|r| *r % 2 == 0).copied().collect();
         let certificate_participation_scores: IndexMap<_, _> = cfg_iter!(validator_certificates)
             .map(|(address, certificate_rounds)| {
-                // Calculate a rough score for the validator based on the number of certificates seen.
-                let score = certificate_rounds.len() as f64 / num_certificate_rounds as f64 * 100.0;
+                // Count the number of round pairs that are included in the certificate rounds.
+                let num_included_round_pairs = cfg_chunks!(tracked_rounds, 2)
+                    .filter(|chunk| chunk.iter().any(|r| certificate_rounds.contains(r)))
+                    .count();
+                // Calculate the number of round pairs.
+                let num_round_pairs = (tracked_rounds.len().saturating_add(1)).saturating_div(2);
+                // Calculate the score based on the number of certificate rounds the validator is a part of.
+                let score = num_included_round_pairs as f64 / num_round_pairs.max(1) as f64 * 100.0;
                 (*address, score as u16)
             })
             .collect();
@@ -197,7 +212,8 @@ impl<N: Network> Telemetry<N> {
         for address in validator_addresses {
             let signature_score = *signature_participation_scores.get(&address).unwrap_or(&0) as f64;
             let certificate_score = *certificate_participation_scores.get(&address).unwrap_or(&0) as f64;
-            new_participation_scores.insert(address, (certificate_score, signature_score));
+            let combined_score = weighted_score(certificate_score, signature_score);
+            new_participation_scores.insert(address, (certificate_score, signature_score, combined_score));
         }
 
         // Update the participation scores.

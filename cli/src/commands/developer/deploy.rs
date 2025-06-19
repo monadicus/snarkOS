@@ -20,6 +20,7 @@ use snarkvm::{
         network::{CanaryV0, MainnetV0, Network, TestnetV0},
         program::ProgramOwner,
     },
+    ledger::store::helpers::memory::BlockMemory,
     prelude::{
         PrivateKey,
         ProgramID,
@@ -103,7 +104,7 @@ impl Deploy {
     /// Construct and process the deployment transaction.
     fn construct_deployment<N: Network, A: Aleo<Network = N, BaseField = N::Field>>(&self) -> Result<String> {
         // Specify the query
-        let query = Query::from(&self.query);
+        let query = Query::<N, BlockMemory<N>>::from(&self.query);
 
         // Retrieve the private key.
         let private_key = PrivateKey::from_str(&self.private_key)?;

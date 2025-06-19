@@ -29,6 +29,9 @@ use snarkvm::prelude::{
 
 use anyhow::{Result, anyhow, bail};
 use colored::Colorize;
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::Mutex;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::Mutex;
 use reqwest::Client;
 use std::{

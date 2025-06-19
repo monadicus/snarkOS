@@ -1,6 +1,6 @@
 [package]
 name = "snarkos-node-rest"
-version = "3.7.1"
+version = "3.8.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A REST API server for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -20,7 +20,7 @@ edition = "2021"
 default = [ "parallel" ]
 parallel = [ "rayon" ]
 history = [ "snarkvm-synthesizer/history" ]
-telemetry = [ ]
+telemetry = [ "snarkos-node-consensus/telemetry" ]
 cuda = [ "snarkvm/cuda", "snarkos-node-consensus/cuda", "snarkos-node-router/cuda" ]
 locktick = [
   "dep:locktick",
@@ -71,17 +71,17 @@ features = [ "preserve_order" ]
 
 [dependencies.snarkos-node-consensus]
 path = "../consensus"
-version = "=3.7.1"
+version = "=3.8.0"
 
 [dependencies.snarkos-node-router]
 path = "../router"
-version = "=3.7.1"
+version = "=3.8.0"
 
 [dependencies.snarkvm-synthesizer] # If this is updated, the rev in the main `Cargo.toml` must be updated as well.
 #path = "../../../snarkVM/synthesizer"
 git = "https://github.com/ProvableHQ/snarkVM.git"
 rev = "a015246"
-##version = "=3.7.1"
+#version = "=3.8.0"
 default-features = false
 optional = true
 
@@ -101,9 +101,6 @@ version = "0.3"
 [dependencies.tokio]
 version = "1"
 
-[dependencies.tower]
-version = "0.5"
-
 [dependencies.tower_governor]
 version = "0.7"
 
@@ -113,3 +110,11 @@ features = [ "cors", "trace" ]
 
 [dependencies.tracing]
 version = "0.1"
+
+[dev-dependencies.base64]
+workspace = true
+
+[package.metadata.cargo-machete]
+ignored = [
+  "snarkvm-synthesizer", # Needed for locktick feature
+]
