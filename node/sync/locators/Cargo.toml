@@ -21,10 +21,10 @@ default = [ ]
 test = [ ]
 
 [dependencies.anyhow]
-version = "1.0"
+workspace = true
 
 [dependencies.indexmap]
-version = "2.1"
+workspace = true
 features = [ "serde", "rayon" ]
 
 [dependencies.serde]
@@ -32,6 +32,7 @@ version = "1"
 
 [dependencies.snarkvm]
 workspace = true
+features = [ "console" ]
 
 [dependencies.tracing]
 version = "0.1"

@@ -54,7 +54,7 @@ cuda = [
 workspace = true
 
 [dependencies.anyhow]
-version = "1.0.79"
+workspace = true
 
 [dependencies.async-trait]
 version = "0.1"
@@ -130,7 +130,7 @@ workspace = true
 version = "0.3"
 
 [dependencies.tokio]
-version = "1.28"
+workspace = true
 features = [ "rt", "signal" ]
 
 [dependencies.tokio-util]

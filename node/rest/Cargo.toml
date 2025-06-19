@@ -30,7 +30,7 @@ locktick = [
 ]
 
 [dependencies.anyhow]
-version = "1.0.79"
+workspace = true
 
 [dependencies.axum]
 version = "0.8"
@@ -43,7 +43,7 @@ features = [ "erased-json", "typed-header" ]
 version = "1.0"
 
 [dependencies.indexmap]
-version = "2.1"
+workspace = true
 features = [ "serde", "rayon" ]
 
 [dependencies.jsonwebtoken]
@@ -80,7 +80,7 @@ version = "=3.8.0"
 [dependencies.snarkvm-synthesizer]
 #path = "../../../snarkVM/synthesizer"
 git = "https://github.com/ProvableHQ/snarkVM.git"
-rev = "323d30cd3"
+rev = "c194f3e"
 #version = "=3.8.0"
 default-features = false
 optional = true
@@ -99,7 +99,7 @@ workspace = true
 version = "0.3"
 
 [dependencies.tokio]
-version = "1"
+workspace = true
 
 [dependencies.tower_governor]
 version = "0.7"

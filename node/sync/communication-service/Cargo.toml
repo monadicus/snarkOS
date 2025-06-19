@@ -20,5 +20,5 @@ edition = "2021"
 version = "0.1"
 
 [dependencies.tokio]
-version = "1.28"
+workspace = true
 features = [ "sync" ]

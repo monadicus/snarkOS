@@ -46,15 +46,41 @@ default-features = false
 [workspace.dependencies.snarkvm] # If this is updated, the rev in `node/rest/Cargo.toml` must be updated as well.
 #path = "../snarkVM"
 git = "https://github.com/ProvableHQ/snarkVM.git"
-rev = "323d30cd3"
+rev = "c194f3e"
 #version = "=3.8.0"
-features = [ "circuit", "console", "rocks" ]
+default-features = false
+#features = [ "circuit", "console", "rocks" ]
+
+[workspace.dependencies.anyhow]
+version = "1.0"
+
+[workspace.dependencies.clap]
+version = "4.4"
+default-features = false
+features = [ "std" ]
+
+[workspace.dependencies.crossterm]
+version = "0.29"
 
 [workspace.dependencies.proptest]
 version = "=1.6.0" # Remove this once we upgrade to rand 0.9
 
 [workspace.dependencies.base64]
 version = "0.22"
+
+[workspace.dependencies.tokio]
+version = "1.28"
+default-features = false
+
+[workspace.dependencies.itertools]
+version = "0.14"
+
+[workspace.dependencies.indexmap]
+version = "2"
+default-features = false
+
+[workspace.dependencies.test-strategy]
+version = "0.4"
 
 [[bin]]
 name = "snarkos"
@@ -90,10 +116,10 @@ locktick = [
 test_network = [ "snarkos-cli/test_network" ]
 
 [dependencies.anyhow]
-version = "1.0.79"
+workspace = true
 
 [dependencies.clap]
-version = "4.4"
+workspace = true
 features = [ "derive" ]
 
 [dependencies.locktick]
@@ -156,7 +182,7 @@ optional = true
 version = "0.11.2"
 
 [build-dependencies.built]
-version = "0.7"
+version = "0.8"
 features = [ "git2" ]
 
 [build-dependencies.toml]
