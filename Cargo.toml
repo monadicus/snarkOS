@@ -70,7 +70,6 @@ version = "0.22"
 
 [workspace.dependencies.tokio]
 version = "1.28"
-default-features = false
 
 [workspace.dependencies.itertools]
 version = "0.14"
