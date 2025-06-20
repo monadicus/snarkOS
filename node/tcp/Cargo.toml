@@ -46,7 +46,7 @@ version = "1"
 features = [ "parking_lot" ]
 
 [dependencies.tokio]
-version = "1.28"
+workspace = true
 features = [ "io-util", "net", "parking_lot", "rt", "sync", "time" ]
 
 [dependencies.tokio-util]
@@ -58,5 +58,5 @@ version = "0.1"
 default-features = false
 
 [dev-dependencies.tokio]
-version = "1.28"
+workspace = true
 features = [ "macros" ]

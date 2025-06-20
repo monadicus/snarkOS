@@ -33,13 +33,13 @@ cuda = [ "snarkvm/cuda", "snarkos-account/cuda", "snarkos-node-bft-ledger-servic
 workspace = true
 
 [dependencies.anyhow]
-version = "1.0.79"
+workspace = true
 
 [dependencies.colored]
 version = "2"
 
 [dependencies.indexmap]
-version = "2.1"
+workspace = true
 features = [ "serde", "rayon" ]
 
 [dependencies.locktick]
@@ -87,14 +87,14 @@ version = "=3.8.0"
 workspace = true
 
 [dependencies.tokio]
-version = "1.28"
+workspace = true
 features = [ "macros", "rt-multi-thread", "signal" ]
 
 [dependencies.tracing]
 version = "0.1"
 
 [dev-dependencies.indexmap]
-version = "2.0"
+workspace = true
 
 [dev-dependencies.itertools]
 version = "0.12"
