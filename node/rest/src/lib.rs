@@ -58,6 +58,9 @@ use tower_http::{
     trace::TraceLayer,
 };
 
+/// The default port used for the REST API
+pub const DEFAULT_REST_PORT: u16 = 3030;
+
 /// A REST API server for the ledger.
 #[derive(Clone)]
 pub struct Rest<N: Network, C: ConsensusStorage<N>, R: Routing<N>> {

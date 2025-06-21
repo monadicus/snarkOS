@@ -15,7 +15,12 @@
 
 use snarkos_account::Account;
 use snarkos_display::Display;
-use snarkos_node::{Node, bft::MEMORY_POOL_PORT, router::messages::NodeType};
+use snarkos_node::{
+    Node,
+    bft::MEMORY_POOL_PORT,
+    rest::DEFAULT_REST_PORT,
+    router::{DEFAULT_NODE_PORT, messages::NodeType},
+};
 use snarkvm::{
     console::{
         account::{Address, PrivateKey},
@@ -43,7 +48,7 @@ use rand::{Rng, SeedableRng};
 use rand_chacha::ChaChaRng;
 use serde::{Deserialize, Serialize};
 use std::{
-    net::SocketAddr,
+    net::{Ipv4Addr, SocketAddr, SocketAddrV4},
     path::PathBuf,
     sync::{Arc, atomic::AtomicBool},
 };
@@ -350,43 +355,43 @@ impl Start {
     }
 
     /// Updates the configurations if the node is in development mode.
-    fn parse_development(
-        &mut self,
-        trusted_peers: &mut Vec<SocketAddr>,
-        trusted_validators: &mut Vec<SocketAddr>,
-    ) -> Result<()> {
+    fn parse_development(&mut self, trusted_peers: &mut Vec<SocketAddr>, trusted_validators: &mut Vec<SocketAddr>) {
         // If `--dev` is set, assume the dev nodes are initialized from 0 to `dev`,
         // and add each of them to the trusted peers. In addition, set the node IP to `4130 + dev`,
-        // and the REST IP to `3030 + dev`.
+        // and the REST port to `3030 + dev`.
+
         if let Some(dev) = self.dev {
             // Add the dev nodes to the trusted peers.
             if trusted_peers.is_empty() {
                 for i in 0..dev {
-                    trusted_peers.push(SocketAddr::from_str(&format!("127.0.0.1:{}", 4130 + i))?);
+                    trusted_peers.push(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, DEFAULT_NODE_PORT + i)));
                 }
             }
             // Add the dev nodes to the trusted validators.
             if trusted_validators.is_empty() {
                 // To avoid ambiguity, we define the first few nodes to be the trusted validators to connect to.
                 for i in 0..2 {
-                    if i != dev {
-                        trusted_validators.push(SocketAddr::from_str(&format!("127.0.0.1:{}", MEMORY_POOL_PORT + i))?);
+                    // Don't connect to yourself.
+                    if i == dev {
+                        continue;
                     }
+
+                    trusted_validators
+                        .push(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, MEMORY_POOL_PORT + i)));
                 }
             }
             // Set the node IP to `4130 + dev`.
             //
             // Note: the `node` flag is an option to detect remote devnet testing.
             if self.node.is_none() {
-                self.node = Some(SocketAddr::from_str(&format!("0.0.0.0:{}", 4130 + dev))?);
+                self.node = Some(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, DEFAULT_NODE_PORT + dev)));
             }
 
             // If the `norest` flag is not set and the REST IP is not already specified set the REST IP to `3030 + dev`.
             if !self.norest && self.rest.is_none() {
-                self.rest = Some(SocketAddr::from_str(&format!("0.0.0.0:{}", 3030 + dev)).unwrap());
+                self.rest = Some(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, DEFAULT_REST_PORT + dev)));
             }
         }
-        Ok(())
     }
 
     /// Returns an alternative genesis block if the node is in development mode.
@@ -549,7 +554,7 @@ impl Start {
         // Parse the trusted validators to connect to.
         let mut trusted_validators = self.parse_trusted_validators()?;
         // Parse the development configurations.
-        self.parse_development(&mut trusted_peers, &mut trusted_validators)?;
+        self.parse_development(&mut trusted_peers, &mut trusted_validators);
 
         // Parse the CDN.
         let cdn = self.parse_cdn::<N>();
@@ -561,11 +566,8 @@ impl Start {
         // Parse the node type.
         let node_type = self.parse_node_type();
 
-        // Parse the node IP.
-        let node_ip = match self.node {
-            Some(node_ip) => node_ip,
-            None => SocketAddr::from_str("0.0.0.0:4130").unwrap(),
-        };
+        // Parse the node IP or use the default IP/port.
+        let node_ip = self.node.unwrap_or(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, DEFAULT_NODE_PORT)));
 
         // Parse the REST IP.
         let rest_ip = match self.norest {
@@ -956,7 +958,7 @@ mod tests {
         let mut trusted_peers = vec![];
         let mut trusted_validators = vec![];
         let mut config = Start::try_parse_from(["snarkos"].iter()).unwrap();
-        config.parse_development(&mut trusted_peers, &mut trusted_validators).unwrap();
+        config.parse_development(&mut trusted_peers, &mut trusted_validators);
         let candidate_genesis = config.parse_genesis::<CurrentNetwork>().unwrap();
         assert_eq!(trusted_peers.len(), 0);
         assert_eq!(trusted_validators.len(), 0);
@@ -967,25 +969,25 @@ mod tests {
         let mut trusted_peers = vec![];
         let mut trusted_validators = vec![];
         let mut config = Start::try_parse_from(["snarkos", "--dev", "1"].iter()).unwrap();
-        config.parse_development(&mut trusted_peers, &mut trusted_validators).unwrap();
+        config.parse_development(&mut trusted_peers, &mut trusted_validators);
         assert_eq!(config.rest, Some(SocketAddr::from_str("0.0.0.0:3031").unwrap()));
 
         let mut trusted_peers = vec![];
         let mut trusted_validators = vec![];
         let mut config = Start::try_parse_from(["snarkos", "--dev", "1", "--rest", "127.0.0.1:8080"].iter()).unwrap();
-        config.parse_development(&mut trusted_peers, &mut trusted_validators).unwrap();
+        config.parse_development(&mut trusted_peers, &mut trusted_validators);
         assert_eq!(config.rest, Some(SocketAddr::from_str("127.0.0.1:8080").unwrap()));
 
         let mut trusted_peers = vec![];
         let mut trusted_validators = vec![];
         let mut config = Start::try_parse_from(["snarkos", "--dev", "1", "--norest"].iter()).unwrap();
-        config.parse_development(&mut trusted_peers, &mut trusted_validators).unwrap();
+        config.parse_development(&mut trusted_peers, &mut trusted_validators);
         assert!(config.rest.is_none());
 
         let mut trusted_peers = vec![];
         let mut trusted_validators = vec![];
         let mut config = Start::try_parse_from(["snarkos", "--dev", "0"].iter()).unwrap();
-        config.parse_development(&mut trusted_peers, &mut trusted_validators).unwrap();
+        config.parse_development(&mut trusted_peers, &mut trusted_validators);
         let expected_genesis = config.parse_genesis::<CurrentNetwork>().unwrap();
         assert_eq!(config.node, Some(SocketAddr::from_str("0.0.0.0:4130").unwrap()));
         assert_eq!(config.rest, Some(SocketAddr::from_str("0.0.0.0:3030").unwrap()));
@@ -1000,7 +1002,7 @@ mod tests {
         let mut trusted_validators = vec![];
         let mut config =
             Start::try_parse_from(["snarkos", "--dev", "1", "--validator", "--private-key", ""].iter()).unwrap();
-        config.parse_development(&mut trusted_peers, &mut trusted_validators).unwrap();
+        config.parse_development(&mut trusted_peers, &mut trusted_validators);
         let genesis = config.parse_genesis::<CurrentNetwork>().unwrap();
         assert_eq!(config.node, Some(SocketAddr::from_str("0.0.0.0:4131").unwrap()));
         assert_eq!(config.rest, Some(SocketAddr::from_str("0.0.0.0:3031").unwrap()));
@@ -1015,7 +1017,7 @@ mod tests {
         let mut trusted_validators = vec![];
         let mut config =
             Start::try_parse_from(["snarkos", "--dev", "2", "--prover", "--private-key", ""].iter()).unwrap();
-        config.parse_development(&mut trusted_peers, &mut trusted_validators).unwrap();
+        config.parse_development(&mut trusted_peers, &mut trusted_validators);
         let genesis = config.parse_genesis::<CurrentNetwork>().unwrap();
         assert_eq!(config.node, Some(SocketAddr::from_str("0.0.0.0:4132").unwrap()));
         assert_eq!(config.rest, Some(SocketAddr::from_str("0.0.0.0:3032").unwrap()));
@@ -1030,7 +1032,7 @@ mod tests {
         let mut trusted_validators = vec![];
         let mut config =
             Start::try_parse_from(["snarkos", "--dev", "3", "--client", "--private-key", ""].iter()).unwrap();
-        config.parse_development(&mut trusted_peers, &mut trusted_validators).unwrap();
+        config.parse_development(&mut trusted_peers, &mut trusted_validators);
         let genesis = config.parse_genesis::<CurrentNetwork>().unwrap();
         assert_eq!(config.node, Some(SocketAddr::from_str("0.0.0.0:4133").unwrap()));
         assert_eq!(config.rest, Some(SocketAddr::from_str("0.0.0.0:3033").unwrap()));

@@ -67,6 +67,9 @@ use std::{
 };
 use tokio::task::JoinHandle;
 
+/// The default port used by the router.
+pub const DEFAULT_NODE_PORT: u16 = 4130;
+
 /// The router keeps track of connected and connecting peers.
 /// The actual network communication happens in Inbound/Outbound,
 /// which is implemented by Validator, Prover, and Client.
