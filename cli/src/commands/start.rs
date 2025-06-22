@@ -186,7 +186,7 @@ pub struct Start {
     pub nodisplay: bool,
 
     /// Specify the log verbosity of the node.
-    /// [options: 0 for INFO, 1 for DEBUG, 2 or greater for TRACE]
+    /// [options: 0 (lowest log level) to 6 (highest level)]
     #[clap(long, default_value_t = 1)]
     pub verbosity: u8,
 
