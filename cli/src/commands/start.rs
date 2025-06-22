@@ -299,36 +299,42 @@ impl Start {
 impl Start {
     /// Returns the initial peer(s) to connect to, from the given configurations.
     fn parse_trusted_peers(&self) -> Result<Vec<SocketAddr>> {
-        match &self.peers {
-            None => Ok(vec![]),
-            Some(peers) => Ok(peers
-                .split(',')
-                .flat_map(|ip| match ip.parse::<SocketAddr>() {
-                    Ok(ip) => Some(ip),
-                    Err(e) => {
-                        eprintln!("The IP supplied to --peers ('{ip}') is malformed: {e}");
-                        None
-                    }
-                })
-                .collect()),
+        let Some(peers) = &self.peers else { return Ok(vec![]) };
+
+        // Split on an empty string returns an empty string.
+        if peers.is_empty() {
+            return Ok(vec![]);
         }
+
+        let mut result = vec![];
+        for ip in peers.split(',') {
+            match ip.parse::<SocketAddr>() {
+                Ok(ip) => result.push(ip),
+                Err(err) => bail!("An address supplied to --peers ('{ip}') is malformed: {err}"),
+            }
+        }
+
+        Ok(result)
     }
 
     /// Returns the initial validator(s) to connect to, from the given configurations.
     fn parse_trusted_validators(&self) -> Result<Vec<SocketAddr>> {
-        match &self.validators {
-            None => Ok(vec![]),
-            Some(validators) => Ok(validators
-                .split(',')
-                .flat_map(|ip| match ip.parse::<SocketAddr>() {
-                    Ok(ip) => Some(ip),
-                    Err(e) => {
-                        eprintln!("The IP supplied to --validators ('{ip}') is malformed: {e}");
-                        None
-                    }
-                })
-                .collect()),
+        let Some(validators) = &self.validators else { return Ok(vec![]) };
+
+        // Split on an empty string returns an empty string.
+        if validators.is_empty() {
+            return Ok(vec![]);
         }
+
+        let mut result = vec![];
+        for ip in validators.split(',') {
+            match ip.parse::<SocketAddr>() {
+                Ok(ip) => result.push(ip),
+                Err(err) => bail!("An address supplied to --validators ('{ip}') is malformed: {err}"),
+            }
+        }
+
+        Ok(result)
     }
 
     /// Returns the CDN to prefetch initial blocks from, from the given configurations.
