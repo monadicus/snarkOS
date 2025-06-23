@@ -20,6 +20,8 @@
 extern crate thiserror;
 
 pub mod commands;
+pub use commands::CLI;
+
 pub mod helpers;
 
 use anyhow::Result;

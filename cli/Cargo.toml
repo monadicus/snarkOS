@@ -51,7 +51,7 @@ workspace = true
 
 [dependencies.clap]
 workspace = true
-features = [ "derive", "color", "unstable-styles" ]
+features = [ "derive", "color", "unstable-styles", "help" ]
 
 [dependencies.colored]
 version = "2"
