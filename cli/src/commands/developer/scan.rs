@@ -64,7 +64,7 @@ pub struct Scan {
     last: Option<u32>,
 
     /// The endpoint to scan blocks from.
-    #[clap(long)]
+    #[clap(long, default_value = "https://api.explorer.provable.com/v1")]
     endpoint: String,
 }
 
