@@ -177,9 +177,9 @@ impl Scan {
     /// Returns the CDN to prefetch initial blocks from, from the given configurations.
     fn parse_cdn<N: Network>() -> Result<String> {
         match N::ID {
-            MainnetV0::ID => Ok(format!("{CDN_BASE_URL}/mainnet/v0")),
-            TestnetV0::ID => Ok(format!("{CDN_BASE_URL}/testnet/v0")),
-            CanaryV0::ID => Ok(format!("{CDN_BASE_URL}/canary/v0")),
+            MainnetV0::ID => Ok(format!("{CDN_BASE_URL}/v0/blocks/mainnet")),
+            TestnetV0::ID => Ok(format!("{CDN_BASE_URL}/v0/blocks/testnet")),
+            CanaryV0::ID => Ok(format!("{CDN_BASE_URL}/v0/blocks/canary")),
             _ => bail!("Unknown network ID ({})", N::ID),
         }
     }
