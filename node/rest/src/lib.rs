@@ -23,6 +23,7 @@ pub use helpers::*;
 
 mod routes;
 
+use snarkos_node_cdn::CdnBlockSync;
 use snarkos_node_consensus::Consensus;
 use snarkos_node_router::{
     Routing,
@@ -61,6 +62,8 @@ use tower_http::{
 /// A REST API server for the ledger.
 #[derive(Clone)]
 pub struct Rest<N: Network, C: ConsensusStorage<N>, R: Routing<N>> {
+    /// CDN sync (only if node is using the CDN to sync).
+    cdn_sync: Option<Arc<CdnBlockSync>>,
     /// The consensus module.
     consensus: Option<Consensus<N>>,
     /// The ledger.
@@ -79,9 +82,10 @@ impl<N: Network, C: 'static + ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> 
         consensus: Option<Consensus<N>>,
         ledger: Ledger<N, C>,
         routing: Arc<R>,
+        cdn_sync: Option<Arc<CdnBlockSync>>,
     ) -> Result<Self> {
         // Initialize the server.
-        let mut server = Self { consensus, ledger, routing, handles: Default::default() };
+        let mut server = Self { consensus, ledger, routing, cdn_sync, handles: Default::default() };
         // Spawn the server.
         server.spawn_server(rest_ip, rest_rps).await;
         // Return the server.

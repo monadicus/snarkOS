@@ -24,6 +24,7 @@ use indexmap::IndexMap;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use serde_with::skip_serializing_none;
 
 /// The `get_blocks` query object.
 #[derive(Deserialize, Serialize)]
@@ -42,10 +43,13 @@ pub(crate) struct Metadata {
 }
 
 /// The return value for a `status` query.
+#[skip_serializing_none]
 #[derive(Copy, Clone, Serialize)]
-struct NodeStatus {
+struct NodeStatus<'a> {
     is_synced: bool,
     ledger_height: u32,
+    sync_mode: &'a str,
+    cdn_height: Option<u32>,
 }
 
 impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
@@ -126,7 +130,19 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
 
     // GET /<network>/status
     pub(crate) async fn get_status(State(rest): State<Self>) -> Result<ErasedJson, RestError> {
+        // Get the CDN height (if we are connected to a CDN)
+        let cdn_height =
+            if let Some(cdn_sync) = &rest.cdn_sync { Some(cdn_sync.get_cdn_height().await?) } else { None };
+
+        // Generate a string representing the current sync mode.
+        let sync_mode = {
+            let is_syncing_from_cdn = rest.cdn_sync.map(|s| !s.is_done()).unwrap_or(false);
+            if is_syncing_from_cdn { "cdn" } else { "p2p" }
+        };
+
         Ok(ErasedJson::pretty(NodeStatus {
+            sync_mode,
+            cdn_height,
             is_synced: rest.routing.is_block_synced(),
             ledger_height: rest.ledger.latest_height(),
         }))
