@@ -55,7 +55,7 @@ use snarkvm::{
         narwhal::{BatchCertificate, BatchHeader, Data, Transmission, TransmissionID},
         puzzle::{Solution, SolutionID},
     },
-    prelude::committee::Committee,
+    prelude::{ConsensusVersion, committee::Committee},
 };
 
 use aleo_std::StorageMode;
@@ -578,6 +578,23 @@ impl<N: Network> Primary<N> {
                             }
                         })?;
 
+                        // TODO (raychu86): Record Commitment - Remove this logic after the next migration height is reached.
+                        // ConsensusVersion V8 Migration logic -
+                        // Do not include deployments in a batch proposal.
+                        let current_block_height = self.ledger.latest_block_height();
+                        let consensus_version_v7_height = N::CONSENSUS_HEIGHT(ConsensusVersion::V7)?;
+                        let consensus_version_v8_height = N::CONSENSUS_HEIGHT(ConsensusVersion::V8)?;
+                        if current_block_height > consensus_version_v7_height
+                            && current_block_height <= consensus_version_v8_height
+                            && transaction.is_deploy()
+                        {
+                            trace!(
+                                "Proposing - Skipping transaction '{}' - Deployment transactions are not allowed until Consensus V8 (block {consensus_version_v8_height})",
+                                fmt_id(transaction_id)
+                            );
+                            continue;
+                        }
+
                         // Check if the transaction is still valid.
                         // TODO: check if clone is cheap, otherwise fix.
                         if let Err(e) = self.ledger.check_transaction_basic(transaction_id, transaction.clone()).await {
@@ -858,6 +875,20 @@ impl<N: Network> Primary<N> {
                             }
                         }
                     })?;
+
+                    // TODO (raychu86): Record Commitment - Remove this logic after the next migration height is reached.
+                    // ConsensusVersion V8 Migration logic -
+                    // Do not include deployments in a batch proposal.
+                    let consensus_version_v7_height = N::CONSENSUS_HEIGHT(ConsensusVersion::V7)?;
+                    let consensus_version_v8_height = N::CONSENSUS_HEIGHT(ConsensusVersion::V8)?;
+                    if block_height > consensus_version_v7_height
+                        && block_height <= consensus_version_v8_height
+                        && transaction.is_deploy()
+                    {
+                        bail!(
+                            "Invalid batch proposal - Batch proposals are not allowed to include deployments until Consensus V8 (block {consensus_version_v8_height})",
+                        )
+                    }
 
                     // Compute the transaction spent cost (in microcredits).
                     // Note: We purposefully discard this transaction if we are unable to compute the spent cost.
