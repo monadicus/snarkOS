@@ -305,7 +305,7 @@ impl Scan {
 
         // Scan the blocks via the CDN.
         rt.block_on(async move {
-            let _ = snarkos_node_cdn::load_blocks(
+            let result = snarkos_node_cdn::load_blocks(
                 &cdn,
                 cdn_request_start,
                 Some(cdn_request_end),
@@ -336,6 +336,9 @@ impl Scan {
                 },
             )
             .await;
+            if let Err(error) = result {
+                eprintln!("Error loading blocks from CDN - (height, error):{error:?}");
+            }
         });
 
         Ok(())
