@@ -15,7 +15,7 @@
 
 #![allow(clippy::type_complexity)]
 
-use crate::commands::CDN_BASE_URL;
+use snarkos_node_cdn::CDN_BASE_URL;
 use snarkvm::{
     console::network::{CanaryV0, MainnetV0, Network, TestnetV0},
     prelude::{Ciphertext, Field, FromBytes, Plaintext, PrivateKey, Record, ViewKey, block::Block},
@@ -177,9 +177,9 @@ impl Scan {
     /// Returns the CDN to prefetch initial blocks from, from the given configurations.
     fn parse_cdn<N: Network>() -> Result<String> {
         match N::ID {
-            MainnetV0::ID => Ok(format!("{CDN_BASE_URL}/v0/blocks/mainnet")),
-            TestnetV0::ID => Ok(format!("{CDN_BASE_URL}/v0/blocks/testnet")),
-            CanaryV0::ID => Ok(format!("{CDN_BASE_URL}/v0/blocks/canary")),
+            MainnetV0::ID => Ok(format!("{CDN_BASE_URL}/mainnet")),
+            TestnetV0::ID => Ok(format!("{CDN_BASE_URL}/testnet")),
+            CanaryV0::ID => Ok(format!("{CDN_BASE_URL}/canary")),
             _ => bail!("Unknown network ID ({})", N::ID),
         }
     }
