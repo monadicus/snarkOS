@@ -100,7 +100,7 @@ pub fn update_block_metrics<N: Network>(block: &Block<N>) {
 }
 
 pub fn add_transmission_latency_metric<N: Network>(
-    transmissions_queue_timestamps: &Arc<Mutex<HashMap<TransmissionID<N>, i64>>>,
+    transmissions_tracker: &Arc<Mutex<HashMap<TransmissionID<N>, i64>>>,
     block: &Block<N>,
 ) {
     const AGE_THRESHOLD_SECONDS: i32 = 30 * 60; // 30 minutes set as stale transmission threshold
@@ -113,20 +113,20 @@ pub fn add_transmission_latency_metric<N: Network>(
     let transaction_ids: std::collections::HashSet<_> =
         block.transaction_ids().chain(block.aborted_transaction_ids()).collect();
 
-    let mut transmission_queue_timestamps = transmissions_queue_timestamps.lock();
+    let mut transmissions_tracker = transmissions_tracker.lock();
     let ts_now = OffsetDateTime::now_utc().unix_timestamp();
 
     // Determine which keys to remove.
-    let keys_to_remove = cfg_iter!(transmission_queue_timestamps)
-        .flat_map(|(key, timestamp)| {
+    let keys_to_remove = cfg_iter!(transmissions_tracker)
+        .flat_map(|(transmission_id, timestamp)| {
             let elapsed_time = std::time::Duration::from_secs((ts_now - *timestamp) as u64);
 
             if elapsed_time.as_secs() > AGE_THRESHOLD_SECONDS as u64 {
                 // This entry is stale-- remove it from transmission queue and record it as a stale transmission.
                 increment_counter(consensus::STALE_UNCONFIRMED_TRANSMISSIONS);
-                Some(*key)
+                Some(*transmission_id)
             } else {
-                let transmission_type = match key {
+                let transmission_type = match transmission_id {
                     TransmissionID::Solution(solution_id, _) if solution_ids.contains(solution_id) => Some("solution"),
                     TransmissionID::Transaction(transaction_id, _) if transaction_ids.contains(transaction_id) => {
                         Some("transaction")
@@ -141,7 +141,7 @@ pub fn add_transmission_latency_metric<N: Network>(
                         transmission_type_string.to_owned(),
                         elapsed_time.as_secs_f64(),
                     );
-                    Some(*key)
+                    Some(*transmission_id)
                 } else {
                     None
                 }
@@ -151,6 +151,6 @@ pub fn add_transmission_latency_metric<N: Network>(
 
     // Remove keys of stale or seen transmissions.
     for key in keys_to_remove {
-        transmission_queue_timestamps.remove(&key);
+        transmissions_tracker.remove(&key);
     }
 }

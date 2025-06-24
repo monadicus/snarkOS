@@ -518,11 +518,15 @@ impl<N: Network> Primary<N> {
             while let Some((id, transmission)) = worker.remove_front() {
                 // Check the selected transmissions are below the batch limit.
                 if transmissions.len() >= BatchHeader::<N>::MAX_TRANSMISSIONS_PER_BATCH {
+                    // Reinsert the transmission into the worker.
+                    worker.insert_front(id, transmission);
                     break 'outer;
                 }
 
                 // Check the max transmissions per worker is not exceeded.
                 if num_worker_transmissions >= Worker::<N>::MAX_TRANSMISSIONS_PER_WORKER {
+                    // Reinsert the transmission into the worker.
+                    worker.insert_front(id, transmission);
                     continue 'outer;
                 }
 
