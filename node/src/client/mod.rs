@@ -523,7 +523,7 @@ impl<N: Network, C: ConsensusStorage<N>> NodeInterface<N> for Client<N, C> {
         self.shutdown.store(true, std::sync::atomic::Ordering::Release);
 
         // Abort the tasks.
-        trace!("Stopping backgroudn tasks...");
+        trace!("Shutting down the client...");
         self.handles.lock().iter().for_each(|handle| handle.abort());
 
         // Shut down the router.
