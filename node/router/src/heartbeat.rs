@@ -21,6 +21,8 @@ use crate::{
 };
 use snarkvm::prelude::Network;
 
+use snarkos_node_tcp::P2P;
+
 use colored::Colorize;
 use rand::{Rng, prelude::IteratorRandom, rngs::OsRng};
 
@@ -159,7 +161,7 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
         // Do nothing, if the list is empty.
         if let Some(oldest) = self.get_removable_peers().first().map(|peer| peer.ip()) {
             info!("Disconnecting from '{oldest}' (periodic refresh of peers)");
-            let _ = self.send(oldest, Message::Disconnect(DisconnectReason::PeerRefresh.into()));
+            let _ = self.router().send(oldest, Message::Disconnect(DisconnectReason::PeerRefresh.into()));
             self.router().disconnect(oldest);
         }
     }
@@ -230,7 +232,7 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
                 }
 
                 info!("Disconnecting from '{peer_ip}' (exceeded maximum connections)");
-                self.send(peer_ip, Message::Disconnect(DisconnectReason::TooManyPeers.into()));
+                self.router().send(peer_ip, Message::Disconnect(DisconnectReason::TooManyPeers.into()));
                 // Disconnect from this peer.
                 self.router().disconnect(peer_ip);
             }
@@ -253,7 +255,7 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
             if self.router().allow_external_peers() {
                 // Request more peers from the connected peers.
                 for peer_ip in self.router().connected_peers().into_iter().choose_multiple(rng, 3) {
-                    self.send(peer_ip, Message::PeerRequest(PeerRequest));
+                    self.router().send(peer_ip, Message::PeerRequest(PeerRequest));
                 }
             }
         }
@@ -287,7 +289,7 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
             // Proceed to send disconnect requests to these bootstrap peers.
             for peer_ip in connected_bootstrap.into_iter().choose_multiple(rng, num_surplus) {
                 info!("Disconnecting from '{peer_ip}' (exceeded maximum bootstrap)");
-                self.send(peer_ip, Message::Disconnect(DisconnectReason::TooManyPeers.into()));
+                self.router().send(peer_ip, Message::Disconnect(DisconnectReason::TooManyPeers.into()));
                 // Disconnect from this peer.
                 self.router().disconnect(peer_ip);
             }
@@ -313,6 +315,6 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
 
     // Remove addresses whose ban time has expired.
     fn handle_banned_ips(&self) {
-        self.tcp().banned_peers().remove_old_bans(Self::IP_BAN_TIME_IN_SECS);
+        self.router().tcp().banned_peers().remove_old_bans(Self::IP_BAN_TIME_IN_SECS);
     }
 }

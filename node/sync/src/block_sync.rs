@@ -34,12 +34,13 @@ use rand::seq::{IteratorRandom, SliceRandom};
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     net::{IpAddr, Ipv4Addr, SocketAddr},
-    sync::{
-        Arc,
-        atomic::{AtomicBool, AtomicU32, Ordering},
-    },
+    sync::Arc,
     time::{Duration, Instant},
 };
+use tokio::sync::Notify;
+
+mod sync_state;
+use sync_state::SyncState;
 
 // The redudancy factor decreases the possiblity of a malicious peers sending us an invalid block locator
 // by requiring multiple peers to advertise the same (prefix of) block locators.
@@ -91,7 +92,6 @@ pub const DUMMY_SELF_IP: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(1
 /// Initially, they have no keys (see `new()`), thus establishing the invariant.
 /// All the functions that change the keys of one map, also change the keys of the other map in the same way,
 /// thus preserving the invariant.
-#[derive(Debug)]
 pub struct BlockSync<N: Network> {
     /// The ledger.
     ledger: Arc<dyn LedgerService<N>>,
@@ -111,11 +111,11 @@ pub struct BlockSync<N: Network> {
     /// This map is used to determine which requests to remove if they have been pending for too long.
     request_timestamps: RwLock<BTreeMap<u32, Instant>>,
     /// The boolean indicator of whether the node is synced up to the latest block (within the given tolerance).
-    is_block_synced: AtomicBool,
-    /// The number of blocks the peer is behind the greatest peer height.
-    num_blocks_behind: AtomicU32,
+    sync_state: RwLock<SyncState>,
     /// The lock to guarantee advance_with_sync_blocks() is called only once at a time.
     advance_with_sync_blocks_lock: Mutex<()>,
+    /// Gets notified when there was an update to the locators, a peer disconnected, or we received a new block response.
+    notify: Notify,
 }
 
 impl<N: Network> BlockSync<N> {
@@ -123,27 +123,42 @@ impl<N: Network> BlockSync<N> {
     pub fn new(ledger: Arc<dyn LedgerService<N>>) -> Self {
         Self {
             ledger,
+            sync_state: Default::default(),
+            notify: Default::default(),
             locators: Default::default(),
             common_ancestors: Default::default(),
             requests: Default::default(),
             responses: Default::default(),
             request_timestamps: Default::default(),
-            is_block_synced: Default::default(),
-            num_blocks_behind: Default::default(),
             advance_with_sync_blocks_lock: Default::default(),
         }
+    }
+
+    pub async fn wait_for_update(&self) {
+        self.notify.notified().await
     }
 
     /// Returns `true` if the node is synced up to the latest block (within the given tolerance).
     #[inline]
     pub fn is_block_synced(&self) -> bool {
-        self.is_block_synced.load(Ordering::SeqCst)
+        self.sync_state.read().is_block_synced()
+    }
+
+    /// Returns `true` if there a blocks to sync from other nodes.
+    ///
+    /// This will always return true if [`Self::is_block_synced`] returns false,
+    /// but it can return true when [`Self::is_block_synced`] returns true
+    /// (due to the latter having a tolerance of one block).
+    #[inline]
+    pub fn can_block_sync(&self) -> bool {
+        self.sync_state.read().can_block_sync()
     }
 
     /// Returns the number of blocks the node is behind the greatest peer height.
     #[inline]
     pub fn num_blocks_behind(&self) -> u32 {
-        self.num_blocks_behind.load(Ordering::SeqCst)
+        // TODO(kaimast): return u32::MAX if unknown peer height?
+        self.sync_state.read().num_blocks_behind().unwrap_or(0)
     }
 }
 
@@ -291,16 +306,20 @@ impl<N: Network> BlockSync<N> {
 
     /// Attempts to advance synchronization by processing completed block responses.
     ///
+    /// Returns true, if new blocks were added to the ledger.
+    ///
     /// Validators will not call this function, but instead execute `snarkos_node_bft::Sync::try_advancing_block_synchronization`
     /// which also updates the BFT state.
     #[inline]
-    pub fn try_advancing_block_synchronization(&self) {
+    pub fn try_advancing_block_synchronization(&self) -> bool {
         // Acquire the lock to ensure this function is called only once at a time.
         // If the lock is already acquired, return early.
         let Some(_lock) = self.advance_with_sync_blocks_lock.try_lock() else {
             trace!("Skipping attempt to advance block synchronziation as it is already in progress");
-            return;
+            return false;
         };
+
+        let mut new_blocks = false;
 
         // Start with the current height.
         let mut current_height = self.ledger.latest_block_height();
@@ -339,9 +358,17 @@ impl<N: Network> BlockSync<N> {
             if !advanced {
                 break;
             }
+
             // Update the latest height.
+            new_blocks = true;
             current_height = self.ledger.latest_block_height();
         }
+
+        if new_blocks {
+            self.set_sync_height(current_height);
+        }
+
+        new_blocks
     }
 }
 
@@ -350,12 +377,9 @@ impl<N: Network> BlockSync<N> {
     /// This function returns peers that are consistent with each other, and have a block height
     /// that is greater than the ledger height of this node.
     pub fn find_sync_peers(&self) -> Option<(IndexMap<SocketAddr, u32>, u32)> {
-        self.find_sync_peers_at_height(self.ledger.latest_block_height())
-    }
+        // Retrieve the current sync height.
+        let current_height = self.sync_state.read().get_sync_height();
 
-    /// Same as `Self::find_sync_peers`, but allows specifiying a custom height
-    /// (must be greater than the ledger height).
-    pub fn find_sync_peers_at_height(&self, current_height: u32) -> Option<(IndexMap<SocketAddr, u32>, u32)> {
         if let Some((sync_peers, min_common_ancestor)) = self.find_sync_peers_inner(current_height) {
             // Map the locators into the latest height.
             let sync_peers =
@@ -419,6 +443,14 @@ impl<N: Network> BlockSync<N> {
             common_ancestors.insert(PeerPair(peer_ip, *other_ip), ancestor);
         }
 
+        // Update is_synced
+        if let Some(greatest_peer_height) = self.locators.read().values().map(|l| l.latest_locator_height()).max() {
+            self.sync_state.write().set_greatest_peer_height(greatest_peer_height);
+        }
+
+        // Notify the sync loop that something changed.
+        self.notify.notify_one();
+
         Ok(())
     }
 
@@ -430,6 +462,9 @@ impl<N: Network> BlockSync<N> {
         self.locators.write().remove(peer_ip);
         // Remove all block requests to the peer.
         self.remove_block_requests_to_peer(peer_ip);
+
+        // Notify the sync loop that something changed.
+        self.notify.notify_one();
     }
 }
 
@@ -440,24 +475,16 @@ impl<N: Network> BlockSync<N> {
     /// Returns a list of block requests and the sync peers, if the node needs to sync.
     ///
     /// You usually want to call `remove_timed_out_block_requests` before invoking this function.
-    ///
-    /// `current_height` should either be the ledger height, or the height of the pending blocks (for validators).
     pub fn prepare_block_requests(&self) -> BlockRequestBatch<N> {
-        self.prepare_block_requests_at_height(self.ledger.latest_block_height())
-    }
+        let mut state = self.sync_state.write();
+        let current_height = state.get_sync_height();
 
-    /// Returns a list of block requests and the sync peers, if the node needs to sync.
-    ///
-    /// You usually want to call `remove_timed_out_block_requests` before invoking this function.
-    ///
-    /// `current_height` should either be the ledger height, or the height of the pending blocks (for validators).
-    pub fn prepare_block_requests_at_height(&self, current_height: u32) -> BlockRequestBatch<N> {
         // Prepare the block requests.
         if let Some((sync_peers, min_common_ancestor)) = self.find_sync_peers_inner(current_height) {
             // Retrieve the highest block height.
             let greatest_peer_height = sync_peers.values().map(|l| l.latest_locator_height()).max().unwrap_or(0);
             // Update the state of `is_block_synced` for the sync module.
-            self.update_is_block_synced(greatest_peer_height, current_height, MAX_BLOCKS_BEHIND);
+            state.set_greatest_peer_height(greatest_peer_height);
             // Return the list of block requests.
             (self.construct_requests(&sync_peers, min_common_ancestor), sync_peers)
         } else {
@@ -465,7 +492,8 @@ impl<N: Network> BlockSync<N> {
             if self.requests.read().is_empty() && self.responses.read().is_empty() {
                 trace!("All requests have been processed. Will set block synced to true.");
                 // Update the state of `is_block_synced` for the sync module.
-                self.update_is_block_synced(0, current_height, MAX_BLOCKS_BEHIND);
+                // TODO(kaimast): remove this workaround
+                state.set_greatest_peer_height(0);
             } else {
                 trace!("No new blocks can be requests, but there are still outstanding requests.");
             }
@@ -475,25 +503,8 @@ impl<N: Network> BlockSync<N> {
         }
     }
 
-    /// Updates the state of `is_block_synced` for the sync module.
-    fn update_is_block_synced(&self, greatest_peer_height: u32, current_height: u32, max_blocks_behind: u32) {
-        // Retrieve the latest block height.
-        let ledger_height = self.ledger.latest_block_height();
-        trace!(
-            "Updating is_block_synced: greatest_peer_height = {greatest_peer_height}, ledger_height = {ledger_height},
-            current_height = {current_height}"
-        );
-        // Compute the number of blocks that we are behind by.
-        let num_blocks_behind = greatest_peer_height.saturating_sub(current_height);
-        // Determine if the primary is synced.
-        let is_synced = num_blocks_behind <= max_blocks_behind;
-        // Update the num blocks behind.
-        self.num_blocks_behind.store(num_blocks_behind, Ordering::SeqCst);
-        // Update the sync status.
-        self.is_block_synced.store(is_synced, Ordering::SeqCst);
-        // Update the `IS_SYNCED` metric.
-        #[cfg(feature = "metrics")]
-        metrics::gauge(metrics::bft::IS_SYNCED, is_synced);
+    pub fn set_sync_height(&self, new_height: u32) {
+        self.sync_state.write().set_sync_height(new_height);
     }
 
     /// Inserts a block request for the given height.
@@ -544,6 +555,9 @@ impl<N: Network> BlockSync<N> {
                 bail!("Candidate block {height} from '{peer_ip}' is malformed");
             }
         }
+
+        // Notify the sync loop that something changed.
+        self.notify.notify_one();
 
         Ok(())
     }
@@ -999,14 +1013,14 @@ mod tests {
     /// Returns a duplicate (deep copy) of the sync pool with a different ledger height.
     fn duplicate_sync_at_new_height(sync: &BlockSync<CurrentNetwork>, height: u32) -> BlockSync<CurrentNetwork> {
         BlockSync::<CurrentNetwork> {
+            notify: Notify::new(),
             ledger: Arc::new(sample_ledger_service(height)),
             locators: RwLock::new(sync.locators.read().clone()),
             common_ancestors: RwLock::new(sync.common_ancestors.read().clone()),
             requests: RwLock::new(sync.requests.read().clone()),
             responses: RwLock::new(sync.responses.read().clone()),
             request_timestamps: RwLock::new(sync.request_timestamps.read().clone()),
-            is_block_synced: AtomicBool::new(sync.is_block_synced.load(Ordering::SeqCst)),
-            num_blocks_behind: AtomicU32::new(sync.num_blocks_behind.load(Ordering::SeqCst)),
+            sync_state: RwLock::new(sync.sync_state.read().clone()),
             advance_with_sync_blocks_lock: Default::default(),
         }
     }

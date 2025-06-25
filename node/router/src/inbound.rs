@@ -323,7 +323,7 @@ pub trait Inbound<N: Network>: Reading + Outbound<N> {
                 .collect(),
         };
         // Send a `PeerResponse` message to the peer.
-        self.send(peer_ip, Message::PeerResponse(PeerResponse { peers }));
+        self.router().send(peer_ip, Message::PeerResponse(PeerResponse { peers }));
         true
     }
 

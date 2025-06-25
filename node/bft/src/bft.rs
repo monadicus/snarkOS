@@ -30,7 +30,7 @@ use crate::{
 };
 use snarkos_account::Account;
 use snarkos_node_bft_ledger_service::LedgerService;
-use snarkos_node_sync::BlockSync;
+use snarkos_node_sync::{BlockSync, Ping};
 use snarkvm::{
     console::account::Address,
     ledger::{
@@ -114,6 +114,7 @@ impl<N: Network> BFT<N> {
     /// The function must not be called more than once per instance.
     pub async fn run(
         &mut self,
+        ping: Option<Arc<Ping<N>>>,
         consensus_sender: Option<ConsensusSender<N>>,
         primary_sender: PrimarySender<N>,
         primary_receiver: PrimaryReceiver<N>,
@@ -124,7 +125,7 @@ impl<N: Network> BFT<N> {
         // First, start the BFT handlers.
         self.start_handlers(bft_receiver);
         // Next, run the primary instance.
-        self.primary.run(Some(bft_sender), primary_sender, primary_receiver).await?;
+        self.primary.run(ping, Some(bft_sender), primary_sender, primary_receiver).await?;
         // Lastly, set the consensus sender.
         // Note: This ensures during initial syncing, that the BFT does not advance the ledger.
         if let Some(consensus_sender) = consensus_sender {

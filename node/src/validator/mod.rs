@@ -16,6 +16,7 @@
 mod router;
 
 use crate::traits::NodeInterface;
+
 use snarkos_account::Account;
 use snarkos_node_bft::{ledger_service::CoreLedgerService, spawn_blocking};
 use snarkos_node_cdn::CdnBlockSync;
@@ -29,10 +30,10 @@ use snarkos_node_router::{
     Routing,
     messages::{NodeType, PuzzleResponse, UnconfirmedSolution, UnconfirmedTransaction},
 };
-use snarkos_node_sync::BlockSync;
+use snarkos_node_sync::{BlockSync, Ping};
 use snarkos_node_tcp::{
     P2P,
-    protocols::{Disconnect, Handshake, OnConnect, Reading, Writing},
+    protocols::{Disconnect, Handshake, OnConnect, Reading},
 };
 use snarkvm::prelude::{
     Ledger,
@@ -73,6 +74,8 @@ pub struct Validator<N: Network, C: ConsensusStorage<N>> {
     handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
     /// The shutdown signal.
     shutdown: Arc<AtomicBool>,
+    /// Keeps track of sending pings.
+    ping: Arc<Ping<N>>,
 }
 
 impl<N: Network, C: ConsensusStorage<N>> Validator<N, C> {
@@ -120,6 +123,8 @@ impl<N: Network, C: ConsensusStorage<N>> Validator<N, C> {
 
         // Initialize the block synchronization logic.
         let sync = Arc::new(BlockSync::new(ledger_service.clone()));
+        let locators = sync.get_block_locators()?;
+        let ping = Arc::new(Ping::new(router.clone(), locators));
 
         // Initialize the consensus layer.
         let consensus = Consensus::new(
@@ -129,6 +134,7 @@ impl<N: Network, C: ConsensusStorage<N>> Validator<N, C> {
             bft_ip,
             trusted_validators,
             storage_mode.clone(),
+            ping.clone(),
         )
         .await?;
 
@@ -139,12 +145,16 @@ impl<N: Network, C: ConsensusStorage<N>> Validator<N, C> {
             router,
             rest: None,
             sync,
+            ping,
             handles: Default::default(),
             shutdown: shutdown.clone(),
         };
 
         // Perform sync with CDN (if enabled).
         let cdn_sync = cdn.map(|base_url| Arc::new(CdnBlockSync::new(base_url, ledger.clone(), shutdown)));
+
+        // Initialize the transaction pool.
+        node.initialize_transaction_pool(storage_mode.clone(), dev_txs)?;
 
         // Initialize the REST server.
         if let Some(rest_ip) = rest_ip {
@@ -169,9 +179,6 @@ impl<N: Network, C: ConsensusStorage<N>> Validator<N, C> {
                 return Err(error);
             }
         }
-
-        // Initialize the transaction pool.
-        node.initialize_transaction_pool(storage_mode, dev_txs)?;
 
         // Initialize the routing.
         node.initialize_routing().await;
