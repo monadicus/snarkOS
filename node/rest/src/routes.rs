@@ -24,6 +24,7 @@ use indexmap::IndexMap;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use snarkvm::prelude::Program;
 
 /// The `get_blocks` query object.
 #[derive(Deserialize, Serialize)]
@@ -42,6 +43,11 @@ pub(crate) struct Metadata {
 }
 
 impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
+    // Get /<network>/consensus_version
+    pub(crate) async fn get_consensus_version(State(rest): State<Self>) -> Result<ErasedJson, RestError> {
+        Ok(ErasedJson::pretty(N::CONSENSUS_VERSION(rest.ledger.latest_height())? as u16))
+    }
+
     // GET /<network>/block/height/latest
     pub(crate) async fn get_block_height_latest(State(rest): State<Self>) -> ErasedJson {
         ErasedJson::pretty(rest.ledger.latest_height())
@@ -192,11 +198,59 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
     }
 
     // GET /<network>/program/{programID}
+    // GET /<network>/program/{programID}?metadata={true}
     pub(crate) async fn get_program(
         State(rest): State<Self>,
         Path(id): Path<ProgramID<N>>,
+        metadata: Query<Metadata>,
     ) -> Result<ErasedJson, RestError> {
-        Ok(ErasedJson::pretty(rest.ledger.get_program(id)?))
+        // Get the program from the ledger.
+        let program = rest.ledger.get_program(id)?;
+        // Check if metadata is requested and return the program with metadata if so.
+        if metadata.metadata.unwrap_or(false) {
+            // Get the edition of the program.
+            let edition = rest.ledger.get_latest_edition_for_program(&id)?;
+            return rest.return_program_with_metadata(program, edition);
+        }
+        // Return the program without metadata.
+        Ok(ErasedJson::pretty(program))
+    }
+
+    // GET /<network>/program/{programID}/{edition}
+    // GET /<network>/program/{programID}/{edition}?metadata={true}
+    pub(crate) async fn get_program_for_edition(
+        State(rest): State<Self>,
+        Path((id, edition)): Path<(ProgramID<N>, u16)>,
+        metadata: Query<Metadata>,
+    ) -> Result<ErasedJson, RestError> {
+        // Get the program from the ledger.
+        let program = rest.ledger.get_program_for_edition(id, edition)?;
+        // Check if metadata is requested and return the program with metadata if so.
+        if metadata.metadata.unwrap_or(false) {
+            return rest.return_program_with_metadata(program, edition);
+        }
+        Ok(ErasedJson::pretty(program))
+    }
+
+    // A helper function to return the program and its metadata.
+    // This function is used in the `get_program` and `get_program_for_edition` functions.
+    fn return_program_with_metadata(&self, program: Program<N>, edition: u16) -> Result<ErasedJson, RestError> {
+        let id = program.id();
+        // Get the transaction ID associated with the program and edition.
+        let tx_id = self.ledger.find_transaction_id_from_program_id_and_edition(id, edition)?;
+        Ok(ErasedJson::pretty(json!({
+            "program": program,
+            "edition": edition,
+            "transaction_id": tx_id,
+        })))
+    }
+
+    // GET /<network>/program/{programID}/latest_edition
+    pub(crate) async fn get_latest_program_edition(
+        State(rest): State<Self>,
+        Path(id): Path<ProgramID<N>>,
+    ) -> Result<ErasedJson, RestError> {
+        Ok(ErasedJson::pretty(rest.ledger.get_latest_edition_for_program(&id)?))
     }
 
     // GET /<network>/program/{programID}/mappings
@@ -353,11 +407,19 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
     }
 
     // GET /<network>/find/transactionID/deployment/{programID}
-    pub(crate) async fn find_transaction_id_from_program_id(
+    pub(crate) async fn find_latest_transaction_id_from_program_id(
         State(rest): State<Self>,
         Path(program_id): Path<ProgramID<N>>,
     ) -> Result<ErasedJson, RestError> {
         Ok(ErasedJson::pretty(rest.ledger.find_latest_transaction_id_from_program_id(&program_id)?))
+    }
+
+    // GET /<network>/find/transactionID/deployment/{programID}/{edition}
+    pub(crate) async fn find_transaction_id_from_program_id_and_edition(
+        State(rest): State<Self>,
+        Path((program_id, edition)): Path<(ProgramID<N>, u16)>,
+    ) -> Result<ErasedJson, RestError> {
+        Ok(ErasedJson::pretty(rest.ledger.find_transaction_id_from_program_id_and_edition(&program_id, edition)?))
     }
 
     // GET /<network>/find/transactionID/{transitionID}
