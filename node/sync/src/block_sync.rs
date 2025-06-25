@@ -160,6 +160,11 @@ impl<N: Network> BlockSync<N> {
         // TODO(kaimast): return u32::MAX if unknown peer height?
         self.sync_state.read().num_blocks_behind().unwrap_or(0)
     }
+
+    /// Returns the greatest block height of any connected peer.
+    pub fn greatest_peer_block_height(&self) -> Option<u32> {
+        self.sync_state.read().get_greatest_peer_height()
+    }
 }
 
 // Helper functions needed for testing

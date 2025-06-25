@@ -137,6 +137,11 @@ impl<N: Network, C: ConsensusStorage<N>> Outbound<N> for Prover<N, C> {
     fn num_blocks_behind(&self) -> u32 {
         0
     }
+
+    /// Returns the greatest block height of any connected peer.
+    fn greatest_peer_block_height(&self) -> Option<u32> {
+        None
+    }
 }
 
 #[async_trait]

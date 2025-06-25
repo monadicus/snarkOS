@@ -25,6 +25,9 @@ pub trait Outbound<N: Network> {
     /// Returns `true` if the node is synced up to the latest block (within the given tolerance).
     fn is_block_synced(&self) -> bool;
 
+    /// Returns the greatest block height of any connected peer.
+    fn greatest_peer_block_height(&self) -> Option<u32>;
+
     /// Returns the number of blocks this node is behind the greatest peer height.
     fn num_blocks_behind(&self) -> u32;
 

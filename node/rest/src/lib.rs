@@ -194,7 +194,7 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
             .route(&format!("/{network}/program/{{id}}/mapping/{{name}}/{{key}}"), get(Self::get_mapping_value))
 
             // GET misc endpoints.
-            .route(&format!("/{network}/status"), get(Self::get_status))
+            .route(&format!("/{network}/sync_status"), get(Self::get_sync_status))
             .route(&format!("/{network}/blocks"), get(Self::get_blocks))
             .route(&format!("/{network}/height/{{hash}}"), get(Self::get_height))
             .route(&format!("/{network}/memoryPool/transmissions"), get(Self::get_memory_pool_transmissions))

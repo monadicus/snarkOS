@@ -42,14 +42,21 @@ pub(crate) struct Metadata {
     all: Option<bool>,
 }
 
-/// The return value for a `status` query.
+/// The return value for a `sync_status` query.
 #[skip_serializing_none]
 #[derive(Copy, Clone, Serialize)]
-struct NodeStatus<'a> {
+struct SyncStatus<'a> {
+    /// Is this node fully synced with the network?
     is_synced: bool,
+    /// The block height of this node.
     ledger_height: u32,
+    /// Which way are we sync'ing (either "cdn" or "p2p")
     sync_mode: &'a str,
+    /// The block height of the CDN (if connected to a CDN).
     cdn_height: Option<u32>,
+    /// The greatest known block height of a peer.
+    /// None, if no peers are connected yet.
+    p2p_height: Option<u32>,
 }
 
 impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
@@ -129,22 +136,28 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
     }
 
     // GET /<network>/status
-    pub(crate) async fn get_status(State(rest): State<Self>) -> Result<ErasedJson, RestError> {
-        // Get the CDN height (if we are connected to a CDN)
-        let cdn_height =
-            if let Some(cdn_sync) = &rest.cdn_sync { Some(cdn_sync.get_cdn_height().await?) } else { None };
+    pub(crate) async fn get_sync_status(State(rest): State<Self>) -> Result<ErasedJson, RestError> {
+        // Get the CDN height (if we are syncing from a CDN)
+        let (cdn_sync, cdn_height) = if let Some(cdn_sync) = &rest.cdn_sync {
+            let done = cdn_sync.is_done();
 
-        // Generate a string representing the current sync mode.
-        let sync_mode = {
-            let is_syncing_from_cdn = rest.cdn_sync.map(|s| !s.is_done()).unwrap_or(false);
-            if is_syncing_from_cdn { "cdn" } else { "p2p" }
+            // do not show CDN height if we are already done syncing from the CDN
+            let cdn_height = if done { None } else { Some(cdn_sync.get_cdn_height().await?) };
+
+            (done, cdn_height)
+        } else {
+            (false, None)
         };
 
-        Ok(ErasedJson::pretty(NodeStatus {
+        // Generate a string representing the current sync mode.
+        let sync_mode = if cdn_sync { "cdn" } else { "p2p" };
+
+        Ok(ErasedJson::pretty(SyncStatus {
             sync_mode,
             cdn_height,
             is_synced: rest.routing.is_block_synced(),
             ledger_height: rest.ledger.latest_height(),
+            p2p_height: rest.routing.greatest_peer_block_height(),
         }))
     }
 
