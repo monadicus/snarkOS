@@ -35,7 +35,8 @@ use snarkos_node_bft::{
 };
 use snarkos_node_bft_ledger_service::LedgerService;
 use snarkos_node_bft_storage_service::BFTPersistentStorage;
-use snarkos_node_sync::BlockSync;
+use snarkos_node_sync::{BlockSync, Ping};
+
 use snarkvm::{
     ledger::{
         block::Transaction,
@@ -114,6 +115,10 @@ pub struct Consensus<N: Network> {
     transmissions_tracker: Arc<Mutex<HashMap<TransmissionID<N>, i64>>>,
     /// The spawned handles.
     handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
+    /// The ping logic.
+    ping: Arc<Ping<N>>,
+    /// The block sync logic.
+    block_sync: Arc<BlockSync<N>>,
 }
 
 impl<N: Network> Consensus<N> {
@@ -125,6 +130,7 @@ impl<N: Network> Consensus<N> {
         ip: Option<SocketAddr>,
         trusted_validators: &[SocketAddr],
         storage_mode: StorageMode,
+        ping: Arc<Ping<N>>,
     ) -> Result<Self> {
         // Initialize the primary channels.
         let (primary_sender, primary_receiver) = init_primary_channels::<N>();
@@ -133,11 +139,12 @@ impl<N: Network> Consensus<N> {
         // Initialize the Narwhal storage.
         let storage = NarwhalStorage::new(ledger.clone(), transmissions, BatchHeader::<N>::MAX_GC_ROUNDS as u64);
         // Initialize the BFT.
-        let bft = BFT::new(account, storage, ledger.clone(), block_sync, ip, trusted_validators, storage_mode)?;
+        let bft = BFT::new(account, storage, ledger.clone(), block_sync.clone(), ip, trusted_validators, storage_mode)?;
         // Create a new instance of Consensus.
         let mut _self = Self {
             ledger,
             bft,
+            block_sync,
             primary_sender,
             solutions_queue: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(CAPACITY_FOR_SOLUTIONS).unwrap()))),
             transactions_queue: Default::default(),
@@ -146,6 +153,7 @@ impl<N: Network> Consensus<N> {
             #[cfg(feature = "metrics")]
             transmissions_tracker: Default::default(),
             handles: Default::default(),
+            ping: ping.clone(),
         };
 
         info!("Starting the consensus instance...");
@@ -155,7 +163,7 @@ impl<N: Network> Consensus<N> {
         // Then, start the consensus handlers.
         _self.start_handlers(consensus_receiver);
         // Lastly, also start BFTs handlers.
-        _self.bft.run(Some(consensus_sender), _self.primary_sender.clone(), primary_receiver).await?;
+        _self.bft.run(Some(ping), Some(consensus_sender), _self.primary_sender.clone(), primary_receiver).await?;
 
         Ok(_self)
     }
@@ -538,6 +546,13 @@ impl<N: Network> Consensus<N> {
             // Clear the worker solutions.
             self.bft.primary().clear_worker_solutions();
         }
+
+        // Notify peers that we have a new block.
+        let locators = self.block_sync.get_block_locators()?;
+        self.ping.update_block_locators(locators);
+
+        // Make block sync aware of the new block.
+        self.block_sync.set_sync_height(next_block.height());
 
         // TODO(kaimast): This should also remove any transmissions/solutions contained in the block from the mempool.
         // Removal currently happens when Consensus eventually passes them to the worker, which then just discards them.
