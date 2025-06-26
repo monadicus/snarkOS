@@ -80,7 +80,7 @@ version = "=3.8.0"
 [dependencies.snarkvm-synthesizer] # If this is updated, the rev in the main `Cargo.toml` must be updated as well.
 #path = "../../../snarkVM/synthesizer"
 git = "https://github.com/ProvableHQ/snarkVM.git"
-rev = "a4573a3"
+rev = "b8c1b12"
 #version = "=3.8.0"
 default-features = false
 optional = true
