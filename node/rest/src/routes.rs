@@ -445,7 +445,10 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
                 // here prevents the to-be aborted solutions from propagating through the network.
                 let prover_address = solution.address();
                 if rest.ledger.is_solution_limit_reached(&prover_address, 0) {
-                    return Err(RestError(format!("Invalid solution '{}' - Prover '{prover_address}' has reached their solution limit for the current epoch", fmt_id(solution.id()))));
+                    return Err(RestError(format!(
+                        "Invalid solution '{}' - Prover '{prover_address}' has reached their solution limit for the current epoch",
+                        fmt_id(solution.id())
+                    )));
                 }
                 // Verify the solution in a blocking task.
                 match tokio::task::spawn_blocking(move || puzzle.check_solution(&solution, epoch_hash, proof_target))
