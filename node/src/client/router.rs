@@ -179,6 +179,11 @@ impl<N: Network, C: ConsensusStorage<N>> Outbound<N> for Client<N, C> {
     fn num_blocks_behind(&self) -> u32 {
         self.sync.num_blocks_behind()
     }
+
+    /// Returns the greatest block height of any connected peer.
+    fn greatest_peer_block_height(&self) -> Option<u32> {
+        self.sync.greatest_peer_block_height()
+    }
 }
 
 #[async_trait]

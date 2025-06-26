@@ -69,13 +69,17 @@ features = [ "derive" ]
 version = "1"
 features = [ "preserve_order" ]
 
+[dependencies.serde_with]
+version = "3"
+
+[dependencies.snarkos-node-cdn]
+workspace = true
+
 [dependencies.snarkos-node-consensus]
-path = "../consensus"
-version = "=3.8.0"
+workspace = true
 
 [dependencies.snarkos-node-router]
-path = "../router"
-version = "=3.8.0"
+workspace = true
 
 [dependencies.snarkvm-synthesizer]
 #path = "../../../snarkVM/synthesizer"
