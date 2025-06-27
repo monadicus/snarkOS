@@ -154,11 +154,11 @@ impl<N: Network> BlockSync<N> {
         self.sync_state.read().can_block_sync()
     }
 
-    /// Returns the number of blocks the node is behind the greatest peer height.
+    /// Returns the number of blocks the node is behind the greatest peer height,
+    /// or `None` if no peers are connected yet.
     #[inline]
-    pub fn num_blocks_behind(&self) -> u32 {
-        // TODO(kaimast): return u32::MAX if unknown peer height?
-        self.sync_state.read().num_blocks_behind().unwrap_or(0)
+    pub fn num_blocks_behind(&self) -> Option<u32> {
+        self.sync_state.read().num_blocks_behind()
     }
 
     /// Returns the greatest block height of any connected peer.

@@ -14,7 +14,7 @@
 // limitations under the License.
 
 use super::*;
-use snarkos_node_router::{SYNC_LENIENCY, messages::UnconfirmedSolution};
+use snarkos_node_router::messages::UnconfirmedSolution;
 use snarkvm::{
     ledger::puzzle::Solution,
     prelude::{Address, Identifier, LimitedWriter, Plaintext, ToBytes, block::Transaction},
@@ -348,7 +348,7 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
         Path(validator): Path<Address<N>>,
     ) -> Result<ErasedJson, RestError> {
         // Do not process the request if the node is too far behind to avoid sending outdated data.
-        if rest.routing.num_blocks_behind() > SYNC_LENIENCY {
+        if !rest.routing.is_within_sync_leniency() {
             return Err(RestError("Unable to  request delegators (node is syncing)".to_string()));
         }
 
@@ -426,7 +426,7 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
         Json(tx): Json<Transaction<N>>,
     ) -> Result<ErasedJson, RestError> {
         // Do not process the transaction if the node is too far behind.
-        if rest.routing.num_blocks_behind() > SYNC_LENIENCY {
+        if !rest.routing.is_within_sync_leniency() {
             return Err(RestError(format!("Unable to broadcast transaction '{}' (node is syncing)", fmt_id(tx.id()))));
         }
 
@@ -464,7 +464,7 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
         Json(solution): Json<Solution<N>>,
     ) -> Result<ErasedJson, RestError> {
         // Do not process the solution if the node is too far behind.
-        if rest.routing.num_blocks_behind() > SYNC_LENIENCY {
+        if !rest.routing.is_within_sync_leniency() {
             return Err(RestError(format!(
                 "Unable to broadcast solution '{}' (node is syncing)",
                 fmt_id(solution.id())
