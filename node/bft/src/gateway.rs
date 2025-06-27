@@ -168,6 +168,7 @@ impl<N: Network> Gateway<N> {
         };
         // Initialize the TCP stack.
         let tcp = Tcp::new(Config::new(ip, Committee::<N>::max_committee_size()?));
+
         // Return the gateway.
         Ok(Self {
             account,
@@ -215,8 +216,10 @@ impl<N: Network> Gateway<N> {
         self.enable_writing().await;
         self.enable_disconnect().await;
         self.enable_on_connect().await;
+
         // Enable the TCP listener. Note: This must be called after the above protocols.
-        let _listening_addr = self.tcp.enable_listener().await.expect("Failed to enable the TCP listener");
+        let listen_addr = self.tcp.enable_listener().await.expect("Failed to enable the TCP listener");
+        debug!("Listening for validator connections at address {listen_addr:?}");
 
         // Initialize the heartbeat.
         self.initialize_heartbeat();
