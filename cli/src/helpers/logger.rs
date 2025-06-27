@@ -104,7 +104,7 @@ pub fn initialize_logger<P: AsRef<Path>>(
         if verbosity >= 6 {
             filter.add_directive("snarkos_node_tcp=trace".parse().unwrap())
         } else {
-            filter.add_directive("snarkos_node_tcp=warn".parse().unwrap())
+            filter.add_directive("snarkos_node_tcp=off".parse().unwrap())
         }
     });
 
