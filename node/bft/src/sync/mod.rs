@@ -788,14 +788,17 @@ impl<N: Network> Sync<N> {
 impl<N: Network> Sync<N> {
     /// Returns `true` if the node is synced and has connected peers.
     pub fn is_synced(&self) -> bool {
+        // Ensure the validator is connected to other validators,
+        // not just clients.
         if self.gateway.number_of_connected_peers() == 0 {
             return false;
         }
+
         self.block_sync.is_block_synced()
     }
 
     /// Returns the number of blocks the node is behind the greatest peer height.
-    pub fn num_blocks_behind(&self) -> u32 {
+    pub fn num_blocks_behind(&self) -> Option<u32> {
         self.block_sync.num_blocks_behind()
     }
 

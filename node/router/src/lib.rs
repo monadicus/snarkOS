@@ -152,6 +152,7 @@ impl<N: Network> Router<N> {
     ) -> Result<Self> {
         // Initialize the TCP stack.
         let tcp = Tcp::new(Config::new(node_ip, max_peers));
+
         // Initialize the router.
         Ok(Self(Arc::new(InnerRouter {
             tcp,
