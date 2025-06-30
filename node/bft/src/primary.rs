@@ -44,7 +44,7 @@ use crate::{
 use snarkos_account::Account;
 use snarkos_node_bft_events::PrimaryPing;
 use snarkos_node_bft_ledger_service::LedgerService;
-use snarkos_node_sync::{BlockSync, DUMMY_SELF_IP};
+use snarkos_node_sync::{BlockSync, DUMMY_SELF_IP, Ping};
 use snarkvm::{
     console::{
         prelude::*,
@@ -194,6 +194,7 @@ impl<N: Network> Primary<N> {
     /// Run the primary instance.
     pub async fn run(
         &mut self,
+        ping: Option<Arc<Ping<N>>>,
         bft_sender: Option<BFTSender<N>>,
         primary_sender: PrimarySender<N>,
         primary_receiver: PrimaryReceiver<N>,
@@ -239,7 +240,7 @@ impl<N: Network> Primary<N> {
         // Next, load and process the proposal cache before running the sync module.
         self.load_proposal_cache().await?;
         // Next, run the sync module.
-        self.sync.run(sync_receiver).await?;
+        self.sync.run(ping, sync_receiver).await?;
         // Next, initialize the gateway.
         self.gateway.run(primary_sender, worker_senders, Some(sync_sender)).await;
         // Lastly, start the primary handlers.
@@ -518,11 +519,15 @@ impl<N: Network> Primary<N> {
             while let Some((id, transmission)) = worker.remove_front() {
                 // Check the selected transmissions are below the batch limit.
                 if transmissions.len() >= BatchHeader::<N>::MAX_TRANSMISSIONS_PER_BATCH {
+                    // Reinsert the transmission into the worker.
+                    worker.insert_front(id, transmission);
                     break 'outer;
                 }
 
                 // Check the max transmissions per worker is not exceeded.
                 if num_worker_transmissions >= Worker::<N>::MAX_TRANSMISSIONS_PER_WORKER {
+                    // Reinsert the transmission into the worker.
+                    worker.insert_front(id, transmission);
                     continue 'outer;
                 }
 

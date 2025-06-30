@@ -26,10 +26,10 @@ use snarkos_node_router::{
     Routing,
     messages::{Message, NodeType, UnconfirmedSolution},
 };
-use snarkos_node_sync::BlockSync;
+use snarkos_node_sync::{BlockSync, Ping};
 use snarkos_node_tcp::{
     P2P,
-    protocols::{Disconnect, Handshake, OnConnect, Reading, Writing},
+    protocols::{Disconnect, Handshake, OnConnect, Reading},
 };
 use snarkvm::{
     ledger::narwhal::Data,
@@ -84,6 +84,8 @@ pub struct Prover<N: Network, C: ConsensusStorage<N>> {
     handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
     /// The shutdown signal.
     shutdown: Arc<AtomicBool>,
+    /// Keeps track of sending pings.
+    ping: Arc<Ping<N>>,
     /// PhantomData.
     _phantom: PhantomData<C>,
 }
@@ -125,6 +127,9 @@ impl<N: Network, C: ConsensusStorage<N>> Prover<N, C> {
         // Initialize the sync module.
         let sync = BlockSync::new(ledger_service.clone());
 
+        // Set up the ping logic.
+        let ping = Arc::new(Ping::new_nosync(router.clone()));
+
         // Compute the maximum number of puzzle instances.
         let max_puzzle_instances = num_cpus::get().saturating_sub(2).clamp(1, 6);
         // Initialize the node.
@@ -138,6 +143,7 @@ impl<N: Network, C: ConsensusStorage<N>> Prover<N, C> {
             puzzle_instances: Default::default(),
             max_puzzle_instances: u8::try_from(max_puzzle_instances)?,
             handles: Default::default(),
+            ping,
             shutdown,
             _phantom: Default::default(),
         };

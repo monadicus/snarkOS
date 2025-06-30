@@ -193,7 +193,7 @@ commands:
             cargo install --locked --path .
       - run:
           name: "Run devnet test"
-          no_output_timeout: 20m  # Allow 20 minutes total
+          timeout: 20m  # Allow 20 minutes total
           command: |
             chmod +x .circleci/devnet_ci.sh
             ./.circleci/devnet_ci.sh << parameters.validators >> << parameters.clients >> << parameters.network_id >> << parameters.min_height >>

@@ -46,6 +46,10 @@ optional = true
 [dependencies.parking_lot]
 version = "0.12"
 
+[dependencies.tokio]
+workspace = true
+features = [ "sync" ]
+
 [dependencies.rand]
 version = "0.8"
 

@@ -16,7 +16,7 @@
 use crate::{Heartbeat, Inbound, Outbound};
 use snarkos_node_tcp::{
     P2P,
-    protocols::{Disconnect, Handshake, OnConnect},
+    protocols::{Disconnect, Handshake, OnConnect, Writing},
 };
 use snarkvm::prelude::Network;
 
@@ -31,7 +31,7 @@ pub trait Routing<N: Network>:
         // Enable the TCP protocols.
         self.enable_handshake().await;
         self.enable_reading().await;
-        self.enable_writing().await;
+        self.router().enable_writing().await;
         self.enable_disconnect().await;
         self.enable_on_connect().await;
         // Enable the TCP listener. Note: This must be called after the above protocols.
@@ -42,7 +42,8 @@ pub trait Routing<N: Network>:
 
     // Start listening for inbound connections.
     async fn enable_listener(&self) {
-        self.tcp().enable_listener().await.expect("Failed to enable the TCP listener");
+        let listen_addr = self.tcp().enable_listener().await.expect("Failed to enable the TCP listener");
+        debug!("Listening for peer connections at address {listen_addr:?}");
     }
 
     /// Initialize a new instance of the heartbeat.
