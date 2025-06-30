@@ -125,6 +125,10 @@ impl<N: Network> Default for PriorityQueueInner<N> {
 }
 
 impl<N: Network> PriorityQueueInner<N> {
+    fn len(&self) -> usize {
+        self.transactions.len()
+    }
+
     fn insert(&mut self, transaction_id: N::TransactionID, transaction: Transaction<N>, fee: U64<N>) {
         if let Entry::Vacant(entry) = self.transactions.entry(transaction_id) {
             // Insert the transaction into the map.
@@ -519,9 +523,18 @@ impl<N: Network> Consensus<N> {
             // Acquire the lock on the priority queue.
             let mut priority_queue = self.priority_queue.lock();
             // Determine the number of deployments to send.
-            let num_deployments = tx_queue.deployments.len().min(capacity).min(MAX_DEPLOYMENTS_PER_INTERVAL);
+            let num_deployments = priority_queue
+                .deployments
+                .len()
+                .saturating_add(tx_queue.deployments.len())
+                .min(capacity)
+                .min(MAX_DEPLOYMENTS_PER_INTERVAL);
             // Determine the number of executions to send.
-            let num_executions = tx_queue.executions.len().min(capacity.saturating_sub(num_deployments));
+            let num_executions = priority_queue
+                .executions
+                .len()
+                .saturating_add(tx_queue.executions.len())
+                .min(capacity.saturating_sub(num_deployments));
             // Create an iterator which will select interleaved deployments and executions within the capacity.
             // Note: interleaving ensures we will never have consecutive invalid deployments blocking the queue.
             let selector_iter = (0..num_deployments).map(|_| true).interleave((0..num_executions).map(|_| false));
