@@ -53,6 +53,9 @@ const MAXIMUM_PENDING_BLOCKS: u32 = BLOCKS_PER_FILE * CONCURRENT_REQUESTS * 2;
 /// Maximum number of attempts for a request to the CDN.
 const MAXIMUM_REQUEST_ATTEMPTS: u8 = 10;
 
+/// The CDN base url.
+pub const CDN_BASE_URL: &str = "https://cdn.provable.com/v0/blocks";
+
 /// Updates the metrics during CDN sync.
 #[cfg(feature = "metrics")]
 fn update_block_metrics(height: u32) {
@@ -500,16 +503,14 @@ fn log_progress<const OBJECTS_PER_FILE: u32>(
 
 #[cfg(test)]
 mod tests {
-    use super::{BLOCKS_PER_FILE, cdn_height, load_blocks, log_progress};
-
+    use super::{BLOCKS_PER_FILE, CDN_BASE_URL, cdn_height, log_progress};
+    use crate::load_blocks;
     use snarkvm::prelude::{MainnetV0, block::Block};
 
     use parking_lot::RwLock;
     use std::{sync::Arc, time::Instant};
 
     type CurrentNetwork = MainnetV0;
-
-    const TEST_BASE_URL: &str = "https://cdn.provable.com/v0/blocks/mainnet";
 
     fn check_load_blocks(start: u32, end: Option<u32>, expected: usize) {
         let blocks = Arc::new(RwLock::new(Vec::new()));
@@ -519,9 +520,12 @@ mod tests {
             Ok(())
         };
 
+        let testnet_cdn_url = format!("{CDN_BASE_URL}/mainnet");
+
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
-            let completed_height = load_blocks(TEST_BASE_URL, start, end, Default::default(), process).await.unwrap();
+            let completed_height =
+                load_blocks(&testnet_cdn_url, start, end, Default::default(), process).await.unwrap();
             assert_eq!(blocks.read().len(), expected);
             if expected > 0 {
                 assert_eq!(blocks.read().last().unwrap().height(), completed_height);
@@ -565,8 +569,9 @@ mod tests {
     fn test_cdn_height() {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let client = reqwest::Client::builder().use_rustls_tls().build().unwrap();
+        let testnet_cdn_url = format!("{CDN_BASE_URL}/mainnet");
         rt.block_on(async {
-            let height = cdn_height::<BLOCKS_PER_FILE>(&client, TEST_BASE_URL).await.unwrap();
+            let height = cdn_height::<BLOCKS_PER_FILE>(&client, &testnet_cdn_url).await.unwrap();
             assert!(height > 0);
         });
     }

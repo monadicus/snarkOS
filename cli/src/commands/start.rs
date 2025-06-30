@@ -21,6 +21,7 @@ use snarkos_node::{
     rest::DEFAULT_REST_PORT,
     router::{DEFAULT_NODE_PORT, messages::NodeType},
 };
+use snarkos_node_cdn::CDN_BASE_URL;
 use snarkvm::{
     console::{
         account::{Address, PrivateKey},
@@ -64,9 +65,6 @@ const DEVELOPMENT_MODE_RNG_SEED: u64 = 1234567890u64;
 
 /// The development mode number of genesis committee members.
 const DEVELOPMENT_MODE_NUM_GENESIS_COMMITTEE_MEMBERS: u16 = 4;
-
-/// The CDN base url.
-pub(crate) const CDN_BASE_URL: &str = "https://cdn.provable.com";
 
 /// A mapping of `staker_address` to `(validator_address, withdrawal_address, amount)`.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
@@ -361,9 +359,9 @@ impl Start {
                 },
                 // If no CDN URL is provided, determine the CDN URL based on the network ID.
                 None => match N::ID {
-                    MainnetV0::ID => Some(format!("{CDN_BASE_URL}/v0/blocks/mainnet")),
-                    TestnetV0::ID => Some(format!("{CDN_BASE_URL}/v0/blocks/testnet")),
-                    CanaryV0::ID => Some(format!("{CDN_BASE_URL}/v0/blocks/canary")),
+                    MainnetV0::ID => Some(format!("{CDN_BASE_URL}/mainnet")),
+                    TestnetV0::ID => Some(format!("{CDN_BASE_URL}/testnet")),
+                    CanaryV0::ID => Some(format!("{CDN_BASE_URL}/canary")),
                     _ => None,
                 },
             }
