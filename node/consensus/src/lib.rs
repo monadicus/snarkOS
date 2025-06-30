@@ -96,14 +96,14 @@ impl<N: Network> Default for TransactionsQueue<N> {
 
 impl<N: Network> TransactionsQueue<N> {
     fn contains(&self, transaction_id: &N::TransactionID) -> bool {
-        self.deployments.contains(transaction_id) || self.executions.contains(transaction_id)
+        self.executions.contains(transaction_id) || self.deployments.contains(transaction_id)
     }
 
     fn insert(&mut self, transaction_id: N::TransactionID, transaction: Transaction<N>) {
-        if transaction.is_deploy() {
-            self.deployments.put(transaction_id, transaction);
-        } else {
+        if transaction.is_execute() {
             self.executions.put(transaction_id, transaction);
+        } else {
+            self.deployments.put(transaction_id, transaction);
         }
     }
 }
@@ -159,15 +159,15 @@ impl<N: Network> Default for PriorityQueue<N> {
 
 impl<N: Network> PriorityQueue<N> {
     fn contains(&self, transaction_id: &N::TransactionID) -> bool {
-        self.deployments.transactions.contains_key(transaction_id)
-            || self.executions.transactions.contains_key(transaction_id)
+        self.executions.transactions.contains_key(transaction_id)
+            || self.deployments.transactions.contains_key(transaction_id)
     }
 
     fn insert(&mut self, transaction_id: N::TransactionID, transaction: Transaction<N>, fee: U64<N>) {
-        if transaction.is_deploy() {
-            self.deployments.insert(transaction_id, transaction, fee)
-        } else {
+        if transaction.is_execute() {
             self.executions.insert(transaction_id, transaction, fee)
+        } else {
+            self.deployments.insert(transaction_id, transaction, fee)
         }
     }
 }
