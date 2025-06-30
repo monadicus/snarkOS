@@ -57,6 +57,9 @@ features = [ "codec" ]
 version = "0.1"
 default-features = false
 
+[dependencies.thiserror]
+version = "2"
+
 [dev-dependencies.tokio]
 workspace = true
 features = [ "macros" ]
