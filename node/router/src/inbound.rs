@@ -66,7 +66,7 @@ pub trait Inbound<N: Network>: Reading + Outbound<N> {
         const SYNC_LENIENCY: u32 = 10;
 
         if let Some(num) = self.num_blocks_behind() {
-            num > SYNC_LENIENCY
+            num <= SYNC_LENIENCY
         } else {
             // We have not received block locators yet.
             true
