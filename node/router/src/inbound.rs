@@ -73,14 +73,16 @@ pub trait Inbound<N: Network>: Reading + Outbound<N> {
         }
     }
 
-    /// Handles the inbound message from the peer.
-    async fn inbound(&self, peer_addr: SocketAddr, message: Message<N>) -> Result<()> {
+    /// Handles the inbound message from the peer. The returned value indicates whether
+    /// the connection is still active, and errors causing a disconnect once they are
+    /// propagated to the caller.
+    async fn inbound(&self, peer_addr: SocketAddr, message: Message<N>) -> Result<bool> {
         // Retrieve the listener IP for the peer.
         let peer_ip = match self.router().resolve_to_listener(&peer_addr) {
             Some(peer_ip) => peer_ip,
             None => {
                 // No longer connected to the peer.
-                return Ok(());
+                return Ok(false);
             }
         };
 
@@ -118,7 +120,7 @@ pub trait Inbound<N: Network>: Reading + Outbound<N> {
 
                 let node = self.clone();
                 match spawn_blocking(move || node.block_request(peer_ip, message)).await? {
-                    true => Ok(()),
+                    true => Ok(true),
                     false => bail!("Peer '{peer_ip}' sent an invalid block request"),
                 }
             }
@@ -149,7 +151,7 @@ pub trait Inbound<N: Network>: Reading + Outbound<N> {
                 // Process the block response.
                 let node = self.clone();
                 match spawn_blocking(move || node.block_response(peer_ip, blocks.0)).await? {
-                    true => Ok(()),
+                    true => Ok(true),
                     false => bail!("Peer '{peer_ip}' sent an invalid block response"),
                 }
             }
@@ -161,10 +163,10 @@ pub trait Inbound<N: Network>: Reading + Outbound<N> {
                 // The peer informs us that they had disconnected. Disconnect from them too.
                 debug!("Peer '{peer_ip}' decided to disconnect due to '{:?}'", message.reason);
                 self.router().disconnect(peer_ip);
-                Ok(())
+                Ok(false)
             }
             Message::PeerRequest(..) => match self.peer_request(peer_ip) {
-                true => Ok(()),
+                true => Ok(true),
                 false => bail!("Peer '{peer_ip}' sent an invalid peer request"),
             },
             Message::PeerResponse(message) => {
@@ -177,7 +179,7 @@ pub trait Inbound<N: Network>: Reading + Outbound<N> {
                 }
 
                 match self.peer_response(peer_ip, &message.peers) {
-                    true => Ok(()),
+                    true => Ok(true),
                     false => bail!("Peer '{peer_ip}' sent an invalid peer response"),
                 }
             }
@@ -211,12 +213,12 @@ pub trait Inbound<N: Network>: Reading + Outbound<N> {
 
                 // Process the ping message.
                 match self.ping(peer_ip, message) {
-                    true => Ok(()),
+                    true => Ok(true),
                     false => bail!("Peer '{peer_ip}' sent an invalid ping"),
                 }
             }
             Message::Pong(message) => match self.pong(peer_ip, message) {
-                true => Ok(()),
+                true => Ok(true),
                 false => bail!("Peer '{peer_ip}' sent an invalid pong"),
             },
             Message::PuzzleRequest(..) => {
@@ -228,7 +230,7 @@ pub trait Inbound<N: Network>: Reading + Outbound<N> {
                 }
                 // Process the puzzle request.
                 match self.puzzle_request(peer_ip) {
-                    true => Ok(()),
+                    true => Ok(true),
                     false => bail!("Peer '{peer_ip}' sent an invalid puzzle request"),
                 }
             }
@@ -247,7 +249,7 @@ pub trait Inbound<N: Network>: Reading + Outbound<N> {
                 };
                 // Process the puzzle response.
                 match self.puzzle_response(peer_ip, message.epoch_hash, header) {
-                    true => Ok(()),
+                    true => Ok(true),
                     false => bail!("Peer '{peer_ip}' sent an invalid puzzle response"),
                 }
             }
@@ -255,7 +257,7 @@ pub trait Inbound<N: Network>: Reading + Outbound<N> {
                 // Do not process unconfirmed solutions if the node is too far behind.
                 if !self.is_within_sync_leniency() {
                     trace!("Skipped processing unconfirmed solution '{}' (node is syncing)", message.solution_id);
-                    return Ok(());
+                    return Ok(true);
                 }
 
                 // Update the timestamp for the unconfirmed solution.
@@ -263,7 +265,7 @@ pub trait Inbound<N: Network>: Reading + Outbound<N> {
                 // Determine whether to propagate the solution.
                 if seen_before {
                     trace!("Skipping 'UnconfirmedSolution' from '{peer_ip}'");
-                    return Ok(());
+                    return Ok(true);
                 }
                 // Clone the serialized message.
                 let serialized = message.clone();
@@ -278,7 +280,7 @@ pub trait Inbound<N: Network>: Reading + Outbound<N> {
                 }
                 // Handle the unconfirmed solution.
                 match self.unconfirmed_solution(peer_ip, serialized, solution).await {
-                    true => Ok(()),
+                    true => Ok(true),
                     false => bail!("Peer '{peer_ip}' sent an invalid unconfirmed solution"),
                 }
             }
@@ -286,7 +288,7 @@ pub trait Inbound<N: Network>: Reading + Outbound<N> {
                 // Do not process unconfirmed solutions if the node is too far behind.
                 if !self.is_within_sync_leniency() {
                     trace!("Skipped processing unconfirmed transaction '{}' (node is syncing)", message.transaction_id);
-                    return Ok(());
+                    return Ok(true);
                 }
                 // Update the timestamp for the unconfirmed transaction.
                 let seen_before =
@@ -294,7 +296,7 @@ pub trait Inbound<N: Network>: Reading + Outbound<N> {
                 // Determine whether to propagate the transaction.
                 if seen_before {
                     trace!("Skipping 'UnconfirmedTransaction' from '{peer_ip}'");
-                    return Ok(());
+                    return Ok(true);
                 }
                 // Clone the serialized message.
                 let serialized = message.clone();
@@ -309,7 +311,7 @@ pub trait Inbound<N: Network>: Reading + Outbound<N> {
                 }
                 // Handle the unconfirmed transaction.
                 match self.unconfirmed_transaction(peer_ip, serialized, transaction).await {
-                    true => Ok(()),
+                    true => Ok(true),
                     false => bail!("Peer '{peer_ip}' sent an invalid unconfirmed transaction"),
                 }
             }
