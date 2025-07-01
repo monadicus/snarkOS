@@ -15,7 +15,7 @@
 
 use std::{collections::HashMap, net::SocketAddr};
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Resolver {
     /// The map of the listener address to (ambiguous) peer address.
     from_listener: HashMap<SocketAddr, SocketAddr>,
@@ -23,19 +23,7 @@ pub struct Resolver {
     to_listener: HashMap<SocketAddr, SocketAddr>,
 }
 
-impl Default for Resolver {
-    /// Initializes a new instance of the resolver.
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl Resolver {
-    /// Initializes a new instance of the resolver.
-    pub fn new() -> Self {
-        Self { from_listener: Default::default(), to_listener: Default::default() }
-    }
-
     /// Returns the listener address for the given (ambiguous) peer address, if it exists.
     pub fn get_listener(&self, peer_addr: &SocketAddr) -> Option<SocketAddr> {
         self.to_listener.get(peer_addr).copied()
