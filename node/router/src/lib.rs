@@ -533,6 +533,12 @@ impl<N: Network> Router<N> {
 
     /// Inserts the given peer into the connected peers.
     pub fn insert_connected_peer(&self, peer_ip: SocketAddr) {
+        // Hold the write locks for the duration of this function to
+        // avoid any of them from becoming unaligned with the others.
+        let mut connected_peers = self.connected_peers.write();
+        let mut candidate_peers = self.candidate_peers.write();
+        let mut restricted_peers = self.restricted_peers.write();
+
         // Move the peer from "connecting" to "connected".
         let peer = match self.connecting_peers.lock().remove(&peer_ip) {
             Some(Some(peer)) => peer,
@@ -545,12 +551,13 @@ impl<N: Network> Router<N> {
                 return;
             }
         };
-        // Add an entry for this `Peer` in the connected peers.
-        self.connected_peers.write().insert(peer_ip, peer);
+
         // Remove this peer from the candidate peers, if it exists.
-        self.candidate_peers.write().remove(&peer_ip);
+        candidate_peers.remove(&peer_ip);
+        // Add an entry for this `Peer` in the connected peers.
+        connected_peers.insert(peer_ip, peer);
         // Remove this peer from the restricted peers, if it exists.
-        self.restricted_peers.write().remove(&peer_ip);
+        restricted_peers.remove(&peer_ip);
         #[cfg(feature = "metrics")]
         self.update_metrics();
         info!("Connected to '{peer_ip}'");
@@ -615,14 +622,20 @@ impl<N: Network> Router<N> {
 
     /// Removes the connected peer and adds them to the candidate peers.
     pub fn remove_connected_peer(&self, peer_ip: SocketAddr) {
-        // Remove this peer from the connected peers, if it exists.
-        self.connected_peers.write().remove(&peer_ip);
+        // Hold the write locks for the duration of this function to
+        // avoid any of them from becoming unaligned with the others.
+        let mut resolver = self.resolver.write();
+        let mut connected_peers = self.connected_peers.write();
+        let mut candidate_peers = self.candidate_peers.write();
+
         // Removes the bidirectional map between the listener address and (ambiguous) peer address.
-        self.resolver.write().remove_peer(&peer_ip);
+        resolver.remove_peer(&peer_ip);
+        // Remove this peer from the connected peers, if it exists.
+        connected_peers.remove(&peer_ip);
+        // Add the peer to the candidate peers.
+        candidate_peers.insert(peer_ip);
         // Clear cached entries applicable to the peer.
         self.cache.clear_peer_entries(peer_ip);
-        // Add the peer to the candidate peers.
-        self.candidate_peers.write().insert(peer_ip);
         #[cfg(feature = "metrics")]
         self.update_metrics();
     }
