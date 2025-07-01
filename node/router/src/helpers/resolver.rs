@@ -19,7 +19,7 @@ use std::{collections::HashMap, net::SocketAddr};
 /// `tcp` module internals, and provided by the OS) to the listener address (used as the
 /// unique peer identifier in the higher-level functions), and the other way around.
 #[derive(Debug, Default)]
-pub struct Resolver {
+pub(crate) struct Resolver {
     /// The map of the listener address to (ambiguous) peer address.
     from_listener: HashMap<SocketAddr, SocketAddr>,
     /// The map of the (ambiguous) peer address to listener address.
