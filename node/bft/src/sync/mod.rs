@@ -138,20 +138,7 @@ impl<N: Network> Sync<N> {
     ///
     /// Responses to block requests will eventually be processed by `Self::try_advancing_block_synchronization`.
     #[inline]
-    pub async fn issue_block_requests(&self) {
-        // First see if any peers need removal
-        let peers_to_ban = self.block_sync.remove_timed_out_block_requests();
-        for peer_ip in peers_to_ban {
-            trace!("Banning peer {peer_ip} for timing out on block requests");
-
-            let tcp = self.gateway.tcp().clone();
-            tcp.banned_peers().update_ip_ban(peer_ip.ip());
-
-            tokio::spawn(async move {
-                tcp.disconnect(peer_ip).await;
-            });
-        }
-
+    async fn issue_block_requests(&self) {
         // Prepare the block requests, if any.
         // In the process, we update the state of `is_block_synced` for the sync module.
         let (block_requests, sync_peers) = self.block_sync.prepare_block_requests();
@@ -299,6 +286,23 @@ impl<N: Network> Sync<N> {
     /// This is called periodically by a tokio background task spawned in `Self::run`.
     /// Some unit tests also call this function directly to manually trigger block synchronization.
     pub(crate) async fn try_block_sync(&self) -> bool {
+        // Check if any existing requests can be removed.
+        // We should do this even if we cannot block sync, to ensure
+        // there are no dangling block requests.
+        let peers_to_ban = self.block_sync.remove_timed_out_block_requests();
+
+        // Peers might be banned due to not responding.
+        for peer_ip in peers_to_ban {
+            trace!("Banning peer {peer_ip} for timing out on block requests");
+
+            let tcp = self.gateway.tcp().clone();
+            tcp.banned_peers().update_ip_ban(peer_ip.ip());
+
+            tokio::spawn(async move {
+                tcp.disconnect(peer_ip).await;
+            });
+        }
+
         // Do not attempt to sync if there are no blocks to sync.
         // This prevents redundant log messages and performing unnecessary computation.
         if !self.block_sync.can_block_sync() {

@@ -40,12 +40,13 @@ impl Default for SyncState {
 }
 
 impl SyncState {
-    /// Did we catch up with the greates known peer height?
+    /// Did we catch up with the greatest known peer height?
     /// This will return false if we never synced from a peer.
     pub fn is_block_synced(&self) -> bool {
         self.is_synced
     }
 
+    /// Returns `true` if there a blocks to sync from other nodes.
     pub fn can_block_sync(&self) -> bool {
         // Return true if sync state is false even if we there are no known blocks to fetch,
         // because otherwise nodes will never  switch to synced at startup.
@@ -123,7 +124,7 @@ impl SyncState {
                 debug!("Block sync state changed to \"synced\". It took {elapsed} to catch up with the network.");
             } else {
                 // num_blocks_behind should never be None at this point,
-                // but savely unwrap just is in case.
+                // but we still use `unwrap_or` just in case.
                 let behind_msg = num_blocks_behind.map(|n| n.to_string()).unwrap_or("unknown".to_string());
 
                 debug!("Block sync state changed to \"syncing\". We are {behind_msg} blocks behind.");

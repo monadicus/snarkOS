@@ -42,7 +42,7 @@ use tokio::sync::Notify;
 mod sync_state;
 use sync_state::SyncState;
 
-// The redudancy factor decreases the possiblity of a malicious peers sending us an invalid block locator
+// The redundancy factor decreases the possibility of a malicious peers sending us an invalid block locator
 // by requiring multiple peers to advertise the same (prefix of) block locators.
 // However, we do not use this in production yet.
 #[cfg(not(test))]
@@ -57,7 +57,7 @@ pub const BLOCK_REQUEST_BATCH_DELAY: Duration = Duration::from_millis(10);
 const EXTRA_REDUNDANCY_FACTOR: usize = REDUNDANCY_FACTOR * 3;
 const NUM_SYNC_CANDIDATE_PEERS: usize = REDUNDANCY_FACTOR * 5;
 
-const BLOCK_REQUEST_TIMEOUT_IN_SECS: u64 = 600; // 600 seconds
+const BLOCK_REQUEST_TIMEOUT: Duration = Duration::from_secs(600);
 
 /// The maximum number of outstanding block requests.
 /// Once a node hits this limit, it will not issue any new requests until existing requests time out or receive responses.
@@ -69,6 +69,28 @@ pub const MAX_BLOCKS_BEHIND: u32 = 1; // blocks
 /// This is a dummy IP address that is used to represent the local node.
 /// Note: This here does not need to be a real IP address, but it must be unique/distinct from all other connections.
 pub const DUMMY_SELF_IP: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
+
+/// Handle to an outstanding requested, containing the request itself and its timestamp.
+/// This does not contain the response so that checking for responses does not require iterating over all requests.
+#[derive(Clone)]
+struct OutstandingRequest<N: Network> {
+    request: SyncRequest<N>,
+    timestamp: Instant,
+}
+
+impl<N: Network> OutstandingRequest<N> {
+    /// Get a reference to the IPs of peers that have not responded to the request (yet).
+    fn sync_ips(&self) -> &IndexSet<SocketAddr> {
+        let (_, _, sync_ips) = &self.request;
+        sync_ips
+    }
+
+    /// Get a mutable reference to the IPs of peers that have not responded to the request (yet).
+    fn sync_ips_mut(&mut self) -> &mut IndexSet<SocketAddr> {
+        let (_, _, sync_ips) = &mut self.request;
+        sync_ips
+    }
+}
 
 /// A struct that keeps track of synchronizing blocks with other nodes.
 ///
@@ -84,17 +106,10 @@ pub const DUMMY_SELF_IP: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(1
 ///   by a supermajority of the committee.
 ///
 /// # State
-/// - When a request is inserted, the `requests` map and `request_timestamps` map insert an entry for the request height.
 /// - When a response is inserted, the `responses` map inserts the entry for the request height.
-/// - When a request is completed, the `requests` map still has the entry, but its `sync_ips` is empty;
-///   the `request_timestamps` map remains unchanged.
-/// - When a response is removed/completed, the `requests` map and `request_timestamps` map also remove the entry for the request height.
-/// - When a request is timed out, the `requests`, `request_timestamps`, and `responses` map remove the entry for the request height.
-///
-/// Invariant: `requests` and `request_timestamps` always have the same keys.
-/// Initially, they have no keys (see `new()`), thus establishing the invariant.
-/// All the functions that change the keys of one map, also change the keys of the other map in the same way,
-/// thus preserving the invariant.
+/// - When a request is completed, the `requests` map still has the entry, but its `sync_ips` is empty
+/// - When a response is removed/completed, the `requests`  map also removes the entry for the request height.
+/// - When a request is timed out, the `requests` and `responses` map s remove the entry for the request height.
 pub struct BlockSync<N: Network> {
     /// The ledger.
     ledger: Arc<dyn LedgerService<N>>,
@@ -106,13 +121,9 @@ pub struct BlockSync<N: Network> {
     common_ancestors: RwLock<IndexMap<PeerPair, u32>>,
     /// The map of block height to the expected block hash and peer IPs.
     /// Each entry is removed when its corresponding entry in the responses map is removed.
-    requests: RwLock<BTreeMap<u32, SyncRequest<N>>>,
-    /// The map of block height to the received blocks.
+    requests: RwLock<BTreeMap<u32, OutstandingRequest<N>>>,
     /// Removing an entry from this map must remove the corresponding entry from the requests map.
     responses: RwLock<BTreeMap<u32, Block<N>>>,
-    /// The map of block height to the timestamp of the last time the block was requested.
-    /// This map is used to determine which requests to remove if they have been pending for too long.
-    request_timestamps: RwLock<BTreeMap<u32, Instant>>,
     /// The boolean indicator of whether the node is synced up to the latest block (within the given tolerance).
     sync_state: RwLock<SyncState>,
     /// The lock to guarantee advance_with_sync_blocks() is called only once at a time.
@@ -132,7 +143,6 @@ impl<N: Network> BlockSync<N> {
             common_ancestors: Default::default(),
             requests: Default::default(),
             responses: Default::default(),
-            request_timestamps: Default::default(),
             advance_with_sync_blocks_lock: Default::default(),
         }
     }
@@ -185,12 +195,12 @@ impl<N: Network> BlockSync<N> {
 
     /// Returns the block request for the given height, if it exists.
     fn get_block_request(&self, height: u32) -> Option<SyncRequest<N>> {
-        self.requests.read().get(&height).cloned()
+        self.requests.read().get(&height).map(|e| e.request.clone())
     }
 
     /// Returns the timestamp of the last time the block was requested, if it exists.
     fn get_block_request_timestamp(&self, height: u32) -> Option<Instant> {
-        self.request_timestamps.read().get(&height).copied()
+        self.requests.read().get(&height).map(|e| e.timestamp)
     }
 }
 
@@ -305,8 +315,7 @@ impl<N: Network> BlockSync<N> {
 
         // Determine if the request is complete:
         // either there is no request for `next_height`, or the request has no peer socket addresses left.
-        let is_request_complete =
-            requests.get(&next_height).map(|(_, _, peer_ips)| peer_ips.is_empty()).unwrap_or(true);
+        let is_request_complete = requests.get(&next_height).map(|e| e.sync_ips().is_empty()).unwrap_or(true);
 
         // If the request is complete, return the block from the responses, if there is one.
         if is_request_complete { self.responses.read().get(&next_height).cloned() } else { None }
@@ -531,9 +540,9 @@ impl<N: Network> BlockSync<N> {
         // Ensure the sync IPs are not empty.
         ensure!(!sync_ips.is_empty(), "Cannot insert a block request with no sync IPs");
         // Insert the block request.
-        self.requests.write().insert(height, (hash, previous_hash, sync_ips));
-        // Insert the request timestamp.
-        self.request_timestamps.write().insert(height, Instant::now());
+        self.requests
+            .write()
+            .insert(height, OutstandingRequest { request: (hash, previous_hash, sync_ips), timestamp: Instant::now() });
         Ok(())
     }
 
@@ -553,8 +562,8 @@ impl<N: Network> BlockSync<N> {
 
         // Remove the peer IP from the request entry.
         // This `if` never fails, because of the postcondition of `check_block_response` (called above).
-        if let Some((_, _, sync_ips)) = self.requests.write().get_mut(&height) {
-            sync_ips.swap_remove(&peer_ip);
+        if let Some(e) = self.requests.write().get_mut(&height) {
+            e.sync_ips_mut().swap_remove(&peer_ip);
         }
 
         // Acquire the write lock on the responses map.
@@ -593,12 +602,7 @@ impl<N: Network> BlockSync<N> {
         if self.responses.read().contains_key(&height) {
             bail!("Failed to add block request, as block {height} exists in the responses map");
         }
-        // Ensure the block height is not already requested.
-        // TODO: Because of the invariant that `requests` and `request_timestamps` have the same keys
-        //  (see `BlockSync` doc), the following check is redundant.
-        if self.request_timestamps.read().contains_key(&height) {
-            bail!("Failed to add block request, as block {height} exists in the timestamps map");
-        }
+
         Ok(())
     }
 
@@ -610,7 +614,9 @@ impl<N: Network> BlockSync<N> {
         let height = block.height();
 
         // Retrieve the request entry for the candidate block.
-        if let Some((expected_hash, expected_previous_hash, sync_ips)) = self.requests.read().get(&height) {
+        if let Some(e) = self.requests.read().get(&height) {
+            let (expected_hash, expected_previous_hash, sync_ips) = &e.request;
+
             // Ensure the candidate block hash matches the expected hash.
             if let Some(expected_hash) = expected_hash {
                 if block.hash() != *expected_hash {
@@ -641,8 +647,6 @@ impl<N: Network> BlockSync<N> {
         self.requests.write().remove(&height);
         // Remove the response entry for the given height.
         self.responses.write().remove(&height);
-        // Remove the request timestamp entry for the given height.
-        self.request_timestamps.write().remove(&height);
     }
 
     /// Removes the block request and response for the given height
@@ -657,10 +661,8 @@ impl<N: Network> BlockSync<N> {
         // from multiple peers that may be received concurrently.
         let mut requests = self.requests.write();
         // Remove the request entry for the given height.
-        requests.remove(&height);
-        // Remove the request timestamp entry for the given height.
-        if let Some(request_time) = self.request_timestamps.write().remove(&height) {
-            trace!("Block request for height {height} was completed in {}ms", request_time.elapsed().as_millis());
+        if let Some(e) = requests.remove(&height) {
+            trace!("Block request for height {height} was completed in {}ms", e.timestamp.elapsed().as_millis());
         }
         // Remove the response entry for the given height.
         self.responses.write().remove(&height);
@@ -678,13 +680,12 @@ impl<N: Network> BlockSync<N> {
 
         // Remove the peer IP from the requests map. If any request entry is now empty,
         // and its corresponding response entry is also empty, then remove that request entry altogether.
-        requests.retain(|height, (_, _, peer_ips)| {
-            peer_ips.swap_remove(peer_ip);
+        requests.retain(|height, e| {
+            e.sync_ips_mut().swap_remove(peer_ip);
 
-            let retain = !peer_ips.is_empty() || responses.get(height).is_some();
+            let retain = !e.sync_ips().is_empty() || responses.get(height).is_some();
             if !retain {
                 trace!("Removed block request timestamp for {peer_ip} at height {height}");
-                self.request_timestamps.write().remove(height);
             }
             retain
         });
@@ -698,8 +699,6 @@ impl<N: Network> BlockSync<N> {
         let mut requests = self.requests.write();
         // Acquire the write lock on the responses map.
         let mut responses = self.responses.write();
-        // Acquire the write lock on the request timestamps map.
-        let mut request_timestamps = self.request_timestamps.write();
         //  Acquire the write lock on the locators map.
         let mut locators = self.locators.write();
 
@@ -716,43 +715,45 @@ impl<N: Network> BlockSync<N> {
         let mut peers_to_ban: HashSet<SocketAddr> = HashSet::new();
 
         // Remove timed out block requests.
-        request_timestamps.retain(|height, timestamp| {
+        requests.retain(|height, e| {
             let is_obsolete = *height <= current_height;
             // Determine if the duration since the request timestamp has exceeded the request timeout.
-            let is_time_passed = now.duration_since(*timestamp).as_secs() > BLOCK_REQUEST_TIMEOUT_IN_SECS;
+            let is_time_passed = now.duration_since(e.timestamp) > BLOCK_REQUEST_TIMEOUT;
             // Determine if the request is incomplete.
-            let is_request_incomplete =
-                !requests.get(height).map(|(_, _, peer_ips)| peer_ips.is_empty()).unwrap_or(true);
+            let is_request_incomplete = !e.sync_ips().is_empty();
+
             // Determine if the request has timed out.
             let is_timeout = is_time_passed && is_request_incomplete;
 
-            // If the request has timed out, or is obsolete, then remove it.
-            if is_timeout || is_obsolete {
-                trace!("Block request {height} has timed out: is_time_passed = {is_time_passed}, is_request_incomplete = {is_request_incomplete}, is_obsolete = {is_obsolete}");
+            // Retain if this is not a timeout and is not obsolete.
+            let retain = !is_timeout && !is_obsolete;
 
-                if let Some((_, _, peer_ips)) = requests.get(height) { peer_ips.iter().for_each(|peer_ip| {
+            if is_timeout {
+                trace!("Block request at height {height} has timed out: is_time_passed = {is_time_passed}, is_request_incomplete = {is_request_incomplete}, is_obsolete = {is_obsolete}");
+
+                // Increment the number of timed out block requests.
+                num_timed_out_block_requests += 1;
+            } else if is_obsolete {
+                trace!("Block request at height {height} became obsolete (current_height={current_height})");
+            }
+
+            // If request will be removed, also remove the response (if any) and ban the remaining sync peers.
+            // TODO(kaimast): only ban on obsolete requests?
+            if !retain {
+                for peer_ip in e.sync_ips().iter() {
                         debug!("Removing peer {peer_ip} from block request {height}");
                         // Remove the locators entry for the given peer IP.
                         locators.remove(peer_ip);
                         if is_timeout {
                             peers_to_ban.insert(*peer_ip);
                         }
-                    });
-                }
+                    }
 
-                // Remove the request entry for the given height.
-                requests.remove(height);
                 // Remove the response entry for the given height.
                 responses.remove(height);
             }
 
-            if is_timeout {
-                // Increment the number of timed out block requests.
-                num_timed_out_block_requests += 1;
-            }
-
-            // Retain if this is not a timeout and is not obsolete.
-            !is_timeout && !is_obsolete
+            retain
         });
 
         if num_timed_out_block_requests > 0 {
@@ -1037,7 +1038,6 @@ mod tests {
             common_ancestors: RwLock::new(sync.common_ancestors.read().clone()),
             requests: RwLock::new(sync.requests.read().clone()),
             responses: RwLock::new(sync.responses.read().clone()),
-            request_timestamps: RwLock::new(sync.request_timestamps.read().clone()),
             sync_state: RwLock::new(sync.sync_state.read().clone()),
             advance_with_sync_blocks_lock: Default::default(),
         }
@@ -1101,7 +1101,7 @@ mod tests {
     fn test_latest_block_height() {
         for height in generate_block_heights(100_001, 5000) {
             let sync = sample_sync_at_height(height);
-            // Check that the latest blokc height is the maximum height.
+            // Check that the latest block height is the maximum height.
             assert_eq!(sync.ledger.latest_block_height(), height);
 
             // Check the hash to height mapping
