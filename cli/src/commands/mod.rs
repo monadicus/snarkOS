@@ -43,7 +43,7 @@ const STYLES: Styles = Styles::plain()
 //
 // Metadata is sourced from Cargo.toml. However, the version will be overridden in the main module (snarkos/main.rs).
 #[derive(Debug, Parser)]
-#[clap(name = "snarkOS", author="The Aleo Team <hello@aleo.org>", about, styles = STYLES, version)]
+#[clap(name = "snarkOS", author, about, styles = STYLES, version)]
 pub struct CLI {
     /// Specify a subcommand.
     #[clap(subcommand)]

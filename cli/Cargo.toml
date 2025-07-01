@@ -51,10 +51,10 @@ workspace = true
 
 [dependencies.clap]
 workspace = true
-features = [ "derive", "color", "unstable-styles", "help" ]
+features = [ "derive", "color", "unstable-styles", "help", "cargo", "usage", "suggestions" ]
 
 [dependencies.colored]
-version = "2"
+version = "3"
 
 [dependencies.crossterm]
 workspace = true
