@@ -82,6 +82,7 @@ pub trait Inbound<N: Network>: Reading + Outbound<N> {
             Some(peer_ip) => peer_ip,
             None => {
                 // No longer connected to the peer.
+                trace!("Dropping a {} from {peer_addr} - no longer connected.", message.name());
                 return Ok(false);
             }
         };
