@@ -2,7 +2,7 @@
 name = "snarkos-cli"
 version = "3.8.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
-description = "A CLI for a decentralized operating system"
+description = "Command-line interface for snarkOS"
 homepage = "https://aleo.org"
 repository = "https://github.com/ProvableHQ/snarkOS"
 keywords = [

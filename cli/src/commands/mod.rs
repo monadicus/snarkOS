@@ -39,18 +39,18 @@ const STYLES: Styles = Styles::plain()
     .usage(Style::new().bold().fg_color(HEADER_COLOR))
     .literal(Style::new().bold().fg_color(LITERAL_COLOR));
 
-// Note: the basic clap-supplied version is overridden in the main module.
+// The top-level command-line argument.
+//
+// Metadata is sourced from Cargo.toml. However, the version will be overridden in the main module (snarkos/main.rs).
 #[derive(Debug, Parser)]
-#[clap(name = "snarkOS", author = "The Aleo Team <hello@aleo.org>", styles = STYLES, version)]
+#[clap(name = "snarkOS", author="The Aleo Team <hello@aleo.org>", about, styles = STYLES, version)]
 pub struct CLI {
-    /// Specify the verbosity [options: 0, 1, 2, 3]
-    #[clap(default_value = "2", short, long)]
-    pub verbosity: u8,
     /// Specify a subcommand.
     #[clap(subcommand)]
     pub command: Command,
 }
 
+/// The subcommand passed after `snarkos`, e.g. `Start` corresponds to `snarkos start`.
 #[derive(Debug, Parser)]
 pub enum Command {
     #[clap(subcommand)]

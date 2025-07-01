@@ -80,7 +80,7 @@ impl FromStr for BondedBalances {
 
 /// Starts the snarkOS node.
 #[derive(Clone, Debug, Parser)]
-#[command(   
+#[command(
     // Use kebab-case for all arguments (e.g., use the `private-key` flag for the `private_key` field).
     // This is already the default, but we specify it in case clap's default changes in the future.
     rename_all = "kebab-case",
