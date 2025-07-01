@@ -20,6 +20,7 @@ use std::{
     fs::File,
     io,
     path::Path,
+    str::FromStr,
     sync::{Arc, atomic::AtomicBool},
 };
 use tokio::sync::mpsc;
@@ -29,14 +30,15 @@ use tracing_subscriber::{
     util::SubscriberInitExt,
 };
 
-/// Initializes the logger.
+/// Sets the log filter based on the given verbosity level.
 ///
 /// ```ignore
 /// 0 => info
 /// 1 => info, debug
 /// 2 => info, debug, trace, snarkos_node_sync=trace
 /// 3 => info, debug, trace, snarkos_node_bft=trace
-/// 4 => info, debug, trace, snarkos_node_bft::gateway=trace
+/// 4 => info, debug, trace, snarkos_node_bft::gateway=trace,
+///      [mio|tokio_util|hyper|reqwest|want|h2|tower|axum]=warn
 /// 5 => info, debug, trace, snarkos_node_router=trace
 /// 6 => info, debug, trace, snarkos_node_tcp=trace
 /// ```
@@ -46,35 +48,16 @@ pub fn initialize_logger<P: AsRef<Path>>(
     logfile: P,
     shutdown: Arc<AtomicBool>,
 ) -> mpsc::Receiver<Vec<u8>> {
-    match verbosity {
-        0 => std::env::set_var("RUST_LOG", "info"),
-        1 => std::env::set_var("RUST_LOG", "debug"),
-        2.. => std::env::set_var("RUST_LOG", "trace"),
-    };
-
-    // Filter out undesirable logs. (unfortunately EnvFilter cannot be cloned)
-    let [filter, filter2] = std::array::from_fn(|_| {
-        let filter = EnvFilter::from_default_env();
-
-        // At high log levels, also show warnings of dependencies
-        let filter = if verbosity < 4 {
-            filter
-                .add_directive("mio=off".parse().unwrap())
-                .add_directive("tokio_util=off".parse().unwrap())
-                .add_directive("hyper=off".parse().unwrap())
-                .add_directive("reqwest=off".parse().unwrap())
-                .add_directive("want=off".parse().unwrap())
-                .add_directive("h2=off".parse().unwrap())
-        } else {
-            filter
-                .add_directive("mio=warn".parse().unwrap())
-                .add_directive("tokio_util=warn".parse().unwrap())
-                .add_directive("hyper=warn".parse().unwrap())
-                .add_directive("reqwest=warn".parse().unwrap())
-                .add_directive("want=warn".parse().unwrap())
-                .add_directive("h2=warn".parse().unwrap())
+    let [stdout_filter, logfile_filter] = std::array::from_fn(|_| {
+        // First, set default log verbosity
+        let default_log_str = match verbosity {
+            0 => "RUST_LOG=info",
+            1 => "RUST_LOG=debug",
+            2.. => "RUST_LOG=trace",
         };
+        let filter = EnvFilter::from_str(default_log_str).unwrap();
 
+        // Now, set rules for specific crates.
         let filter = if verbosity >= 2 {
             filter.add_directive("snarkos_node_sync=trace".parse().unwrap())
         } else {
@@ -90,9 +73,31 @@ pub fn initialize_logger<P: AsRef<Path>>(
         };
 
         let filter = if verbosity >= 4 {
-            filter.add_directive("snarkos_node_bft::gateway=trace".parse().unwrap())
+            let filter = filter.add_directive("snarkos_node_bft::gateway=trace".parse().unwrap());
+
+            // At high log levels, also show warnings of third-party crates.
+            filter
+                .add_directive("mio=warn".parse().unwrap())
+                .add_directive("tokio_util=warn".parse().unwrap())
+                .add_directive("hyper=warn".parse().unwrap())
+                .add_directive("reqwest=warn".parse().unwrap())
+                .add_directive("want=warn".parse().unwrap())
+                .add_directive("h2=warn".parse().unwrap())
+                .add_directive("tower=warn".parse().unwrap())
+                .add_directive("axum=warn".parse().unwrap())
         } else {
-            filter.add_directive("snarkos_node_bft::gateway=debug".parse().unwrap())
+            let filter = filter.add_directive("snarkos_node_bft::gateway=debug".parse().unwrap());
+
+            // Disable logs from third-party crates by default.
+            filter
+                .add_directive("mio=off".parse().unwrap())
+                .add_directive("tokio_util=off".parse().unwrap())
+                .add_directive("hyper=off".parse().unwrap())
+                .add_directive("reqwest=off".parse().unwrap())
+                .add_directive("want=off".parse().unwrap())
+                .add_directive("h2=off".parse().unwrap())
+                .add_directive("tower=off".parse().unwrap())
+                .add_directive("axum=off".parse().unwrap())
         };
 
         let filter = if verbosity >= 5 {
@@ -137,7 +142,7 @@ pub fn initialize_logger<P: AsRef<Path>>(
                 .with_writer(move || LogWriter::new(&log_sender))
                 .with_target(verbosity > 2)
                 .event_format(DynamicFormatter::new(shutdown))
-                .with_filter(filter),
+                .with_filter(stdout_filter),
         )
         .with(
             // Add layer redirecting logs to the file
@@ -145,7 +150,7 @@ pub fn initialize_logger<P: AsRef<Path>>(
                 .with_ansi(false)
                 .with_writer(logfile)
                 .with_target(verbosity > 2)
-                .with_filter(filter2),
+                .with_filter(logfile_filter),
         )
         .try_init();
 
