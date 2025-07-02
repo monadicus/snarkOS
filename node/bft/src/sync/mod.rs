@@ -86,9 +86,11 @@ pub struct Sync<N: Network> {
     sync_lock: Arc<TMutex<()>>,
     /// The latest block responses.
     ///
-    /// This is used in [`Sync::sync_storage_with_block()`] to accumulate blocks
-    /// whose addition to the ledger is deferred until certain checks pass.
+    /// This is used in [`Sync::sync_storage_with_block()`] to accumulate blocks  whose addition to the ledger is
+    /// deferred until certain checks pass.
     /// Blocks need to be processed in order, hence a BTree map.
+    ///
+    /// Whenever a new block is added to this map, BlockSync::set_sync_height needs to be called.
     latest_block_responses: Arc<TMutex<BTreeMap<u32, Block<N>>>>,
 }
 
@@ -656,15 +658,15 @@ impl<N: Network> Sync<N> {
         }
 
         // Fetch the latest block height.
-        let latest_block_height = self.ledger.latest_block_height();
+        let ledger_block_height = self.ledger.latest_block_height();
 
         // Insert the latest block response.
         latest_block_responses.insert(block.height(), block);
         // Clear the latest block responses of older blocks.
-        latest_block_responses.retain(|height, _| *height > latest_block_height);
+        latest_block_responses.retain(|height, _| *height > ledger_block_height);
 
         // Get a list of contiguous blocks from the latest block responses.
-        let contiguous_blocks: Vec<Block<N>> = (latest_block_height.saturating_add(1)..)
+        let contiguous_blocks: Vec<Block<N>> = (ledger_block_height.saturating_add(1)..)
             .take_while(|&k| latest_block_responses.contains_key(&k))
             .filter_map(|k| latest_block_responses.get(&k).cloned())
             .collect();
@@ -777,10 +779,7 @@ impl<N: Network> Sync<N> {
                 );
             }
 
-            // Mark the block height as processed in block_sync.
-            // Even if we did not add the block to the ledger yet, the associated request can safely
-            // be removed as the block is now stored in `latest_block_responses`.
-            self.block_sync.remove_block_response(next_block_height);
+            // Don't remove the response from BlockSync yet as we might fall back to non-BFT sync.
         }
 
         Ok(())
