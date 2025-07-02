@@ -21,11 +21,13 @@ use snarkvm::{
 };
 
 use indexmap::IndexMap;
-use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use serde_with::skip_serializing_none;
 use std::collections::HashMap;
+
+#[cfg(not(feature = "serial"))]
+use rayon::prelude::*;
 
 /// The `get_blocks` query object.
 #[derive(Deserialize, Serialize)]
@@ -134,7 +136,7 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
 
         // Prepare a closure for the blocking work.
         let get_json_blocks = move || -> Result<ErasedJson, RestError> {
-            let blocks = cfg_into_iter!((start_height..end_height))
+            let blocks = cfg_into_iter!(start_height..end_height)
                 .map(|height| rest.ledger.get_block(height))
                 .collect::<Result<Vec<_>, _>>()?;
 

@@ -14,8 +14,8 @@ keywords = [
 ]
 categories = [ "cryptography", "cryptography::cryptocurrencies", "os" ]
 license = "Apache-2.0"
-edition = "2021"
-rust-version = "1.83.0" # Attention - Change the MSRV in rust-toolchain and in .circleci/config.yml as well
+edition = "2024"
+rust-version = "1.88.0" # Attention - Change the MSRV in rust-toolchain and in .circleci/config.yml as well
 
 [workspace]
 members = [
@@ -167,6 +167,7 @@ locktick = [
   "snarkos-node-sync/locktick",
   "snarkos-node-tcp/locktick"
 ]
+serial = [ "snarkos-cli/serial" ]
 test_network = [ "snarkos-cli/test_network" ]
 
 [dependencies.anyhow]
