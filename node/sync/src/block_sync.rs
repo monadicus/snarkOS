@@ -336,15 +336,20 @@ impl<N: Network> BlockSync<N> {
             return false;
         };
 
-        let mut new_blocks = false;
-
         // Start with the current height.
         let mut current_height = self.ledger.latest_block_height();
+        let start_height = current_height;
         trace!("Try advancing with block responses (at block {current_height})");
 
-        while let Some(block) = self.peek_next_block(current_height + 1) {
+        loop {
+            let next_height = current_height + 1;
+
+            let Some(block) = self.peek_next_block(next_height) else {
+                break;
+            };
+
             // Ensure the block height matches.
-            if block.height() != current_height + 1 {
+            if block.height() != next_height {
                 warn!("Block height mismatch: expected {}, found {}", current_height + 1, block.height());
                 break;
             }
@@ -369,7 +374,7 @@ impl<N: Network> BlockSync<N> {
             };
 
             // Remove the block response.
-            self.remove_block_response(current_height + 1);
+            self.remove_block_response(next_height);
 
             // If advancing failed, exit the loop.
             if !advanced {
@@ -377,15 +382,15 @@ impl<N: Network> BlockSync<N> {
             }
 
             // Update the latest height.
-            new_blocks = true;
-            current_height = self.ledger.latest_block_height();
+            current_height = next_height;
         }
 
-        if new_blocks {
+        if current_height > start_height {
             self.set_sync_height(current_height);
+            true
+        } else {
+            false
         }
-
-        new_blocks
     }
 }
 
@@ -504,6 +509,13 @@ impl<N: Network> BlockSync<N> {
             trace!(
                 "Already reached the maximum number of outstanding block requests ({MAX_BLOCK_REQUESTS}). Will not issue more."
             );
+
+            // Print all block heights when we max out on requests.
+            trace!(
+                "Still waiting for the following block heights: {:?}",
+                self.requests.read().iter().map(|(h, _)| h).collect::<Vec<_>>()
+            );
+
             // Return an empty list of block requests.
             (Default::default(), Default::default())
         } else if let Some((sync_peers, min_common_ancestor)) = self.find_sync_peers_inner(current_height) {
@@ -529,6 +541,8 @@ impl<N: Network> BlockSync<N> {
         }
     }
 
+    /// Set the sync height to a the given value.
+    /// This is a no-op if `new_height` is equal or less to the current sync height.
     pub fn set_sync_height(&self, new_height: u32) {
         self.sync_state.write().set_sync_height(new_height);
     }
