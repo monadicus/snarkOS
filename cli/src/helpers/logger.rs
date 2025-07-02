@@ -15,6 +15,8 @@
 
 use crate::helpers::{DynamicFormatter, LogWriter};
 
+use anyhow::Result;
+
 use crossterm::tty::IsTty;
 use std::{
     fs::File,
@@ -30,6 +32,77 @@ use tracing_subscriber::{
     util::SubscriberInitExt,
 };
 
+fn parse_log_verbosity(verbosity: u8) -> Result<EnvFilter> {
+    // First, set default log verbosity
+    let default_log_str = match verbosity {
+        0 => "RUST_LOG=info",
+        1 => "RUST_LOG=debug",
+        2.. => "RUST_LOG=trace",
+    };
+    let filter = EnvFilter::from_str(default_log_str).unwrap();
+
+    // Now, set rules for specific crates.
+    let filter = if verbosity >= 2 {
+        filter.add_directive("snarkos_node_sync=trace".parse().unwrap())
+    } else {
+        filter.add_directive("snarkos_node_sync=debug".parse().unwrap())
+    };
+
+    let filter = if verbosity >= 3 {
+        filter
+            .add_directive("snarkos_node_bft=trace".parse().unwrap())
+            .add_directive("snarkos_node_bft::gateway=debug".parse().unwrap())
+    } else {
+        filter.add_directive("snarkos_node_bft=debug".parse().unwrap())
+    };
+
+    let filter = if verbosity >= 4 {
+        let filter = filter.add_directive("snarkos_node_bft::gateway=trace".parse().unwrap());
+
+        // At high log levels, also show warnings of third-party crates.
+        filter
+            .add_directive("mio=warn".parse().unwrap())
+            .add_directive("tokio_util=warn".parse().unwrap())
+            .add_directive("hyper=warn".parse().unwrap())
+            .add_directive("reqwest=warn".parse().unwrap())
+            .add_directive("want=warn".parse().unwrap())
+            .add_directive("h2=warn".parse().unwrap())
+            .add_directive("tower=warn".parse().unwrap())
+            .add_directive("axum=warn".parse().unwrap())
+    } else {
+        let filter = filter.add_directive("snarkos_node_bft::gateway=debug".parse().unwrap());
+
+        // Disable logs from third-party crates by default.
+        filter
+            .add_directive("mio=off".parse().unwrap())
+            .add_directive("tokio_util=off".parse().unwrap())
+            .add_directive("hyper=off".parse().unwrap())
+            .add_directive("reqwest=off".parse().unwrap())
+            .add_directive("want=off".parse().unwrap())
+            .add_directive("h2=off".parse().unwrap())
+            .add_directive("tower=off".parse().unwrap())
+            .add_directive("axum=off".parse().unwrap())
+    };
+
+    let filter = if verbosity >= 5 {
+        filter.add_directive("snarkos_node_router=trace".parse().unwrap())
+    } else {
+        filter.add_directive("snarkos_node_router=debug".parse().unwrap())
+    };
+
+    let filter = if verbosity >= 6 {
+        filter.add_directive("snarkos_node_tcp=trace".parse().unwrap())
+    } else {
+        filter.add_directive("snarkos_node_tcp=off".parse().unwrap())
+    };
+
+    Ok(filter)
+}
+
+fn parse_log_filter(filter_str: &str) -> Result<EnvFilter> {
+    EnvFilter::from_str(filter_str).map_err(|err| err.into())
+}
+
 /// Sets the log filter based on the given verbosity level.
 ///
 /// ```ignore
@@ -44,73 +117,13 @@ use tracing_subscriber::{
 /// ```
 pub fn initialize_logger<P: AsRef<Path>>(
     verbosity: u8,
+    log_filter: &Option<String>,
     nodisplay: bool,
     logfile: P,
     shutdown: Arc<AtomicBool>,
-) -> mpsc::Receiver<Vec<u8>> {
+) -> Result<mpsc::Receiver<Vec<u8>>> {
     let [stdout_filter, logfile_filter] = std::array::from_fn(|_| {
-        // First, set default log verbosity
-        let default_log_str = match verbosity {
-            0 => "RUST_LOG=info",
-            1 => "RUST_LOG=debug",
-            2.. => "RUST_LOG=trace",
-        };
-        let filter = EnvFilter::from_str(default_log_str).unwrap();
-
-        // Now, set rules for specific crates.
-        let filter = if verbosity >= 2 {
-            filter.add_directive("snarkos_node_sync=trace".parse().unwrap())
-        } else {
-            filter.add_directive("snarkos_node_sync=debug".parse().unwrap())
-        };
-
-        let filter = if verbosity >= 3 {
-            filter
-                .add_directive("snarkos_node_bft=trace".parse().unwrap())
-                .add_directive("snarkos_node_bft::gateway=debug".parse().unwrap())
-        } else {
-            filter.add_directive("snarkos_node_bft=debug".parse().unwrap())
-        };
-
-        let filter = if verbosity >= 4 {
-            let filter = filter.add_directive("snarkos_node_bft::gateway=trace".parse().unwrap());
-
-            // At high log levels, also show warnings of third-party crates.
-            filter
-                .add_directive("mio=warn".parse().unwrap())
-                .add_directive("tokio_util=warn".parse().unwrap())
-                .add_directive("hyper=warn".parse().unwrap())
-                .add_directive("reqwest=warn".parse().unwrap())
-                .add_directive("want=warn".parse().unwrap())
-                .add_directive("h2=warn".parse().unwrap())
-                .add_directive("tower=warn".parse().unwrap())
-                .add_directive("axum=warn".parse().unwrap())
-        } else {
-            let filter = filter.add_directive("snarkos_node_bft::gateway=debug".parse().unwrap());
-
-            // Disable logs from third-party crates by default.
-            filter
-                .add_directive("mio=off".parse().unwrap())
-                .add_directive("tokio_util=off".parse().unwrap())
-                .add_directive("hyper=off".parse().unwrap())
-                .add_directive("reqwest=off".parse().unwrap())
-                .add_directive("want=off".parse().unwrap())
-                .add_directive("h2=off".parse().unwrap())
-                .add_directive("tower=off".parse().unwrap())
-                .add_directive("axum=off".parse().unwrap())
-        };
-
-        let filter = if verbosity >= 5 {
-            filter.add_directive("snarkos_node_router=trace".parse().unwrap())
-        } else {
-            filter.add_directive("snarkos_node_router=debug".parse().unwrap())
-        };
-
-        if verbosity >= 6 {
-            filter.add_directive("snarkos_node_tcp=trace".parse().unwrap())
-        } else {
-            filter.add_directive("snarkos_node_tcp=off".parse().unwrap())
-        }
+        if let Some(filter) = log_filter { parse_log_filter(filter) } else { parse_log_verbosity(verbosity) }
     });
 
     // Create the directories tree for a logfile if it doesn't exist.
@@ -142,7 +155,7 @@ pub fn initialize_logger<P: AsRef<Path>>(
                 .with_writer(move || LogWriter::new(&log_sender))
                 .with_target(verbosity > 2)
                 .event_format(DynamicFormatter::new(shutdown))
-                .with_filter(stdout_filter),
+                .with_filter(stdout_filter?),
         )
         .with(
             // Add layer redirecting logs to the file
@@ -150,11 +163,11 @@ pub fn initialize_logger<P: AsRef<Path>>(
                 .with_ansi(false)
                 .with_writer(logfile)
                 .with_target(verbosity > 2)
-                .with_filter(logfile_filter),
+                .with_filter(logfile_filter?),
         )
         .try_init();
 
-    log_receiver
+    Ok(log_receiver)
 }
 
 /// Returns the welcome message as a string.
@@ -181,4 +194,18 @@ pub fn welcome_message() -> String {
     .bold();
     output += &"👋 Welcome to Aleo! We thank you for running a node and supporting privacy.\n".bold();
     output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn log_filter() {
+        let result = parse_log_filter("=");
+        assert!(result.is_err(), "must disallow invalid log filter");
+
+        let result = parse_log_filter("snarkos=trace");
+        assert!(result.is_ok(), "must allow valid log filter");
+    }
 }
