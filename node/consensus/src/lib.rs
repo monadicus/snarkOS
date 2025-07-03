@@ -54,10 +54,10 @@ use anyhow::Result;
 use colored::Colorize;
 use indexmap::IndexMap;
 #[cfg(feature = "locktick")]
-use locktick::parking_lot::Mutex;
+use locktick::parking_lot::{Mutex, RwLock};
 use lru::LruCache;
 #[cfg(not(feature = "locktick"))]
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use std::{collections::HashMap, future::Future, net::SocketAddr, num::NonZeroUsize, sync::Arc, time::Duration};
 use tokio::{sync::oneshot, task::JoinHandle};
 
@@ -91,7 +91,7 @@ pub struct Consensus<N: Network> {
     /// The unconfirmed solutions queue.
     solutions_queue: Arc<Mutex<LruCache<SolutionID<N>, Solution<N>>>>,
     /// The unconfirmed transactions queue.
-    transactions_queue: Arc<Mutex<TransactionsQueue<N>>>,
+    transactions_queue: Arc<RwLock<TransactionsQueue<N>>>,
     /// The recently-seen unconfirmed solutions.
     seen_solutions: Arc<Mutex<LruCache<SolutionID<N>, ()>>>,
     /// The recently-seen unconfirmed transactions.
@@ -159,7 +159,7 @@ impl<N: Network> Consensus<N> {
     }
 
     pub fn contains_transaction(&self, transaction_id: &N::TransactionID) -> bool {
-        self.transactions_queue.lock().contains(transaction_id)
+        self.transactions_queue.read().contains(transaction_id)
     }
 }
 
@@ -261,7 +261,7 @@ impl<N: Network> Consensus<N> {
     /// Returns the transactions in the inbound queue.
     pub fn inbound_transactions(&self) -> impl '_ + Iterator<Item = (N::TransactionID, Data<Transaction<N>>)> {
         // Return an iterator over the deployment and execution transactions in the inbound queue.
-        self.transactions_queue.lock().transactions().map(|(id, tx)| (id, Data::Object(tx)))
+        self.transactions_queue.read().transactions().map(|(id, tx)| (id, Data::Object(tx)))
     }
 }
 
@@ -377,7 +377,7 @@ impl<N: Network> Consensus<N> {
             }
             // Add the transaction to the memory pool.
             trace!("Received unconfirmed transaction '{}' in the queue", fmt_id(transaction_id));
-            self.transactions_queue.lock().insert(transaction_id, transaction)?;
+            self.transactions_queue.write().insert(transaction_id, transaction)?;
         }
 
         // Try to process the unconfirmed transactions in the memory pool.
@@ -397,7 +397,7 @@ impl<N: Network> Consensus<N> {
             // Determine the available capacity.
             let capacity = Primary::<N>::MAX_TRANSMISSIONS_TOLERANCE.saturating_sub(num_unconfirmed_transmissions);
             // Acquire the lock on the transactions queue.
-            let mut tx_queue = self.transactions_queue.lock();
+            let mut tx_queue = self.transactions_queue.write();
             // Determine the number of deployments to send.
             let num_deployments = tx_queue.deployments.len().min(capacity).min(MAX_DEPLOYMENTS_PER_INTERVAL);
             // Determine the number of executions to send.
