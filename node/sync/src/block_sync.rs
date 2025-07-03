@@ -1545,5 +1545,30 @@ mod tests {
         assert_eq!(new_sync.requests.read().len(), (locator_height - ledger_height) as usize);
     }
 
-    // TODO: duplicate responses, ensure fails.
+    #[test]
+    fn test_timed_out_block_request() {
+        let sync = sample_sync_at_height(0);
+        let peer_ip = sample_peer_ip(1);
+        let locators = sample_block_locators(10);
+        let block_hash = locators.get_hash(1);
+
+        sync.update_peer_locators(peer_ip, locators.clone()).unwrap();
+
+        let timestamp = Instant::now() - BLOCK_REQUEST_TIMEOUT - Duration::from_secs(1);
+
+        // Add a timed-out request
+        sync.requests
+            .write()
+            .insert(1, OutstandingRequest { request: (block_hash, None, [peer_ip].into()), timestamp });
+
+        assert_eq!(sync.requests.read().len(), 1);
+
+        // Remove timed out block requests.
+        let peers_to_ban = sync.remove_timed_out_block_requests();
+
+        assert_eq!(peers_to_ban.len(), 1);
+        assert_eq!(peers_to_ban.iter().next(), Some(&peer_ip));
+
+        assert!(sync.requests.read().is_empty());
+    }
 }

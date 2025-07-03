@@ -308,6 +308,7 @@ impl<N: Network> Sync<N> {
         // Do not attempt to sync if there are no blocks to sync.
         // This prevents redundant log messages and performing unnecessary computation.
         if !self.block_sync.can_block_sync() {
+            trace!("No blocks to sync");
             return false;
         }
 
