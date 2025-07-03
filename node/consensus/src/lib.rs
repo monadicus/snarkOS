@@ -15,6 +15,9 @@
 
 #![forbid(unsafe_code)]
 
+mod transactions_queue;
+use transactions_queue::TransactionsQueue;
+
 #[macro_use]
 extern crate tracing;
 
@@ -55,15 +58,7 @@ use locktick::parking_lot::Mutex;
 use lru::LruCache;
 #[cfg(not(feature = "locktick"))]
 use parking_lot::Mutex;
-use std::{
-    cmp::Reverse,
-    collections::{BTreeMap, HashMap, hash_map::Entry},
-    future::Future,
-    net::SocketAddr,
-    num::NonZeroUsize,
-    sync::Arc,
-    time::Duration,
-};
+use std::{collections::HashMap, future::Future, net::SocketAddr, num::NonZeroUsize, sync::Arc, time::Duration};
 use tokio::{sync::oneshot, task::JoinHandle};
 
 /// The capacity of the queue reserved for deployments.
@@ -78,99 +73,6 @@ const CAPACITY_FOR_SOLUTIONS: usize = 1 << 10;
 /// The **suggested** maximum number of deployments in each interval.
 /// Note: This is an inbound queue limit, not a Narwhal-enforced limit.
 const MAX_DEPLOYMENTS_PER_INTERVAL: usize = 1;
-
-/// Helper struct to track incoming transactions.
-struct TransactionsQueue<N: Network> {
-    pub deployments: LruCache<N::TransactionID, Transaction<N>>,
-    pub executions: LruCache<N::TransactionID, Transaction<N>>,
-}
-
-impl<N: Network> Default for TransactionsQueue<N> {
-    fn default() -> Self {
-        Self {
-            deployments: LruCache::new(NonZeroUsize::new(CAPACITY_FOR_DEPLOYMENTS).unwrap()),
-            executions: LruCache::new(NonZeroUsize::new(CAPACITY_FOR_EXECUTIONS).unwrap()),
-        }
-    }
-}
-
-impl<N: Network> TransactionsQueue<N> {
-    fn contains(&self, transaction_id: &N::TransactionID) -> bool {
-        self.executions.contains(transaction_id) || self.deployments.contains(transaction_id)
-    }
-
-    fn insert(&mut self, transaction_id: N::TransactionID, transaction: Transaction<N>) {
-        if transaction.is_execute() {
-            self.executions.put(transaction_id, transaction);
-        } else {
-            self.deployments.put(transaction_id, transaction);
-        }
-    }
-}
-
-struct PriorityQueueInner<N: Network> {
-    /// A counter to ensure fifo ordering for transmissions with the same fee.
-    counter: u64,
-    /// A map of transmissions ordered by fee and by fifo sequence.
-    transaction_ids: BTreeMap<(Reverse<U64<N>>, u64), N::TransactionID>,
-    /// A map of transmission IDs to transmissions.
-    transactions: HashMap<N::TransactionID, Transaction<N>>,
-}
-
-impl<N: Network> Default for PriorityQueueInner<N> {
-    /// Initializes a new instance of the priority queue.
-    fn default() -> Self {
-        Self { counter: Default::default(), transaction_ids: Default::default(), transactions: Default::default() }
-    }
-}
-
-impl<N: Network> PriorityQueueInner<N> {
-    fn len(&self) -> usize {
-        self.transactions.len()
-    }
-
-    fn insert(&mut self, transaction_id: N::TransactionID, transaction: Transaction<N>, fee: U64<N>) {
-        if let Entry::Vacant(entry) = self.transactions.entry(transaction_id) {
-            // Insert the transaction into the map.
-            entry.insert(transaction);
-            // Sort by fee (highest first) and counter (fifo).
-            self.transaction_ids.insert((Reverse(fee), self.counter), transaction_id);
-            // Increment the counter.
-            self.counter += 1;
-        }
-    }
-
-    fn pop(&mut self) -> Option<(N::TransactionID, Transaction<N>)> {
-        let (_, transaction_id) = self.transaction_ids.pop_first()?;
-        self.transactions.remove(&transaction_id).map(|transaction| (transaction_id, transaction))
-    }
-}
-
-struct PriorityQueue<N: Network> {
-    deployments: PriorityQueueInner<N>,
-    executions: PriorityQueueInner<N>,
-}
-
-impl<N: Network> Default for PriorityQueue<N> {
-    fn default() -> Self {
-        Self { deployments: Default::default(), executions: Default::default() }
-    }
-}
-
-impl<N: Network> PriorityQueue<N> {
-    fn contains(&self, transaction_id: &N::TransactionID) -> bool {
-        self.executions.transactions.contains_key(transaction_id)
-            || self.deployments.transactions.contains_key(transaction_id)
-    }
-
-    fn insert(&mut self, transaction_id: N::TransactionID, transaction: Transaction<N>, fee: U64<N>) {
-        if transaction.is_execute() {
-            self.executions.insert(transaction_id, transaction, fee)
-        } else {
-            self.deployments.insert(transaction_id, transaction, fee)
-        }
-    }
-}
 
 /// Wrapper around `BFT` that adds additional functionality, such as a mempool.
 ///
@@ -190,8 +92,6 @@ pub struct Consensus<N: Network> {
     solutions_queue: Arc<Mutex<LruCache<SolutionID<N>, Solution<N>>>>,
     /// The unconfirmed transactions queue.
     transactions_queue: Arc<Mutex<TransactionsQueue<N>>>,
-    /// The unconfirmed queue for transactions with priority fees.
-    priority_queue: Arc<Mutex<PriorityQueue<N>>>,
     /// The recently-seen unconfirmed solutions.
     seen_solutions: Arc<Mutex<LruCache<SolutionID<N>, ()>>>,
     /// The recently-seen unconfirmed transactions.
@@ -233,7 +133,6 @@ impl<N: Network> Consensus<N> {
             primary_sender,
             solutions_queue: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(CAPACITY_FOR_SOLUTIONS).unwrap()))),
             transactions_queue: Default::default(),
-            priority_queue: Default::default(),
             seen_solutions: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(1 << 16).unwrap()))),
             seen_transactions: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(1 << 16).unwrap()))),
             #[cfg(feature = "metrics")]
@@ -260,18 +159,7 @@ impl<N: Network> Consensus<N> {
     }
 
     pub fn contains_transaction(&self, transaction_id: &N::TransactionID) -> bool {
-        self.transactions_queue.lock().contains(transaction_id) || self.priority_queue.lock().contains(transaction_id)
-    }
-
-    pub fn insert_transaction(&self, transaction_id: N::TransactionID, transaction: Transaction<N>) -> Result<()> {
-        let priority_fee = transaction.priority_fee_amount()?;
-        if !priority_fee.is_zero() {
-            self.priority_queue.lock().insert(transaction_id, transaction, priority_fee)
-        } else {
-            self.transactions_queue.lock().insert(transaction_id, transaction)
-        };
-
-        Ok(())
+        self.transactions_queue.lock().contains(transaction_id)
     }
 }
 
@@ -372,18 +260,8 @@ impl<N: Network> Consensus<N> {
 
     /// Returns the transactions in the inbound queue.
     pub fn inbound_transactions(&self) -> impl '_ + Iterator<Item = (N::TransactionID, Data<Transaction<N>>)> {
-        // Acquire the lock on the transactions queue.
-        let tx_queue = self.transactions_queue.lock();
-        let priority_queue = self.priority_queue.lock();
         // Return an iterator over the deployment and execution transactions in the inbound queue.
-        tx_queue
-            .deployments
-            .clone()
-            .into_iter()
-            .chain(tx_queue.executions.clone())
-            .chain(priority_queue.deployments.transactions.clone())
-            .chain(priority_queue.executions.transactions.clone())
-            .map(|(id, tx)| (id, Data::Object(tx)))
+        self.transactions_queue.lock().transactions().map(|(id, tx)| (id, Data::Object(tx)))
     }
 }
 
@@ -499,7 +377,7 @@ impl<N: Network> Consensus<N> {
             }
             // Add the transaction to the memory pool.
             trace!("Received unconfirmed transaction '{}' in the queue", fmt_id(transaction_id));
-            self.insert_transaction(transaction_id, transaction)?;
+            self.transactions_queue.lock().insert(transaction_id, transaction)?;
         }
 
         // Try to process the unconfirmed transactions in the memory pool.
@@ -520,33 +398,21 @@ impl<N: Network> Consensus<N> {
             let capacity = Primary::<N>::MAX_TRANSMISSIONS_TOLERANCE.saturating_sub(num_unconfirmed_transmissions);
             // Acquire the lock on the transactions queue.
             let mut tx_queue = self.transactions_queue.lock();
-            // Acquire the lock on the priority queue.
-            let mut priority_queue = self.priority_queue.lock();
             // Determine the number of deployments to send.
-            let num_deployments = priority_queue
-                .deployments
-                .len()
-                .saturating_add(tx_queue.deployments.len())
-                .min(capacity)
-                .min(MAX_DEPLOYMENTS_PER_INTERVAL);
+            let num_deployments = tx_queue.deployments.len().min(capacity).min(MAX_DEPLOYMENTS_PER_INTERVAL);
             // Determine the number of executions to send.
-            let num_executions = priority_queue
-                .executions
-                .len()
-                .saturating_add(tx_queue.executions.len())
-                .min(capacity.saturating_sub(num_deployments));
+            let num_executions = tx_queue.executions.len().min(capacity.saturating_sub(num_deployments));
             // Create an iterator which will select interleaved deployments and executions within the capacity.
             // Note: interleaving ensures we will never have consecutive invalid deployments blocking the queue.
             let selector_iter = (0..num_deployments).map(|_| true).interleave((0..num_executions).map(|_| false));
             // Drain the transactions from the queue, interleaving deployments and executions.
             selector_iter
-                .filter_map(|select_deployment| {
-                    if select_deployment {
-                        priority_queue.deployments.pop().or_else(|| tx_queue.deployments.pop_lru()).map(|(_, tx)| tx)
-                    } else {
-                        priority_queue.executions.pop().or_else(|| tx_queue.executions.pop_lru()).map(|(_, tx)| tx)
-                    }
-                })
+                .filter_map(
+                    |select_deployment| {
+                        if select_deployment { tx_queue.deployments.pop() } else { tx_queue.executions.pop() }
+                    },
+                )
+                .map(|(_, tx)| tx)
                 .collect_vec()
         };
         // Iterate over the transactions.
