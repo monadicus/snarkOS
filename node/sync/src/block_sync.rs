@@ -504,12 +504,13 @@ impl<N: Network> BlockSync<N> {
         let num_outstanding_requests = self.requests.read().iter().filter(|(_, e)| !e.sync_ips().is_empty()).count();
 
         // Ensure to not exceed the maximum number of outstanding block requests.
-        let max_requests = MAX_BLOCK_REQUESTS.saturating_sub(num_outstanding_requests);
+        let max_blocks_to_request = MAX_BLOCK_REQUESTS * (DataBlocks::<N>::MAXIMUM_NUMBER_OF_BLOCKS as usize);
+        let max_new_blocks_to_request = max_blocks_to_request.saturating_sub(num_outstanding_requests);
 
         // Prepare the block requests.
-        if max_requests == 0 {
+        if max_new_blocks_to_request == 0 {
             trace!(
-                "Already reached the maximum number of outstanding block requests ({MAX_BLOCK_REQUESTS}). Will not issue more."
+                "Already reached the maximum number of outstanding blocks ({max_blocks_to_request}). Will not issue more."
             );
 
             // Print more information when we max out on requests.
@@ -538,7 +539,12 @@ impl<N: Network> BlockSync<N> {
             state.set_greatest_peer_height(greatest_peer_height);
             // Return the list of block requests.
             (
-                self.construct_requests(&sync_peers, state.get_sync_height(), min_common_ancestor, max_requests),
+                self.construct_requests(
+                    &sync_peers,
+                    state.get_sync_height(),
+                    min_common_ancestor,
+                    max_new_blocks_to_request,
+                ),
                 sync_peers,
             )
         } else {
@@ -812,6 +818,7 @@ impl<N: Network> BlockSync<N> {
 
         // Case 0: If there are no candidate peers, return `None`.
         if candidate_locators.is_empty() {
+            trace!("Found no sync peers with height greater {current_height}");
             return None;
         }
 
@@ -892,7 +899,9 @@ impl<N: Network> BlockSync<N> {
 
         for height in start_height..end_height {
             // Ensure the current height is not in the ledger or already requested.
-            if self.check_block_request(height).is_err() {
+            if let Err(err) = self.check_block_request(height) {
+                trace!("Failed to issue new request for height {height}: {err}");
+
                 // If the sequence of block requests is interrupted, then return early.
                 // Otherwise, continue until the first start height that is new.
                 match request_hashes.is_empty() {

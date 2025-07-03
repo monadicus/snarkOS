@@ -288,6 +288,10 @@ impl<N: Network> Sync<N> {
     /// This is called periodically by a tokio background task spawned in `Self::run`.
     /// Some unit tests also call this function directly to manually trigger block synchronization.
     pub(crate) async fn try_block_sync(&self) -> bool {
+        // For sanity, check that sync height is never below ledger height.
+        // (if the ledger height is lower or equal to the current sync height, this is a noop)
+        self.block_sync.set_sync_height(self.ledger.latest_block_height());
+
         // Check if any existing requests can be removed.
         // We should do this even if we cannot block sync, to ensure
         // there are no dangling block requests.

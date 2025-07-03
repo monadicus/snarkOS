@@ -283,8 +283,12 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
         // Sleep briefly to avoid triggering spam detection.
         let _ = timeout(Self::SYNC_INTERVAL, self.sync.wait_for_update()).await;
 
+        // For sanity, check that sync height is never below ledger height.
+        // (if the ledger height is lower or equal to the current sync height, this is a noop)
+        self.sync.set_sync_height(self.ledger.latest_height());
+
         // Do not attempt to sync if there are not blocks to sync.
-        // This prevents redudant log messages and performing unnecessary computation.
+        // This prevents redundant log messages and performing unnecessary computation.
         if !self.sync.can_block_sync() {
             return;
         }
