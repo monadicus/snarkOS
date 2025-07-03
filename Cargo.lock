@@ -3988,7 +3988,6 @@ dependencies = [
  "snarkos-node-consensus",
  "snarkos-node-router",
  "snarkvm",
- "snarkvm-synthesizer",
  "time",
  "tokio",
  "tower-http",

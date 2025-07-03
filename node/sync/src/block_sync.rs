@@ -501,8 +501,10 @@ impl<N: Network> BlockSync<N> {
         let mut state = self.sync_state.write();
         let current_height = state.get_sync_height();
 
-        // Ensure to not exceed the maximum number of block requests.
-        let max_requests = MAX_BLOCK_REQUESTS.saturating_sub(self.requests.read().len());
+        let num_outstanding_requests = self.requests.read().iter().filter(|(_, e)| !e.sync_ips().is_empty()).count();
+
+        // Ensure to not exceed the maximum number of outstanding block requests.
+        let max_requests = MAX_BLOCK_REQUESTS.saturating_sub(num_outstanding_requests);
 
         // Prepare the block requests.
         if max_requests == 0 {
@@ -510,12 +512,23 @@ impl<N: Network> BlockSync<N> {
                 "Already reached the maximum number of outstanding block requests ({MAX_BLOCK_REQUESTS}). Will not issue more."
             );
 
-            // Print all block heights when we max out on requests.
+            // Print more information when we max out on requests.
             trace!(
-                "Still waiting for the following block heights: {:?}",
-                self.requests.read().iter().map(|(h, _)| h).collect::<Vec<_>>()
+                "The following requests are complete but not processed yet: {:?}",
+                self.requests
+                    .read()
+                    .iter()
+                    .filter_map(|(h, e)| if e.sync_ips().is_empty() { Some(h) } else { None })
+                    .collect::<Vec<_>>()
             );
-
+            trace!(
+                "The following requests are still outstanding: {:?}",
+                self.requests
+                    .read()
+                    .iter()
+                    .filter_map(|(h, e)| if !e.sync_ips().is_empty() { Some(h) } else { None })
+                    .collect::<Vec<_>>()
+            );
             // Return an empty list of block requests.
             (Default::default(), Default::default())
         } else if let Some((sync_peers, min_common_ancestor)) = self.find_sync_peers_inner(current_height) {
@@ -524,7 +537,10 @@ impl<N: Network> BlockSync<N> {
             // Update the state of `is_block_synced` for the sync module.
             state.set_greatest_peer_height(greatest_peer_height);
             // Return the list of block requests.
-            (self.construct_requests(&sync_peers, min_common_ancestor, max_requests), sync_peers)
+            (
+                self.construct_requests(&sync_peers, state.get_sync_height(), min_common_ancestor, max_requests),
+                sync_peers,
+            )
         } else {
             // Update `is_block_synced` if there are no pending requests or responses.
             if self.requests.read().is_empty() && self.responses.read().is_empty() {
@@ -851,19 +867,20 @@ impl<N: Network> BlockSync<N> {
     fn construct_requests(
         &self,
         sync_peers: &IndexMap<SocketAddr, BlockLocators<N>>,
+        current_height: u32,
         min_common_ancestor: u32,
         max_requests: usize,
     ) -> Vec<(u32, PrepareSyncRequest<N>)> {
-        // Retrieve the latest ledger height.
-        let latest_ledger_height = self.ledger.latest_block_height();
-
         // If the minimum common ancestor is at or below the latest ledger height, then return early.
-        if min_common_ancestor <= latest_ledger_height {
+        if min_common_ancestor <= current_height {
+            trace!(
+                "No request to construct. Sync height is {current_height}, but minimum common block locator ancestor is only {min_common_ancestor}"
+            );
             return Default::default();
         }
 
         // Compute the start height for the block request.
-        let start_height = latest_ledger_height + 1;
+        let start_height = current_height + 1;
         // Compute the end height for the block request.
         let max_blocks_to_request = max_requests as u32 * DataBlocks::<N>::MAXIMUM_NUMBER_OF_BLOCKS as u32;
         let end_height = (min_common_ancestor + 1).min(start_height + max_blocks_to_request);
