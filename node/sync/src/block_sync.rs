@@ -175,8 +175,15 @@ impl<N: Network> BlockSync<N> {
     }
 
     /// Returns the greatest block height of any connected peer.
+    #[inline]
     pub fn greatest_peer_block_height(&self) -> Option<u32> {
         self.sync_state.read().get_greatest_peer_height()
+    }
+
+    /// Returns the number of blocks we requested from peers, but have not received yet.
+    #[inline]
+    pub fn num_outstanding_block_requests(&self) -> usize {
+        self.requests.read().iter().filter(|(_, e)| !e.sync_ips().is_empty()).count()
     }
 }
 
@@ -270,12 +277,44 @@ impl<N: Network> BlockSync<N> {
 
         // Construct the message.
         let message = C::prepare_block_request(start_height, end_height);
+
         // Send the message to the peers.
+        let mut tasks = Vec::with_capacity(sync_ips.len());
         for sync_ip in sync_ips {
             let sender = communication.send(sync_ip, message.clone()).await;
-            // If the send fails for any peer, remove the block request from the sync pool.
-            if sender.is_none() {
-                warn!("Failed to send block request to peer '{sync_ip}'");
+            let task = tokio::spawn(async move {
+                // Ensure the request is sent successfully.
+                match sender {
+                    Some(sender) => {
+                        if let Err(err) = sender.await {
+                            warn!("Failed to send block request to peer '{sync_ip}': {err}");
+                            false
+                        } else {
+                            true
+                        }
+                    }
+                    None => {
+                        warn!("Failed to send block request to peer '{sync_ip}': no such peer");
+                        false
+                    }
+                }
+            });
+
+            tasks.push(task);
+        }
+
+        // Wait for all sends to finish at the same time.
+        for result in futures::future::join_all(tasks).await {
+            let success = match result {
+                Ok(success) => success,
+                Err(err) => {
+                    error!("tokio join error: {err}");
+                    false
+                }
+            };
+
+            // If sending fails for any peer, remove the block request from the sync pool.
+            if !success {
                 // Remove the entire block request from the sync pool.
                 for height in start_height..end_height {
                     self.remove_block_request(height);
@@ -501,11 +540,10 @@ impl<N: Network> BlockSync<N> {
         let mut state = self.sync_state.write();
         let current_height = state.get_sync_height();
 
-        let num_outstanding_requests = self.requests.read().iter().filter(|(_, e)| !e.sync_ips().is_empty()).count();
-
         // Ensure to not exceed the maximum number of outstanding block requests.
-        let max_blocks_to_request = MAX_BLOCK_REQUESTS * (DataBlocks::<N>::MAXIMUM_NUMBER_OF_BLOCKS as usize);
-        let max_new_blocks_to_request = max_blocks_to_request.saturating_sub(num_outstanding_requests);
+        let max_blocks_to_request = (MAX_BLOCK_REQUESTS as u32) * (DataBlocks::<N>::MAXIMUM_NUMBER_OF_BLOCKS as u32);
+        let max_new_blocks_to_request =
+            max_blocks_to_request.saturating_sub(self.num_outstanding_block_requests() as u32);
 
         // Prepare the block requests.
         if max_new_blocks_to_request == 0 {
@@ -539,12 +577,7 @@ impl<N: Network> BlockSync<N> {
             state.set_greatest_peer_height(greatest_peer_height);
             // Return the list of block requests.
             (
-                self.construct_requests(
-                    &sync_peers,
-                    state.get_sync_height(),
-                    min_common_ancestor,
-                    max_new_blocks_to_request,
-                ),
+                self.construct_requests(&sync_peers, current_height, min_common_ancestor, max_new_blocks_to_request),
                 sync_peers,
             )
         } else {
@@ -874,22 +907,35 @@ impl<N: Network> BlockSync<N> {
     fn construct_requests(
         &self,
         sync_peers: &IndexMap<SocketAddr, BlockLocators<N>>,
-        current_height: u32,
+        sync_height: u32,
         min_common_ancestor: u32,
-        max_requests: usize,
+        max_blocks_to_request: u32,
     ) -> Vec<(u32, PrepareSyncRequest<N>)> {
+        // Compute the start height for the block requests.
+        let start_height = {
+            let requests = self.requests.read();
+            let mut start_height = sync_height + 1;
+
+            loop {
+                if requests.contains_key(&start_height) {
+                    start_height += 1;
+                } else {
+                    break;
+                }
+            }
+
+            start_height
+        };
+
         // If the minimum common ancestor is at or below the latest ledger height, then return early.
-        if min_common_ancestor <= current_height {
+        if min_common_ancestor <= start_height {
             trace!(
-                "No request to construct. Sync height is {current_height}, but minimum common block locator ancestor is only {min_common_ancestor}"
+                "No request to construct. Height for the next block request is {start_height}, but minimum common block locator ancestor is only {min_common_ancestor} (sync_height={sync_height})"
             );
             return Default::default();
         }
 
-        // Compute the start height for the block request.
-        let start_height = current_height + 1;
         // Compute the end height for the block request.
-        let max_blocks_to_request = max_requests as u32 * DataBlocks::<N>::MAXIMUM_NUMBER_OF_BLOCKS as u32;
         let end_height = (min_common_ancestor + 1).min(start_height + max_blocks_to_request);
 
         // Construct the block hashes to request.

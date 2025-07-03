@@ -71,6 +71,10 @@ impl Outbound<Network> for HeartbeatTest {
     fn num_blocks_behind(&self) -> Option<u32> {
         None
     }
+
+    fn num_outstanding_block_requests(&self) -> usize {
+        0
+    }
 }
 
 impl Heartbeat<Network> for HeartbeatTest {

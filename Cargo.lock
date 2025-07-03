@@ -4054,6 +4054,7 @@ name = "snarkos-node-sync"
 version = "3.8.0"
 dependencies = [
  "anyhow",
+ "futures",
  "indexmap 2.10.0",
  "itertools 0.14.0",
  "locktick",

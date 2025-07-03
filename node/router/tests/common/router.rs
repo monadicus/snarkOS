@@ -176,6 +176,11 @@ impl<N: Network> Outbound<N> for TestRouter<N> {
     fn greatest_peer_block_height(&self) -> Option<u32> {
         None
     }
+
+    /// The number of blocks we requested but have not received yet from peers.
+    fn num_outstanding_block_requests(&self) -> usize {
+        0
+    }
 }
 
 #[async_trait]
