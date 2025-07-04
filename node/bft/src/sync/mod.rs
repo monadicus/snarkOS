@@ -354,6 +354,11 @@ impl<N: Network> Sync<N> {
     fn remove_peer(&self, peer_ip: SocketAddr) {
         self.block_sync.remove_peer(&peer_ip);
     }
+
+    #[cfg(test)]
+    pub fn test_update_peer_locators(&self, peer_ip: SocketAddr, locators: BlockLocators<N>) -> Result<()> {
+        self.update_peer_locators(peer_ip, locators)
+    }
 }
 
 // Methods to manage storage.

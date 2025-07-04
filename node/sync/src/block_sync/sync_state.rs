@@ -35,7 +35,13 @@ pub(super) struct SyncState {
 
 impl Default for SyncState {
     fn default() -> Self {
-        Self { sync_height: 0, greatest_peer_height: None, is_synced: false, last_change: Instant::now() }
+        Self {
+            sync_height: 0,
+            greatest_peer_height: None,
+            // Start as "synced" by default. Otherwise, validators will never propose certificates.
+            is_synced: true,
+            last_change: Instant::now(),
+        }
     }
 }
 
@@ -111,7 +117,10 @@ impl SyncState {
 
         let num_blocks_behind = self.num_blocks_behind();
         let old_sync_val = self.is_synced;
-        let new_sync_val = num_blocks_behind.is_some_and(|num| num <= MAX_BLOCKS_BEHIND);
+
+        // If there are no block locators, we consider ourselves synced.
+        // Otherwise, validators will never propose certificates.
+        let new_sync_val = num_blocks_behind.is_none_or(|num| num <= MAX_BLOCKS_BEHIND);
 
         // Print a message if the state changed
         if new_sync_val != old_sync_val {
