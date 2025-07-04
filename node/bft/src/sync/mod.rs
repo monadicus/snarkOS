@@ -87,8 +87,8 @@ pub struct Sync<N: Network> {
     sync_lock: Arc<TMutex<()>>,
     /// The latest block responses.
     ///
-    /// This is used in [`Sync::sync_storage_with_block()`] to accumulate blocks  whose addition to the ledger is
-    /// deferred until certain checks pass.
+    /// This is used in [`Sync::sync_storage_with_block()`] to accumulate blocks
+    /// whose addition to the ledger is deferred until certain checks pass.
     /// Blocks need to be processed in order, hence a BTree map.
     ///
     /// Whenever a new block is added to this map, BlockSync::set_sync_height needs to be called.
@@ -746,7 +746,7 @@ impl<N: Network> Sync<N> {
         let ledger_block_height = self.ledger.latest_block_height();
 
         // Clear any older pending blocks.
-        // TODO(kaimast): ensure there are not dangling block requests
+        // TODO(kaimast): ensure there are no dangling block requests
         while let Some(pending_block) = pending_blocks.front() {
             if pending_block.height() > ledger_block_height {
                 break;
