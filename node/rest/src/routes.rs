@@ -57,6 +57,8 @@ struct SyncStatus<'a> {
     /// The greatest known block height of a peer.
     /// None, if no peers are connected yet.
     p2p_height: Option<u32>,
+    /// The number of outstanding p2p sync requests.
+    outstanding_block_requests: usize,
 }
 
 impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
@@ -163,6 +165,7 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
             is_synced: rest.routing.is_block_synced(),
             ledger_height: rest.ledger.latest_height(),
             p2p_height: rest.routing.greatest_peer_block_height(),
+            outstanding_block_requests: rest.routing.num_outstanding_block_requests(),
         }))
     }
 

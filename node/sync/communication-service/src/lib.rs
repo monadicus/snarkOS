@@ -21,7 +21,7 @@ extern crate async_trait;
 use std::{io, net::SocketAddr};
 use tokio::sync::oneshot;
 
-/// Abstract communcation service.
+/// Abstract communication service.
 ///
 /// Implemented by `Gateway` and `Client`.
 #[async_trait]

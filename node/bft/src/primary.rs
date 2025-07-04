@@ -1950,7 +1950,7 @@ mod tests {
     use super::*;
     use snarkos_node_bft_ledger_service::MockLedgerService;
     use snarkos_node_bft_storage_service::BFTMemoryService;
-    use snarkos_node_sync::BlockSync;
+    use snarkos_node_sync::{BlockSync, locators::test_helpers::sample_block_locators};
     use snarkvm::{
         ledger::{
             committee::{Committee, MIN_VALIDATOR_STAKE},
@@ -2415,7 +2415,10 @@ mod tests {
 
         // The author must be known to resolver to pass propose checks.
         primary.gateway.resolver().insert_peer(peer_ip, peer_ip, peer_account.1.address());
-        // The primary must be considered synced.
+
+        // The primary will only consider itself synced if we received
+        // block locators from a peer.
+        primary.sync.test_update_peer_locators(peer_ip, sample_block_locators(0)).unwrap();
         primary.sync.try_block_sync().await;
 
         // Try to process the batch proposal from the peer, should succeed.
@@ -2452,7 +2455,10 @@ mod tests {
         // The author must be known to resolver to pass propose checks.
         primary.gateway.resolver().insert_peer(peer_ip, peer_ip, peer_account.1.address());
 
-        // Try to process the batch proposal from the peer, should fail.
+        // Add a high block locator to indicate we are not synced.
+        primary.sync.test_update_peer_locators(peer_ip, sample_block_locators(20)).unwrap();
+
+        // Try to process the batch proposal from the peer, should fail
         assert!(
             primary.process_batch_propose_from_peer(peer_ip, (*proposal.batch_header()).clone().into()).await.is_err()
         );
@@ -2488,7 +2494,10 @@ mod tests {
 
         // The author must be known to resolver to pass propose checks.
         primary.gateway.resolver().insert_peer(peer_ip, peer_ip, peer_account.1.address());
-        // The primary must be considered synced.
+
+        // The primary will only consider itself synced if we received
+        // block locators from a peer.
+        primary.sync.test_update_peer_locators(peer_ip, sample_block_locators(0)).unwrap();
         primary.sync.try_block_sync().await;
 
         // Try to process the batch proposal from the peer, should succeed.
@@ -2672,8 +2681,12 @@ mod tests {
         primary_v4.gateway.resolver().insert_peer(peer_ip, peer_ip, peer_account.1.address());
         primary_v5.gateway.resolver().insert_peer(peer_ip, peer_ip, peer_account.1.address());
 
-        // The primary must be considered synced.
+        // primary v4 must be considered synced.
+        primary_v4.sync.test_update_peer_locators(peer_ip, sample_block_locators(0)).unwrap();
         primary_v4.sync.try_block_sync().await;
+
+        // primary v5 must be ocnsidered synced.
+        primary_v5.sync.test_update_peer_locators(peer_ip, sample_block_locators(0)).unwrap();
         primary_v5.sync.try_block_sync().await;
 
         // Check the spend limit is enforced from V5 onwards.

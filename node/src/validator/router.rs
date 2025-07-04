@@ -157,6 +157,11 @@ impl<N: Network, C: ConsensusStorage<N>> Outbound<N> for Validator<N, C> {
     fn greatest_peer_block_height(&self) -> Option<u32> {
         self.sync.greatest_peer_block_height()
     }
+
+    /// The number of blocks we requested but have not received yet from peers.
+    fn num_outstanding_block_requests(&self) -> usize {
+        self.sync.num_outstanding_block_requests()
+    }
 }
 
 #[async_trait]

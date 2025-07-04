@@ -404,7 +404,7 @@ impl<N: Network> Consensus<N> {
         self.process_unconfirmed_transactions().await
     }
 
-    /// Processes unconfirmed transctions in the mempool, and passes them to the BFT layer
+    /// Processes unconfirmed transactions in the mempool, and passes them to the BFT layer
     /// (if sufficient space is available).
     async fn process_unconfirmed_transactions(&self) -> Result<()> {
         // If the memory pool of this node is full, return early.
@@ -516,7 +516,7 @@ impl<N: Network> Consensus<N> {
         callback.send(result).ok();
     }
 
-    /// Attempts to advance the ledger to the next block, and upadtes the metrics (if enabled) accordingly.
+    /// Attempts to advance the ledger to the next block, and updates the metrics (if enabled) accordingly.
     fn try_advance_to_next_block(
         &self,
         subdag: Subdag<N>,

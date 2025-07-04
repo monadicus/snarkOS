@@ -1215,7 +1215,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "778e2ac28f6c47af28e4907f13ffd1e1ddbd400980a9abd7c8df189bf578a5ad"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4005,7 +4005,6 @@ dependencies = [
  "snarkos-node-consensus",
  "snarkos-node-router",
  "snarkvm",
- "snarkvm-synthesizer",
  "time",
  "tokio",
  "tower-http",
@@ -4066,6 +4065,7 @@ name = "snarkos-node-sync"
 version = "3.8.0"
 dependencies = [
  "anyhow",
+ "futures",
  "indexmap 2.10.0",
  "itertools 0.14.0",
  "locktick",
@@ -6176,15 +6176,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e38bc4d79ed67fd075bcc251a1c39b32a1776bbe92e5bef1f0bf1f8c531853b"
 dependencies = [
  "windows-targets 0.52.6",
-]
-
-[[package]]
-name = "windows-sys"
-version = "0.60.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f2f500e4d28234f72040990ec9d39e3a6b950f9f22d3dba18416c35882612bcb"
-dependencies = [
- "windows-targets 0.53.2",
 ]
 
 [[package]]

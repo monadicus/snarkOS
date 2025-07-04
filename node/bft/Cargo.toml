@@ -64,7 +64,7 @@ version = "1"
 version = "2"
 
 [dependencies.futures]
-version = "0.3.30"
+workspace = true
 features = [ "thread-pool" ]
 
 [dependencies.indexmap]
@@ -186,6 +186,10 @@ version = "1"
 
 [dev-dependencies.snarkos-node-bft]
 path = "."
+features = [ "test" ]
+
+[dev-dependencies.snarkos-node-sync]
+path = "../sync"
 features = [ "test" ]
 
 [dev-dependencies.test-strategy]
