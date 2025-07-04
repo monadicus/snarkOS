@@ -58,8 +58,11 @@ use locktick::parking_lot::{Mutex, RwLock};
 use lru::LruCache;
 #[cfg(not(feature = "locktick"))]
 use parking_lot::{Mutex, RwLock};
-use std::{collections::HashMap, future::Future, net::SocketAddr, num::NonZeroUsize, sync::Arc, time::Duration};
+use std::{future::Future, net::SocketAddr, num::NonZeroUsize, sync::Arc, time::Duration};
 use tokio::{sync::oneshot, task::JoinHandle};
+
+#[cfg(feature = "metrics")]
+use std::collections::HashMap;
 
 /// The capacity of the queue reserved for deployments.
 /// Note: This is an inbound queue capacity, not a Narwhal-enforced capacity.
@@ -377,7 +380,8 @@ impl<N: Network> Consensus<N> {
             }
             // Add the transaction to the memory pool.
             trace!("Received unconfirmed transaction '{}' in the queue", fmt_id(transaction_id));
-            self.transactions_queue.write().insert(transaction_id, transaction)?;
+            let priority_fee = transaction.priority_fee_amount()?;
+            self.transactions_queue.write().insert(transaction_id, transaction, priority_fee)?;
         }
 
         // Try to process the unconfirmed transactions in the memory pool.

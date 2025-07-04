@@ -44,11 +44,16 @@ impl<N: Network> TransactionsQueue<N> {
         self.executions.contains(transaction_id) || self.deployments.contains(transaction_id)
     }
 
-    pub fn insert(&mut self, transaction_id: N::TransactionID, transaction: Transaction<N>) -> Result<()> {
+    pub fn insert(
+        &mut self,
+        transaction_id: N::TransactionID,
+        transaction: Transaction<N>,
+        priority_fee: U64<N>,
+    ) -> Result<()> {
         if transaction.is_execute() {
-            self.executions.insert(transaction_id, transaction)
+            self.executions.insert(transaction_id, transaction, priority_fee)
         } else {
-            self.deployments.insert(transaction_id, transaction)
+            self.deployments.insert(transaction_id, transaction, priority_fee)
         }
     }
 
@@ -87,9 +92,12 @@ impl<N: Network> TransactionsQueueInner<N> {
         self.queue.contains(transaction_id) || self.priority_queue.transactions.contains_key(transaction_id)
     }
 
-    fn insert(&mut self, transaction_id: N::TransactionID, transaction: Transaction<N>) -> Result<()> {
-        let priority_fee = transaction.priority_fee_amount()?;
-
+    fn insert(
+        &mut self,
+        transaction_id: N::TransactionID,
+        transaction: Transaction<N>,
+        priority_fee: U64<N>,
+    ) -> Result<()> {
         // If the queue is not full, insert in the appropriate queue.
         if self.len() < self.capacity {
             if priority_fee.is_zero() {
@@ -184,5 +192,163 @@ impl<N: Network> PriorityQueue<N> {
     fn pop(&mut self) -> Option<(N::TransactionID, Transaction<N>)> {
         let (_, transaction_id) = self.transaction_ids.pop_first()?;
         self.transactions.remove(&transaction_id).map(|transaction| (transaction_id, transaction))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use ledger_test_helpers::{sample_deployment_transaction, sample_execution_transaction_with_fee};
+    use snarkvm::prelude::{MainnetV0, TestRng};
+
+    type CurrentNetwork = MainnetV0;
+
+    #[test]
+    fn insert_and_pop_low_priority_transactions() {
+        let mut rng = TestRng::default();
+
+        /* Executions */
+
+        // Test low-priority execution transaction.
+        let execution_transaction = sample_execution_transaction_with_fee(false, &mut rng);
+        let execution_id = execution_transaction.id();
+        let zero_fee = U64::new(0);
+
+        let mut transactions_queue = TransactionsQueue::<CurrentNetwork>::default();
+        assert!(!transactions_queue.contains(&execution_id));
+        transactions_queue.insert(execution_id, execution_transaction.clone(), zero_fee).unwrap();
+
+        // Check execution was put into the right queue.
+        assert!(transactions_queue.contains(&execution_id));
+        assert!(transactions_queue.executions.contains(&execution_id));
+        assert!(!transactions_queue.deployments.contains(&execution_id));
+
+        // Pop the execution transaction.
+        let (popped_execution_id, popped_execution_transaction) = transactions_queue.executions.pop().unwrap();
+        assert_eq!(popped_execution_id, execution_id);
+        assert_eq!(popped_execution_transaction, execution_transaction);
+        assert!(!transactions_queue.contains(&execution_id));
+
+        /* Deployments */
+
+        // Test low-priority deployment transaction.
+        let deployment_transaction = sample_deployment_transaction(false, &mut rng);
+        let deployment_id = deployment_transaction.id();
+
+        assert!(!transactions_queue.contains(&deployment_id));
+        transactions_queue.insert(deployment_id, deployment_transaction.clone(), zero_fee).unwrap();
+
+        // Check deployment was put into the right queue.
+        assert!(transactions_queue.contains(&deployment_id));
+        assert!(transactions_queue.deployments.contains(&deployment_id));
+        assert!(!transactions_queue.executions.contains(&deployment_id));
+
+        // Pop the deployment transaction.
+        let (popped_deployment_id, popped_deployment_transaction) = transactions_queue.deployments.pop().unwrap();
+        assert_eq!(popped_deployment_id, deployment_id);
+        assert_eq!(popped_deployment_transaction, deployment_transaction);
+        assert!(!transactions_queue.contains(&deployment_id));
+    }
+
+    #[test]
+    fn insert_and_pop_high_priority_transactions() {
+        let mut rng = TestRng::default();
+
+        /* Executions */
+
+        // Test high-priority execution transaction.
+        let execution_transaction = sample_execution_transaction_with_fee(false, &mut rng);
+        let execution_id = execution_transaction.id();
+        let high_fee = U64::new(100);
+
+        let mut transactions_queue = TransactionsQueue::<CurrentNetwork>::default();
+        assert!(!transactions_queue.contains(&execution_id));
+        transactions_queue.insert(execution_id, execution_transaction.clone(), high_fee).unwrap();
+
+        // Check execution was put into the priority queue.
+        assert!(transactions_queue.contains(&execution_id));
+        assert!(transactions_queue.executions.contains(&execution_id));
+        assert!(transactions_queue.executions.priority_queue.transactions.contains_key(&execution_id));
+
+        // Pop the execution transaction.
+        let (popped_execution_id, popped_execution_transaction) = transactions_queue.executions.pop().unwrap();
+        assert_eq!(popped_execution_id, execution_id);
+        assert_eq!(popped_execution_transaction, execution_transaction);
+        assert!(!transactions_queue.contains(&execution_id));
+
+        /* Deployments */
+
+        // Test high-priority deployment transaction.
+        let deployment_transaction = sample_deployment_transaction(false, &mut rng);
+        let deployment_id = deployment_transaction.id();
+
+        assert!(!transactions_queue.contains(&deployment_id));
+        transactions_queue.insert(deployment_id, deployment_transaction.clone(), high_fee).unwrap();
+
+        // Check deployment was put into the priority queue.
+        assert!(transactions_queue.contains(&deployment_id));
+        assert!(transactions_queue.deployments.contains(&deployment_id));
+        assert!(transactions_queue.deployments.priority_queue.transactions.contains_key(&deployment_id));
+
+        // Pop the deployment transaction.
+        let (popped_deployment_id, popped_deployment_transaction) = transactions_queue.deployments.pop().unwrap();
+        assert_eq!(popped_deployment_id, deployment_id);
+        assert_eq!(popped_deployment_transaction, deployment_transaction);
+        assert!(!transactions_queue.contains(&deployment_id));
+    }
+
+    #[test]
+    fn insert_and_pop_ordering_with_eviction() {
+        let mut rng = TestRng::default();
+
+        let executions: Vec<_> = (0..10)
+            .map(|_| {
+                let execution_transaction = sample_execution_transaction_with_fee(false, &mut rng);
+                (execution_transaction.id(), execution_transaction)
+            })
+            .collect();
+
+        let mut executions_queue = TransactionsQueueInner::new(4);
+        executions_queue.insert(executions[0].0, executions[0].1.clone(), U64::new(300)).unwrap();
+        executions_queue.insert(executions[1].0, executions[1].1.clone(), U64::new(0)).unwrap();
+        executions_queue.insert(executions[2].0, executions[2].1.clone(), U64::new(100)).unwrap();
+        executions_queue.insert(executions[3].0, executions[3].1.clone(), U64::new(200)).unwrap();
+        assert_eq!(executions_queue.len(), 4);
+
+        // Insert a high-priority transaction and evict the remaining low-priority transactions.
+        executions_queue.insert(executions[4].0, executions[4].1.clone(), U64::new(50)).unwrap();
+        assert_eq!(executions_queue.queue.len(), 0);
+        assert_eq!(executions_queue.priority_queue.len(), 4);
+        assert!(executions_queue.priority_queue.transactions.contains_key(&executions[4].0));
+        assert!(!executions_queue.priority_queue.transactions.contains_key(&executions[1].0));
+
+        // Insert a high-priority transaction and evict the lowest high-priority transaction.
+        executions_queue.insert(executions[5].0, executions[5].1.clone(), U64::new(150)).unwrap();
+        assert_eq!(executions_queue.queue.len(), 0);
+        assert_eq!(executions_queue.priority_queue.len(), 4);
+        assert!(!executions_queue.priority_queue.transactions.contains_key(&executions[4].0));
+        assert!(executions_queue.priority_queue.transactions.contains_key(&executions[5].0));
+
+        // Try to insert a low-priority transaction and expect an error.
+        assert!(executions_queue.insert(executions[6].0, executions[6].1.clone(), U64::new(0)).is_err());
+
+        // Pop the transactions in the correct order.
+        assert_eq!(executions_queue.pop().unwrap(), executions[0]);
+        assert_eq!(executions_queue.pop().unwrap(), executions[3]);
+        assert_eq!(executions_queue.pop().unwrap(), executions[5]);
+        assert_eq!(executions_queue.pop().unwrap(), executions[2]);
+
+        // Check the queue is empty.
+        assert_eq!(executions_queue.len(), 0);
+        assert_eq!(executions_queue.queue.len(), 0);
+        assert_eq!(executions_queue.priority_queue.len(), 0);
+        assert!(executions_queue.pop().is_none());
+
+        // Insert a low-priority transaction and expect it to be inserted into the queue.
+        executions_queue.insert(executions[6].0, executions[6].1.clone(), U64::new(0)).unwrap();
+        assert_eq!(executions_queue.len(), 1);
+        assert_eq!(executions_queue.queue.len(), 1);
+        assert_eq!(executions_queue.priority_queue.len(), 0);
     }
 }

@@ -102,5 +102,9 @@ version = "0.12"
 [dev-dependencies.once_cell]
 version = "1.19"
 
+[dev-dependencies.snarkvm]
+ workspace = true
+ features = [ "test-helpers" ]
+
 [dev-dependencies.tracing-test]
 version = "0.2"
