@@ -83,6 +83,7 @@ mod tests {
         PrivateKey,
         Scalar,
         TestRng,
+        U8,
         Uniform,
         ViewKey,
     };
@@ -108,6 +109,7 @@ mod tests {
                 .into_iter(),
             ),
             N::g_scalar_multiply(&randomizer),
+            U8::<N>::rand(rng),
         )?;
         // Encrypt the record.
         let ciphertext = record.encrypt(randomizer)?;
