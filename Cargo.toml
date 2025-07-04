@@ -81,6 +81,18 @@ default-features = false
 [workspace.dependencies.test-strategy]
 version = "0.4"
 
+[workspace.dependencies.snarkos-node-consensus]
+path = "node/consensus"
+version = "=3.8.0"
+
+[workspace.dependencies.snarkos-node-cdn]
+path = "node/cdn"
+version = "=3.8.0"
+
+[workspace.dependencies.snarkos-node-router]
+path = "./node/router"
+version = "=3.8.0"
+
 [[bin]]
 name = "snarkos"
 path = "snarkos/main.rs"
@@ -142,24 +154,21 @@ path = "./node/bft"
 version = "=3.8.0"
 
 [dependencies.snarkos-node-cdn]
-path = "./node/cdn"
-version = "=3.8.0"
+workspace = true
 
 [dependencies.snarkos-node-consensus]
-path = "./node/consensus"
-version = "=3.8.0"
+workspace = true
 
 [dependencies.snarkos-node-metrics]
 path = "./node/metrics"
 version = "=3.8.0"
 optional = true
 
+[dependencies.snarkos-node-router]
+workspace = true
+
 [dependencies.snarkos-node-rest]
 path = "./node/rest"
-version = "=3.8.0"
-
-[dependencies.snarkos-node-router]
-path = "./node/router"
 version = "=3.8.0"
 
 [dependencies.snarkos-node-sync]

@@ -133,9 +133,16 @@ impl<N: Network, C: ConsensusStorage<N>> Outbound<N> for Prover<N, C> {
         true
     }
 
-    /// Returns the number of blocks this node is behind the greatest peer height.
-    fn num_blocks_behind(&self) -> u32 {
-        0
+    /// Returns the number of blocks this node is behind the greatest peer height,
+    /// or `None` if not connected to peers yet.
+    fn num_blocks_behind(&self) -> Option<u32> {
+        //TODO(kaimast): should this return None instead?
+        Some(0)
+    }
+
+    /// Returns the greatest block height of any connected peer.
+    fn greatest_peer_block_height(&self) -> Option<u32> {
+        None
     }
 }
 

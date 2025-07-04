@@ -58,6 +58,9 @@ const EXTRA_REDUNDANCY_FACTOR: usize = REDUNDANCY_FACTOR * 3;
 const NUM_SYNC_CANDIDATE_PEERS: usize = REDUNDANCY_FACTOR * 5;
 
 const BLOCK_REQUEST_TIMEOUT_IN_SECS: u64 = 600; // 600 seconds
+
+/// The maximum number of outstanding block requests.
+/// Once a node hits this limit, it will not issue any new requests until existing requests time out or receive responses.
 const MAX_BLOCK_REQUESTS: usize = 50; // 50 requests
 
 /// The maximum number of blocks tolerated before the primary is considered behind its peers.
@@ -154,11 +157,16 @@ impl<N: Network> BlockSync<N> {
         self.sync_state.read().can_block_sync()
     }
 
-    /// Returns the number of blocks the node is behind the greatest peer height.
+    /// Returns the number of blocks the node is behind the greatest peer height,
+    /// or `None` if no peers are connected yet.
     #[inline]
-    pub fn num_blocks_behind(&self) -> u32 {
-        // TODO(kaimast): return u32::MAX if unknown peer height?
-        self.sync_state.read().num_blocks_behind().unwrap_or(0)
+    pub fn num_blocks_behind(&self) -> Option<u32> {
+        self.sync_state.read().num_blocks_behind()
+    }
+
+    /// Returns the greatest block height of any connected peer.
+    pub fn greatest_peer_block_height(&self) -> Option<u32> {
+        self.sync_state.read().get_greatest_peer_height()
     }
 }
 
@@ -479,14 +487,23 @@ impl<N: Network> BlockSync<N> {
         let mut state = self.sync_state.write();
         let current_height = state.get_sync_height();
 
+        // Ensure to not exceed the maximum number of block requests.
+        let max_requests = MAX_BLOCK_REQUESTS.saturating_sub(self.requests.read().len());
+
         // Prepare the block requests.
-        if let Some((sync_peers, min_common_ancestor)) = self.find_sync_peers_inner(current_height) {
+        if max_requests == 0 {
+            trace!(
+                "Already reached the maximum number of outstanding block requests ({MAX_BLOCK_REQUESTS}). Will not issue more."
+            );
+            // Return an empty list of block requests.
+            (Default::default(), Default::default())
+        } else if let Some((sync_peers, min_common_ancestor)) = self.find_sync_peers_inner(current_height) {
             // Retrieve the highest block height.
             let greatest_peer_height = sync_peers.values().map(|l| l.latest_locator_height()).max().unwrap_or(0);
             // Update the state of `is_block_synced` for the sync module.
             state.set_greatest_peer_height(greatest_peer_height);
             // Return the list of block requests.
-            (self.construct_requests(&sync_peers, min_common_ancestor), sync_peers)
+            (self.construct_requests(&sync_peers, min_common_ancestor, max_requests), sync_peers)
         } else {
             // Update `is_block_synced` if there are no pending requests or responses.
             if self.requests.read().is_empty() && self.responses.read().is_empty() {
@@ -820,6 +837,7 @@ impl<N: Network> BlockSync<N> {
         &self,
         sync_peers: &IndexMap<SocketAddr, BlockLocators<N>>,
         min_common_ancestor: u32,
+        max_requests: usize,
     ) -> Vec<(u32, PrepareSyncRequest<N>)> {
         // Retrieve the latest ledger height.
         let latest_ledger_height = self.ledger.latest_block_height();
@@ -832,7 +850,7 @@ impl<N: Network> BlockSync<N> {
         // Compute the start height for the block request.
         let start_height = latest_ledger_height + 1;
         // Compute the end height for the block request.
-        let max_blocks_to_request = MAX_BLOCK_REQUESTS as u32 * DataBlocks::<N>::MAXIMUM_NUMBER_OF_BLOCKS as u32;
+        let max_blocks_to_request = max_requests as u32 * DataBlocks::<N>::MAXIMUM_NUMBER_OF_BLOCKS as u32;
         let end_height = (min_common_ancestor + 1).min(start_height + max_blocks_to_request);
 
         // Construct the block hashes to request.

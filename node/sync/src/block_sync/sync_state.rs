@@ -63,6 +63,11 @@ impl SyncState {
         self.greatest_peer_height.map(|peer_height| peer_height.saturating_sub(self.sync_height))
     }
 
+    /// Returns the greatest block height of any connected peer.
+    pub fn get_greatest_peer_height(&self) -> Option<u32> {
+        self.greatest_peer_height
+    }
+
     /// Update the height we are synced to.
     /// If the value is lower than the current height, the sync height remains unchanged.
     pub fn set_sync_height(&mut self, sync_height: u32) {
