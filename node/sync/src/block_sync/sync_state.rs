@@ -15,7 +15,7 @@
 
 use super::MAX_BLOCKS_BEHIND;
 
-use std::time::Instant;
+use std::{cmp::Ordering, time::Instant};
 
 #[derive(Clone)]
 pub(super) struct SyncState {
@@ -35,21 +35,33 @@ pub(super) struct SyncState {
 
 impl Default for SyncState {
     fn default() -> Self {
-        Self { sync_height: 0, greatest_peer_height: None, is_synced: false, last_change: Instant::now() }
+        Self {
+            sync_height: 0,
+            greatest_peer_height: None,
+            // Start as "synced" by default. Otherwise, validators will never propose certificates.
+            is_synced: true,
+            last_change: Instant::now(),
+        }
     }
 }
 
 impl SyncState {
-    /// Did we catch up with the greates known peer height?
+    /// Did we catch up with the greatest known peer height?
     /// This will return false if we never synced from a peer.
     pub fn is_block_synced(&self) -> bool {
         self.is_synced
     }
 
+    /// Returns `true` if there a blocks to sync from other nodes.
     pub fn can_block_sync(&self) -> bool {
         // Return true if sync state is false even if we there are no known blocks to fetch,
         // because otherwise nodes will never  switch to synced at startup.
-        !self.is_synced || self.num_blocks_behind().map(|n| n > 0).unwrap_or(false)
+        if let Some(num_behind) = self.num_blocks_behind() {
+            num_behind > 0
+        } else {
+            debug!("Cannot block sync. No peer locators yet");
+            false
+        }
     }
 
     /// Returns the sync height (this is always greater or equal than the ledger height).
@@ -75,6 +87,7 @@ impl SyncState {
             return;
         }
 
+        trace!("Sync height increased from {old_height} to {sync_height}", old_height = self.sync_height);
         self.sync_height = sync_height;
         self.update_is_block_synced();
     }
@@ -82,8 +95,10 @@ impl SyncState {
     /// Update the greatest known height of a connected peer.
     pub fn set_greatest_peer_height(&mut self, peer_height: u32) {
         if let Some(old_height) = self.greatest_peer_height {
-            if old_height == peer_height {
-                return;
+            match old_height.cmp(&peer_height) {
+                Ordering::Equal => return,
+                Ordering::Greater => warn!("Greatest peer height reduced from {old_height} to {peer_height}"),
+                Ordering::Less => trace!("Greatest peer height increased from {old_height} to {peer_height}"),
             }
         }
 
@@ -103,11 +118,9 @@ impl SyncState {
         let num_blocks_behind = self.num_blocks_behind();
         let old_sync_val = self.is_synced;
 
-        let new_sync_val = if let Some(num_blocks_behind) = num_blocks_behind {
-            num_blocks_behind <= MAX_BLOCKS_BEHIND
-        } else {
-            false
-        };
+        // If there are no block locators, we consider ourselves synced.
+        // Otherwise, validators will never propose certificates.
+        let new_sync_val = num_blocks_behind.is_none_or(|num| num <= MAX_BLOCKS_BEHIND);
 
         // Print a message if the state changed
         if new_sync_val != old_sync_val {
@@ -123,7 +136,7 @@ impl SyncState {
                 debug!("Block sync state changed to \"synced\". It took {elapsed} to catch up with the network.");
             } else {
                 // num_blocks_behind should never be None at this point,
-                // but savely unwrap just is in case.
+                // but we still use `unwrap_or` just in case.
                 let behind_msg = num_blocks_behind.map(|n| n.to_string()).unwrap_or("unknown".to_string());
 
                 debug!("Block sync state changed to \"syncing\". We are {behind_msg} blocks behind.");

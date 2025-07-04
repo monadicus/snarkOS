@@ -15,7 +15,7 @@
 
 use crate::helpers::{DynamicFormatter, LogWriter};
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 
 use crossterm::tty::IsTty;
 use std::{
@@ -129,13 +129,15 @@ pub fn initialize_logger<P: AsRef<Path>>(
     // Create the directories tree for a logfile if it doesn't exist.
     let logfile_dir = logfile.as_ref().parent().expect("Root directory passed as a logfile");
     if !logfile_dir.exists() {
-        std::fs::create_dir_all(logfile_dir).unwrap_or_else(|e| {
-            panic!("Failed to create a directory: '{}' ({e})", logfile_dir.display());
-        });
+        if let Err(err) = std::fs::create_dir_all(logfile_dir) {
+            bail!("Failed to create a directory: '{}' ({err})", logfile_dir.display());
+        }
     }
     // Create a file to write logs to.
-    let logfile =
-        File::options().append(true).create(true).open(logfile).expect("Failed to open the file for writing logs");
+    let logfile = match File::options().append(true).create(true).open(logfile) {
+        Ok(logfile) => logfile,
+        Err(err) => bail!("Failed to open the file for writing logs: {err}"),
+    };
 
     // Initialize the log channel.
     let (log_sender, log_receiver) = mpsc::channel(1024);
@@ -146,6 +148,10 @@ pub fn initialize_logger<P: AsRef<Path>>(
         false => Some(log_sender),
     };
 
+    // At high verbosity or when there is a custom log filter we show the target
+    // of the log event, i.e., the file/module where the log message was created.
+    let show_target = verbosity > 2 || log_filter.is_some();
+
     // Initialize tracing.
     let _ = tracing_subscriber::registry()
         .with(
@@ -153,7 +159,7 @@ pub fn initialize_logger<P: AsRef<Path>>(
             tracing_subscriber::fmt::Layer::default()
                 .with_ansi(log_sender.is_none() && io::stdout().is_tty())
                 .with_writer(move || LogWriter::new(&log_sender))
-                .with_target(verbosity > 2)
+                .with_target(show_target)
                 .event_format(DynamicFormatter::new(shutdown))
                 .with_filter(stdout_filter?),
         )
@@ -162,7 +168,7 @@ pub fn initialize_logger<P: AsRef<Path>>(
             tracing_subscriber::fmt::Layer::default()
                 .with_ansi(false)
                 .with_writer(logfile)
-                .with_target(verbosity > 2)
+                .with_target(show_target)
                 .with_filter(logfile_filter?),
         )
         .try_init();

@@ -38,6 +38,9 @@ features = [ "serde", "rayon" ]
 [dependencies.itertools]
 workspace = true
 
+[dependencies.futures]
+workspace = true
+
 [dependencies.locktick]
 version = "0.3"
 features = [ "parking_lot" ]
