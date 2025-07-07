@@ -83,7 +83,7 @@ version = "=3.8.0"
 workspace = true
 
 [dependencies.tracing]
-version = "0.1"
+workspace = true
 
 [dev-dependencies.snarkos-node-bft-ledger-service]
 path = "../bft/ledger-service"

@@ -71,5 +71,5 @@ features = [ "macros", "rt-multi-thread" ]
 optional = true
 
 [dependencies.tracing]
-version = "0.1"
+workspace = true
 optional = true

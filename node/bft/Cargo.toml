@@ -139,11 +139,11 @@ features = [ "macros", "rt-multi-thread", "signal" ]
 version = "=0.1"
 
 [dependencies.tokio-util]
-version = "0.7"
+workspace = true
 features = [ "codec" ]
 
 [dependencies.tracing]
-version = "0.1"
+workspace = true
 
 [dev-dependencies.axum]
 version = "0.8"
@@ -200,11 +200,11 @@ version = "0.6"
 features = [ "fs", "trace" ]
 
 [dev-dependencies.tracing-subscriber]
-version = "0.3"
+workspace = true
 features = [ "env-filter" ]
 
 [dev-dependencies.tracing-test]
-version = "0.2"
+workspace = true
 
 [dev-dependencies.mockall]
 version = "0.12.1"

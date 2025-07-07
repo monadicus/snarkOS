@@ -50,12 +50,11 @@ workspace = true
 features = [ "io-util", "net", "parking_lot", "rt", "sync", "time" ]
 
 [dependencies.tokio-util]
-version = "0.7"
+workspace = true
 features = [ "codec" ]
 
 [dependencies.tracing]
-version = "0.1"
-default-features = false
+workspace = true
 
 [dependencies.thiserror]
 version = "2"

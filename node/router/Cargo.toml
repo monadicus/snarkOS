@@ -99,14 +99,14 @@ features = [
 ]
 
 [dependencies.tokio-util]
-version = "0.7"
+workspace = true
 features = [ "codec" ]
 
 [dependencies.tokio-stream]
 version = "=0.1"
 
 [dependencies.tracing]
-version = "0.1"
+workspace = true
 
 [dev-dependencies.deadline]
 version = "0.2"
@@ -139,5 +139,5 @@ workspace = true
 features = [ "test-helpers" ]
 
 [dev-dependencies.tracing-subscriber]
-version = "0.3"
+workspace = true
 features = [ "env-filter", "fmt" ]

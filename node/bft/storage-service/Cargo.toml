@@ -50,7 +50,7 @@ workspace = true
 features = [ "ledger", "console", "rocks" ]
 
 [dependencies.tracing]
-version = "0.1"
+workspace = true
 optional = true
 
 [dev-dependencies.snarkvm]

@@ -134,10 +134,10 @@ workspace = true
 features = [ "rt", "signal" ]
 
 [dependencies.tokio-util]
-version = "0.7"
+workspace = true
 
 [dependencies.tracing]
-version = "0.1"
+workspace = true
 
 [dev-dependencies.deadline]
 version = "0.2"
@@ -153,7 +153,7 @@ path = "./router"
 features = [ "test" ]
 
 [dev-dependencies.tracing-subscriber]
-version = "0.3"
+workspace = true
 features = [ "env-filter", "fmt" ]
 
 [dev-dependencies.rand_chacha]

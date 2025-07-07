@@ -91,7 +91,7 @@ workspace = true
 features = [ "macros", "rt-multi-thread", "signal" ]
 
 [dependencies.tracing]
-version = "0.1"
+workspace = true
 
 [dev-dependencies.indexmap]
 workspace = true
@@ -103,4 +103,4 @@ version = "0.12"
 version = "1.19"
 
 [dev-dependencies.tracing-test]
-version = "0.2"
+workspace = true

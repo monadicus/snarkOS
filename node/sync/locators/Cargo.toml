@@ -35,4 +35,4 @@ workspace = true
 features = [ "console" ]
 
 [dependencies.tracing]
-version = "0.1"
+workspace = true
