@@ -96,7 +96,7 @@ pub struct InnerRouter<N: Network> {
     /// The cache.
     cache: Cache<N>,
     /// The resolver.
-    resolver: Resolver,
+    resolver: RwLock<Resolver>,
     /// The set of trusted peers.
     trusted_peers: HashSet<SocketAddr>,
     /// The map of connected peer IPs to their peer handlers.
@@ -261,6 +261,12 @@ impl<N: Network> Router<N> {
                 }
                 disconnected
             } else {
+                // FIXME (ljedrz): this shouldn't be necessary; it's a double-check
+                //  that the higher-level collection is consistent with the resolver.
+                if router.is_connected(&peer_ip) {
+                    warn!("Fallback connection artifact cleanup (report this to @ljedrz)");
+                    router.remove_connected_peer(peer_ip);
+                }
                 false
             }
         })
@@ -337,12 +343,12 @@ impl<N: Network> Router<N> {
 
     /// Returns the listener IP address from the (ambiguous) peer address.
     pub fn resolve_to_listener(&self, peer_addr: &SocketAddr) -> Option<SocketAddr> {
-        self.resolver.get_listener(peer_addr)
+        self.resolver.read().get_listener(peer_addr)
     }
 
     /// Returns the (ambiguous) peer address from the listener IP address.
     pub fn resolve_to_ambiguous(&self, peer_ip: &SocketAddr) -> Option<SocketAddr> {
-        self.resolver.get_ambiguous(peer_ip)
+        self.resolver.read().get_ambiguous(peer_ip)
     }
 
     /// Returns `true` if the node is connected to the given peer IP.
@@ -609,14 +615,14 @@ impl<N: Network> Router<N> {
 
     /// Removes the connected peer and adds them to the candidate peers.
     pub fn remove_connected_peer(&self, peer_ip: SocketAddr) {
-        // Removes the bidirectional map between the listener address and (ambiguous) peer address.
-        self.resolver.remove_peer(&peer_ip);
         // Remove this peer from the connected peers, if it exists.
         self.connected_peers.write().remove(&peer_ip);
-        // Add the peer to the candidate peers.
-        self.candidate_peers.write().insert(peer_ip);
+        // Removes the bidirectional map between the listener address and (ambiguous) peer address.
+        self.resolver.write().remove_peer(&peer_ip);
         // Clear cached entries applicable to the peer.
         self.cache.clear_peer_entries(peer_ip);
+        // Add the peer to the candidate peers.
+        self.candidate_peers.write().insert(peer_ip);
         #[cfg(feature = "metrics")]
         self.update_metrics();
     }

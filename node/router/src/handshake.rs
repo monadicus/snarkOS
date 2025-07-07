@@ -211,7 +211,7 @@ impl<N: Network> Router<N> {
         // Finalize the connecting peer information.
         self.connecting_peers.lock().insert(peer_ip, Some(Peer::new(peer_ip, peer_addr, &peer_request)));
         // Adds a bidirectional map between the listener address and (ambiguous) peer address.
-        self.resolver.insert_peer(peer_ip, peer_addr);
+        self.resolver.write().insert_peer(peer_ip, peer_addr);
 
         Ok((peer_ip, framed))
     }
@@ -296,7 +296,7 @@ impl<N: Network> Router<N> {
         // Finalize the connecting peer information.
         self.connecting_peers.lock().insert(peer_ip, Some(Peer::new(peer_ip, peer_addr, &peer_request)));
         // Adds a bidirectional map between the listener address and (ambiguous) peer address.
-        self.resolver.insert_peer(peer_ip, peer_addr);
+        self.resolver.write().insert_peer(peer_ip, peer_addr);
 
         Ok((peer_ip, framed))
     }
