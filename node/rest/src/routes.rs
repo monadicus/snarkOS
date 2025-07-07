@@ -163,7 +163,7 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
         Ok(ErasedJson::pretty(SyncStatus {
             sync_mode,
             cdn_height,
-            is_synced: rest.routing.is_block_synced(),
+            is_synced: !cdn_sync && rest.routing.is_block_synced(),
             ledger_height: rest.ledger.latest_height(),
             p2p_height: rest.routing.greatest_peer_block_height(),
             outstanding_block_requests: rest.routing.num_outstanding_block_requests(),
