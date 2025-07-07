@@ -195,7 +195,6 @@ commands:
           name: "Run devnet test"
           timeout: 20m  # Allow 20 minutes total
           command: |
-            chmod +x .circleci/devnet_ci.sh
             ./.circleci/devnet_ci.sh << parameters.validators >> << parameters.clients >> << parameters.network_id >> << parameters.min_height >>
       - clear_environment:
           cache_key: << parameters.cache_key >>
