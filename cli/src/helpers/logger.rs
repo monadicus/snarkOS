@@ -33,11 +33,12 @@ use tracing_subscriber::{
 };
 
 fn parse_log_verbosity(verbosity: u8) -> Result<EnvFilter> {
-    // First, set default log verbosity
+    // First, set default log verbosity.
+    // Note, that this must not be prefixed with `RUST_LOG=`.
     let default_log_str = match verbosity {
-        0 => "RUST_LOG=info",
-        1 => "RUST_LOG=debug",
-        2.. => "RUST_LOG=trace",
+        0 => "info",
+        1 => "debug",
+        2.. => "trace",
     };
     let filter = EnvFilter::from_str(default_log_str).unwrap();
 
@@ -127,7 +128,8 @@ pub fn initialize_logger<P: AsRef<Path>>(
     });
 
     // Create the directories tree for a logfile if it doesn't exist.
-    let logfile_dir = logfile.as_ref().parent().expect("Root directory passed as a logfile");
+    let Some(logfile_dir) = logfile.as_ref().parent() else { bail!("Root directory passed as a logfile") };
+
     if !logfile_dir.exists() {
         if let Err(err) = std::fs::create_dir_all(logfile_dir) {
             bail!("Failed to create a directory: '{}' ({err})", logfile_dir.display());
@@ -143,6 +145,7 @@ pub fn initialize_logger<P: AsRef<Path>>(
     let (log_sender, log_receiver) = mpsc::channel(1024);
 
     // Initialize the log sender.
+    // This is only needed when the terminal UI (display) wants to process log output.
     let log_sender = match nodisplay {
         true => None,
         false => Some(log_sender),

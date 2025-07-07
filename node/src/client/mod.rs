@@ -198,8 +198,10 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
         };
 
         // Perform sync with CDN (if enabled).
-        let cdn_sync = cdn.map(|base_url| Arc::new(CdnBlockSync::new(base_url, ledger.clone(), shutdown)));
-
+        let cdn_sync = cdn.map(|base_url| {
+            trace!("CDN sync is enabled");
+            Arc::new(CdnBlockSync::new(base_url, ledger.clone(), shutdown))
+        });
         // Initialize the REST server.
         if let Some(rest_ip) = rest_ip {
             node.rest = Some(
@@ -207,7 +209,7 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
             );
         }
 
-        // Set up everythign else after CDN sync is done.
+        // Set up everything else after CDN sync is done.
         if let Some(cdn_sync) = cdn_sync {
             if let Err(error) = cdn_sync.wait().await {
                 crate::log_clean_error(&storage_mode);

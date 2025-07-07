@@ -143,10 +143,10 @@ workspace = true
 features = [ "rt" ]
 
 [dependencies.tracing]
-version = "0.1"
+workspace = true
 
 [dependencies.tracing-subscriber]
-version = "0.3"
+workspace = true
 features = [ "env-filter" ]
 
 [dependencies.ureq]

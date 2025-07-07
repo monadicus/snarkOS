@@ -92,6 +92,7 @@ impl CdnBlockSync {
             tokio::spawn(async move { Self::worker(base_url, ledger, shutdown).await })
         };
 
+        debug!("Started sync from CDN at {base_url}");
         Self { done: AtomicBool::new(false), base_url, task: Mutex::new(Some(task)) }
     }
 
@@ -465,6 +466,7 @@ async fn cdn_get<T: 'static + DeserializeOwned + Send>(client: Client, url: &str
         Ok(bytes) => bytes,
         Err(error) => bail!("Failed to parse {ctx} - {error}"),
     };
+
     // Parse the objects.
     match tokio::task::spawn_blocking(move || bincode::deserialize::<T>(&bytes)).await {
         Ok(Ok(objects)) => Ok(objects),

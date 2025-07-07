@@ -104,7 +104,7 @@ version = "0.6"
 features = [ "cors", "trace" ]
 
 [dependencies.tracing]
-version = "0.1"
+workspace = true
 
 [dev-dependencies.base64]
 workspace = true

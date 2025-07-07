@@ -42,11 +42,11 @@ workspace = true
 features = [ "ledger", "utilities" ]
 
 [dependencies.tokio-util]
-version = "0.7"
+workspace = true
 features = [ "codec" ]
 
 [dependencies.tracing]
-version = "0.1"
+workspace = true
 
 [dev-dependencies.proptest]
 workspace = true

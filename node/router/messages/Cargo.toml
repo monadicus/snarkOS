@@ -38,11 +38,11 @@ version = "=3.8.0"
 workspace = true
 
 [dependencies.tokio-util]
-version = "0.7"
+workspace = true
 features = [ "codec" ]
 
 [dependencies.tracing]
-version = "0.1"
+workspace = true
 
 [dev-dependencies.snarkos-node-sync-locators]
 path = "../../sync/locators"
