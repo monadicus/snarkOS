@@ -69,8 +69,6 @@ impl Decrypt {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    use indexmap::IndexMap;
     use snarkvm::prelude::{
         Address,
         Entry,
@@ -78,6 +76,7 @@ mod tests {
         Identifier,
         Literal,
         Network,
+        One,
         Owner,
         Plaintext,
         PrivateKey,
@@ -86,7 +85,11 @@ mod tests {
         U8,
         Uniform,
         ViewKey,
+        Zero,
     };
+
+    use indexmap::IndexMap;
+    use rand::Rng;
 
     type CurrentNetwork = MainnetV0;
 
@@ -99,6 +102,10 @@ mod tests {
     ) -> Result<Record<N, Ciphertext<N>>> {
         // Prepare the record.
         let randomizer = Scalar::rand(rng);
+        let version = match rng.gen() {
+            true => U8::<N>::one(),
+            false => U8::<N>::zero(),
+        };
         let record = Record::<N, Plaintext<N>>::from_plaintext(
             owner,
             IndexMap::from_iter(
@@ -109,7 +116,7 @@ mod tests {
                 .into_iter(),
             ),
             N::g_scalar_multiply(&randomizer),
-            U8::<N>::rand(rng),
+            version,
         )?;
         // Encrypt the record.
         let ciphertext = record.encrypt(randomizer)?;
