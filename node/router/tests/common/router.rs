@@ -168,7 +168,17 @@ impl<N: Network> Outbound<N> for TestRouter<N> {
     }
 
     /// Returns the number of blocks this node is behind the greatest peer height.
-    fn num_blocks_behind(&self) -> u32 {
+    fn num_blocks_behind(&self) -> Option<u32> {
+        None
+    }
+
+    /// Returns the greatest block height of any connected peer.
+    fn greatest_peer_block_height(&self) -> Option<u32> {
+        None
+    }
+
+    /// The number of blocks we requested but have not received yet from peers.
+    fn num_outstanding_block_requests(&self) -> usize {
         0
     }
 }

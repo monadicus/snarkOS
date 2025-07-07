@@ -64,7 +64,15 @@ impl Outbound<Network> for HeartbeatTest {
         true
     }
 
-    fn num_blocks_behind(&self) -> u32 {
+    fn greatest_peer_block_height(&self) -> Option<u32> {
+        None
+    }
+
+    fn num_blocks_behind(&self) -> Option<u32> {
+        None
+    }
+
+    fn num_outstanding_block_requests(&self) -> usize {
         0
     }
 }

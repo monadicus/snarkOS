@@ -23,6 +23,7 @@ pub use helpers::*;
 
 mod routes;
 
+use snarkos_node_cdn::CdnBlockSync;
 use snarkos_node_consensus::Consensus;
 use snarkos_node_router::{
     Routing,
@@ -64,6 +65,8 @@ pub const DEFAULT_REST_PORT: u16 = 3030;
 /// A REST API server for the ledger.
 #[derive(Clone)]
 pub struct Rest<N: Network, C: ConsensusStorage<N>, R: Routing<N>> {
+    /// CDN sync (only if node is using the CDN to sync).
+    cdn_sync: Option<Arc<CdnBlockSync>>,
     /// The consensus module.
     consensus: Option<Consensus<N>>,
     /// The ledger.
@@ -82,9 +85,10 @@ impl<N: Network, C: 'static + ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> 
         consensus: Option<Consensus<N>>,
         ledger: Ledger<N, C>,
         routing: Arc<R>,
+        cdn_sync: Option<Arc<CdnBlockSync>>,
     ) -> Result<Self> {
         // Initialize the server.
-        let mut server = Self { consensus, ledger, routing, handles: Default::default() };
+        let mut server = Self { consensus, ledger, routing, cdn_sync, handles: Default::default() };
         // Spawn the server.
         server.spawn_server(rest_ip, rest_rps).await;
         // Return the server.
@@ -171,6 +175,7 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
             // POST ../solution/broadcast
             .route(&format!("/{network}/solution/broadcast"), post(Self::solution_broadcast))
 
+
             // GET ../find/..
             .route(&format!("/{network}/find/blockHash/{{tx_id}}"), get(Self::find_block_hash))
             .route(&format!("/{network}/find/blockHeight/{{state_root}}"), get(Self::find_block_height_from_state_root))
@@ -189,6 +194,7 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
             .route(&format!("/{network}/program/{{id}}/mapping/{{name}}/{{key}}"), get(Self::get_mapping_value))
 
             // GET misc endpoints.
+            .route(&format!("/{network}/sync_status"), get(Self::get_sync_status))
             .route(&format!("/{network}/blocks"), get(Self::get_blocks))
             .route(&format!("/{network}/height/{{hash}}"), get(Self::get_height))
             .route(&format!("/{network}/memoryPool/transmissions"), get(Self::get_memory_pool_transmissions))

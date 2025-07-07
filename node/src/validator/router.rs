@@ -147,9 +147,20 @@ impl<N: Network, C: ConsensusStorage<N>> Outbound<N> for Validator<N, C> {
         self.sync.is_block_synced()
     }
 
-    /// Returns the number of blocks this node is behind the greatest peer height.
-    fn num_blocks_behind(&self) -> u32 {
+    /// Returns the number of blocks this node is behind the greatest peer height,
+    /// or `None` if not connected to peers yet.
+    fn num_blocks_behind(&self) -> Option<u32> {
         self.sync.num_blocks_behind()
+    }
+
+    /// Returns the greatest block height of any connected peer.
+    fn greatest_peer_block_height(&self) -> Option<u32> {
+        self.sync.greatest_peer_block_height()
+    }
+
+    /// The number of blocks we requested but have not received yet from peers.
+    fn num_outstanding_block_requests(&self) -> usize {
+        self.sync.num_outstanding_block_requests()
     }
 }
 

@@ -43,10 +43,6 @@ use tokio::task::spawn_blocking;
 /// The max number of peers to send in a `PeerResponse` message.
 const MAX_PEERS_TO_SEND: usize = u8::MAX as usize;
 
-/// The maximum number of blocks the client can be behind it's latest peer before it skips
-/// processing incoming transactions and solutions.
-pub const SYNC_LENIENCY: u32 = 10;
-
 #[async_trait]
 pub trait Inbound<N: Network>: Reading + Outbound<N> {
     /// The maximum number of puzzle requests per interval.
@@ -62,6 +58,20 @@ pub trait Inbound<N: Network>: Reading + Outbound<N> {
 
     /// Returns `true` if the message version is valid.
     fn is_valid_message_version(&self, message_version: u32) -> bool;
+
+    /// Is the node synced enough to process unconfirmed transactions and solutions?
+    fn is_within_sync_leniency(&self) -> bool {
+        // The maximum number of blocks the client can be behind it's latest peer before it skips
+        // processing incoming transactions and solutions.
+        const SYNC_LENIENCY: u32 = 10;
+
+        if let Some(num) = self.num_blocks_behind() {
+            num <= SYNC_LENIENCY
+        } else {
+            // We have not received block locators yet.
+            true
+        }
+    }
 
     /// Handles the inbound message from the peer.
     async fn inbound(&self, peer_addr: SocketAddr, message: Message<N>) -> Result<()> {
@@ -237,10 +247,11 @@ pub trait Inbound<N: Network>: Reading + Outbound<N> {
             }
             Message::UnconfirmedSolution(message) => {
                 // Do not process unconfirmed solutions if the node is too far behind.
-                if self.num_blocks_behind() > SYNC_LENIENCY {
+                if !self.is_within_sync_leniency() {
                     trace!("Skipped processing unconfirmed solution '{}' (node is syncing)", message.solution_id);
                     return Ok(());
                 }
+
                 // Update the timestamp for the unconfirmed solution.
                 let seen_before = self.router().cache.insert_inbound_solution(peer_ip, message.solution_id).is_some();
                 // Determine whether to propagate the solution.
@@ -266,8 +277,8 @@ pub trait Inbound<N: Network>: Reading + Outbound<N> {
                 }
             }
             Message::UnconfirmedTransaction(message) => {
-                // Do not process unconfirmed transactions if the node is too far behind.
-                if self.num_blocks_behind() > SYNC_LENIENCY {
+                // Do not process unconfirmed solutions if the node is too far behind.
+                if !self.is_within_sync_leniency() {
                     trace!("Skipped processing unconfirmed transaction '{}' (node is syncing)", message.transaction_id);
                     return Ok(());
                 }
