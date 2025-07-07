@@ -92,6 +92,7 @@ impl CdnBlockSync {
             tokio::spawn(async move { Self::worker(base_url, ledger, shutdown).await })
         };
 
+        debug!("Started sync from CDN at {base_url}");
         Self { done: AtomicBool::new(false), base_url, task: Mutex::new(Some(task)) }
     }
 
