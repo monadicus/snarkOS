@@ -74,12 +74,25 @@ version = "0.22"
 [workspace.dependencies.tokio]
 version = "1.28"
 
+[workspace.dependencies.tokio-util]
+version = "0.7"
+
 [workspace.dependencies.itertools]
 version = "0.14"
 
 [workspace.dependencies.indexmap]
 version = "2"
 default-features = false
+
+[workspace.dependencies.tracing]
+version = "0.1"
+default-features = false
+
+[workspace.dependencies.tracing-test]
+version = "0.2"
+
+[workspace.dependencies.tracing-subscriber]
+version = "0.3"
 
 [workspace.dependencies.test-strategy]
 version = "0.4"
@@ -186,7 +199,7 @@ version = "=3.8.0"
 tikv-jemallocator = "0.5"
 
 [dependencies.tracing]
-version = "0.1"
+workspace = true
 optional = true
 
 [dev-dependencies.rusty-hook]

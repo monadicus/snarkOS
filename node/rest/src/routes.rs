@@ -148,10 +148,11 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
         let (cdn_sync, cdn_height) = if let Some(cdn_sync) = &rest.cdn_sync {
             let done = cdn_sync.is_done();
 
-            // do not show CDN height if we are already done syncing from the CDN
+            // Do not show CDN height if we are already done syncing from the CDN.
             let cdn_height = if done { None } else { Some(cdn_sync.get_cdn_height().await?) };
 
-            (done, cdn_height)
+            // Report CDN sync until it is finished.
+            (!done, cdn_height)
         } else {
             (false, None)
         };
@@ -548,6 +549,16 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
                 let proof_target = rest.ledger.latest_proof_target();
                 // Ensure that the solution is valid for the given epoch.
                 let puzzle = rest.ledger.puzzle().clone();
+                // Check if the prover has reached their solution limit.
+                // While snarkVM will ultimately abort any excess solutions for safety, performing this check
+                // here prevents the to-be aborted solutions from propagating through the network.
+                let prover_address = solution.address();
+                if rest.ledger.is_solution_limit_reached(&prover_address, 0) {
+                    return Err(RestError(format!(
+                        "Invalid solution '{}' - Prover '{prover_address}' has reached their solution limit for the current epoch",
+                        fmt_id(solution.id())
+                    )));
+                }
                 // Verify the solution in a blocking task.
                 match tokio::task::spawn_blocking(move || puzzle.check_solution(&solution, epoch_hash, proof_target))
                     .await
