@@ -143,10 +143,11 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
         let (cdn_sync, cdn_height) = if let Some(cdn_sync) = &rest.cdn_sync {
             let done = cdn_sync.is_done();
 
-            // do not show CDN height if we are already done syncing from the CDN
+            // Do not show CDN height if we are already done syncing from the CDN.
             let cdn_height = if done { None } else { Some(cdn_sync.get_cdn_height().await?) };
 
-            (done, cdn_height)
+            // Report CDN sync until it is finished.
+            (!done, cdn_height)
         } else {
             (false, None)
         };

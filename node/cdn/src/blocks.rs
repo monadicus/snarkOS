@@ -466,6 +466,7 @@ async fn cdn_get<T: 'static + DeserializeOwned + Send>(client: Client, url: &str
         Ok(bytes) => bytes,
         Err(error) => bail!("Failed to parse {ctx} - {error}"),
     };
+
     // Parse the objects.
     match tokio::task::spawn_blocking(move || bincode::deserialize::<T>(&bytes)).await {
         Ok(Ok(objects)) => Ok(objects),
