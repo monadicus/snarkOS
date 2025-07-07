@@ -297,6 +297,16 @@ impl<N: Network, C: ConsensusStorage<N>> LedgerService<N> for CoreLedgerService<
             bail!("Invalid solution - expected {solution_id}, found {}", solution.id());
         }
 
+        // Check if the prover has reached their solution limit.
+        // While snarkVM will ultimately abort any excess solutions for safety, performing this check
+        // here prevents the to-be aborted solutions from propagating through the network.
+        let prover_address = solution.address();
+        if self.ledger.is_solution_limit_reached(&prover_address, 0) {
+            bail!(
+                "Invalid Solution '{}' - Prover '{prover_address}' has reached their solution limit for the current epoch",
+                fmt_id(solution.id())
+            );
+        }
         // Compute the current epoch hash.
         let epoch_hash = self.ledger.latest_epoch_hash()?;
         // Retrieve the current proof target.
