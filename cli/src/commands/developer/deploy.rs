@@ -13,8 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::commands::StoreFormat;
 use super::Developer;
+use crate::commands::StoreFormat;
 use snarkvm::{
     circuit::{Aleo, AleoCanaryV0, AleoTestnetV0, AleoV0},
     console::{
@@ -178,7 +178,14 @@ impl Deploy {
         println!("✅ Created deployment transaction for '{}'", program_id.to_string().bold());
 
         // Determine if the transaction should be broadcast, stored, or displayed to the user.
-        Developer::handle_transaction(&self.broadcast, self.dry_run, &self.store, self.store_format, transaction, program_id.to_string())
+        Developer::handle_transaction(
+            &self.broadcast,
+            self.dry_run,
+            &self.store,
+            self.store_format,
+            transaction,
+            program_id.to_string(),
+        )
     }
 }
 

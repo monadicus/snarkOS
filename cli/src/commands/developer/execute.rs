@@ -13,8 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::commands::StoreFormat;
 use super::Developer;
+use crate::commands::StoreFormat;
 use snarkvm::{
     console::network::{CanaryV0, MainnetV0, Network, TestnetV0},
     ledger::store::helpers::memory::BlockMemory,
@@ -210,7 +210,14 @@ impl Execute {
         println!("✅ Created execution transaction for '{}'", locator.to_string().bold());
 
         // Determine if the transaction should be broadcast, stored, or displayed to the user.
-        Developer::handle_transaction(&self.broadcast, self.dry_run, &self.store, self.store_format, transaction, locator.to_string())
+        Developer::handle_transaction(
+            &self.broadcast,
+            self.dry_run,
+            &self.store,
+            self.store_format,
+            transaction,
+            locator.to_string(),
+        )
     }
 }
 
