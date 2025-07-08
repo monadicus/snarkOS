@@ -13,6 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::commands::StoreFormat;
 use super::Developer;
 use snarkvm::{
     circuit::{Aleo, AleoCanaryV0, AleoTestnetV0, AleoV0},
@@ -35,7 +36,6 @@ use snarkvm::{
 use aleo_std::StorageMode;
 use anyhow::{Result, bail};
 use clap::Parser;
-use crate::commands::StoreFormat;
 use colored::Colorize;
 use std::{path::PathBuf, str::FromStr};
 use zeroize::Zeroize;

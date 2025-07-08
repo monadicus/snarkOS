@@ -13,6 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::commands::StoreFormat;
 use super::Developer;
 use snarkvm::{
     console::network::{CanaryV0, MainnetV0, Network, TestnetV0},
@@ -35,7 +36,6 @@ use aleo_std::StorageMode;
 use anyhow::{Result, anyhow, bail};
 use clap::Parser;
 use colored::Colorize;
-use crate::commands::StoreFormat;
 use std::{path::PathBuf, str::FromStr};
 use zeroize::Zeroize;
 
