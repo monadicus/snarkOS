@@ -31,6 +31,7 @@ use snarkvm::{
 use aleo_std::StorageMode;
 use anyhow::{Result, bail};
 use clap::Parser;
+use crate::commands::StoreFormat;
 use std::{path::PathBuf, str::FromStr};
 use zeroize::Zeroize;
 
@@ -70,6 +71,10 @@ pub struct TransferPrivate {
     /// Store generated deployment transaction to a local file.
     #[clap(long)]
     store: Option<String>,
+    /// If --store is specified, the format in which the transaction should be stored : string or
+    /// bytes, by default : bytes.
+    #[clap(long, value_enum, default_value_t = StoreFormat::Bytes)]
+    store_format: StoreFormat,
     /// Specify the path to a directory containing the ledger. Overrides the default path (also for
     /// dev).
     #[clap(long = "storage_path")]
@@ -156,6 +161,6 @@ impl TransferPrivate {
         println!("✅ Created private transfer of {} microcredits to {}\n", &self.amount, recipient);
 
         // Determine if the transaction should be broadcast, stored, or displayed to the user.
-        Developer::handle_transaction(&self.broadcast, self.dry_run, &self.store, transaction, locator.to_string())
+        Developer::handle_transaction(&self.broadcast, self.dry_run, &self.store, self.store_format, transaction, locator.to_string())
     }
 }
