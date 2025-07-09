@@ -14,6 +14,7 @@
 // limitations under the License.
 
 use super::Developer;
+use crate::commands::StoreFormat;
 use snarkvm::{
     circuit::{Aleo, AleoCanaryV0, AleoTestnetV0, AleoV0},
     console::{
@@ -71,6 +72,10 @@ pub struct Deploy {
     /// Store generated deployment transaction to a local file.
     #[clap(long)]
     store: Option<String>,
+    /// If --store is specified, the format in which the transaction should be stored : string or
+    /// bytes, by default : bytes.
+    #[clap(long, value_enum, default_value_t = StoreFormat::Bytes)]
+    store_format: StoreFormat,
     /// Specify the path to a directory containing the ledger. Overrides the default path (also for
     /// dev).
     #[clap(long = "storage_path")]
@@ -173,7 +178,14 @@ impl Deploy {
         println!("✅ Created deployment transaction for '{}'", program_id.to_string().bold());
 
         // Determine if the transaction should be broadcast, stored, or displayed to the user.
-        Developer::handle_transaction(&self.broadcast, self.dry_run, &self.store, transaction, program_id.to_string())
+        Developer::handle_transaction(
+            &self.broadcast,
+            self.dry_run,
+            &self.store,
+            self.store_format,
+            transaction,
+            program_id.to_string(),
+        )
     }
 }
 
