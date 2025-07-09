@@ -250,7 +250,7 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
 impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
     const SYNC_INTERVAL: Duration = std::time::Duration::from_secs(5);
 
-    /// Initializes the sync pool.
+    /// Spawns the tasks that performs the syncing logic for this client.
     fn initialize_sync(&self) {
         // Start the sync loop.
         let _self = self.clone();

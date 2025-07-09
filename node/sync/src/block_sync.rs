@@ -32,7 +32,7 @@ use locktick::parking_lot::RwLock;
 use parking_lot::RwLock;
 use rand::seq::{IteratorRandom, SliceRandom};
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet, hash_map},
     net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::Arc,
     time::{Duration, Instant},
@@ -151,7 +151,7 @@ pub struct BlockSync<N: Network> {
     /// The map of peer-to-peer to their common ancestor.
     /// This map is used to determine which peers to request blocks from.
     ///
-    /// Lock ordering: when locking both, common_ancestors and locators, common_ancestors must be locked first.
+    /// Lock ordering: when locking both, `common_ancestors` and `locators`, `common_ancestors` must be locked first.
     common_ancestors: RwLock<IndexMap<PeerPair, u32>>,
 
     /// The block requests in progress and their responses.
@@ -400,12 +400,17 @@ impl<N: Network> BlockSync<N> {
     ///
     /// Returns true, if new blocks were added to the ledger.
     ///
-    /// Validators will not call this function, but instead execute `snarkos_node_bft::Sync::try_advancing_block_synchronization`
-    /// which also updates the BFT state.
+    /// # Usage
+    /// This is only called in [`Client::try_block_sync`] and should not be called concurrently by multiple tasks.
+    /// Validators do not call this function, and instead invoke
+    /// [`snarkos_node_bft::Sync::try_advancing_block_synchronization`] which also updates the BFT state.
     #[inline]
     pub async fn try_advancing_block_synchronization(&self) -> Result<bool> {
         // Acquire the lock to ensure this function is called only once at a time.
         // If the lock is already acquired, return early.
+        //
+        // Note: This lock should not be needed anymore as there is only one place we call it from,
+        // but we keep it for now out of caution.
         let Ok(_lock) = self.advance_with_sync_blocks_lock.try_lock() else {
             trace!("Skipping attempt to advance block synchronziation as it is already in progress");
             return Ok(false);
@@ -504,17 +509,19 @@ impl<N: Network> BlockSync<N> {
     /// This function does **not** check
     /// that the block locators are consistent with the peer's previous block locators or other peers' block locators.
     pub fn update_peer_locators(&self, peer_ip: SocketAddr, locators: BlockLocators<N>) -> Result<()> {
-        // Atomically update the locators map as, and drop the lock as soon as we are done are updating the map.
-        {
-            let mut lock = self.locators.write();
-
-            // If the locators match the existing locators for the peer, return early.
-            if lock.get(&peer_ip) == Some(&locators) {
-                return Ok(());
+        // Update the locators entry for the given peer IP.
+        // We perform this update atomically, and drop the lock as soon as we are done with the update.
+        match self.locators.write().entry(peer_ip) {
+            hash_map::Entry::Occupied(mut e) => {
+                // Return early if the block locators did not change.
+                if e.get() == &locators {
+                    return Ok(());
+                }
+                e.insert(locators.clone());
             }
-
-            // Update the locators entry for the given peer IP.
-            lock.insert(peer_ip, locators.clone());
+            hash_map::Entry::Vacant(e) => {
+                e.insert(locators.clone());
+            }
         }
 
         // Compute the common ancestor with this node.
@@ -531,7 +538,7 @@ impl<N: Network> BlockSync<N> {
             }
         }
         // Update the common ancestor entry for this node.
-        // Scope the lock, so it is dropped before locking sync_state.
+        // Scope the lock, so it is dropped before locking `sync_state`.
         {
             let mut common_ancestors = self.common_ancestors.write();
             common_ancestors.insert(PeerPair(DUMMY_SELF_IP, peer_ip), ancestor);
@@ -556,7 +563,7 @@ impl<N: Network> BlockSync<N> {
             }
         }
 
-        // Update is_synced
+        // Update `is_synced`.
         if let Some(greatest_peer_height) = self.locators.read().values().map(|l| l.latest_locator_height()).max() {
             self.sync_state.write().set_greatest_peer_height(greatest_peer_height);
         }
