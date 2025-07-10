@@ -14,17 +14,11 @@
 // limitations under the License.
 
 use snarkvm::{
-    console::{
-        network::Network,
-        program::StatePath,
-        types::Field,
-    },
-    prelude::{
-        query::QueryTrait,
-    },
+    console::{network::Network, program::StatePath, types::Field},
+    prelude::query::QueryTrait,
 };
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use serde::Deserialize;
 use std::str::FromStr;
@@ -49,15 +43,11 @@ impl<N: Network> TryFrom<&String> for StaticQuery<N> {
             return Err(anyhow!("Not a static query"));
         }
 
-        let input: StaticQueryInput = serde_json::from_str(s)
-            .map_err(|e| anyhow!("Invalid JSON format in static query: {e}"))?;
-        let state_root = N::StateRoot::from_str(&input.state_root)
-            .map_err(|_| anyhow!("Invalid state root format"))?;
+        let input: StaticQueryInput =
+            serde_json::from_str(s).map_err(|e| anyhow!("Invalid JSON format in static query: {e}"))?;
+        let state_root = N::StateRoot::from_str(&input.state_root).map_err(|_| anyhow!("Invalid state root format"))?;
 
-        Ok(Self {
-            state_root,
-            block_height: input.height,
-        })
+        Ok(Self { state_root, block_height: input.height })
     }
 }
 
@@ -95,7 +85,8 @@ mod tests {
 
     #[test]
     fn test_static_query_parse() {
-        let json = r#"{"state_root": "sr1dz06ur5spdgzkguh4pr42mvft6u3nwsg5drh9rdja9v8jpcz3czsls9geg", "height": 14}"#.to_string();
+        let json = r#"{"state_root": "sr1dz06ur5spdgzkguh4pr42mvft6u3nwsg5drh9rdja9v8jpcz3czsls9geg", "height": 14}"#
+            .to_string();
         let res = StaticQuery::<TestnetV0>::try_from(&json);
         assert!(res.is_ok());
     }

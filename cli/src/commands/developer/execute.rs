@@ -117,14 +117,9 @@ impl Execute {
     /// Construct and process the execution transaction.
     fn construct_execution<N: Network>(&self) -> Result<String> {
         // Specify the query
-        //let query = Query::<N, BlockMemory<N>>::from(&self.query);
-        let query: Box<dyn QueryTrait<N>> = match StaticQuery::<N>::try_from(&self.query) {
-            Ok(query) => {
-                Box::new(query)
-            },
-            Err(_) => {
-                Box::new(Query::<N, BlockMemory<N>>::from(&self.query))
-            }
+        let (query, is_static_query): (Box<dyn QueryTrait<N>>, bool) = match StaticQuery::<N>::try_from(&self.query) {
+            Ok(query) => (Box::new(query), true),
+            Err(_) => (Box::new(Query::<N, BlockMemory<N>>::from(&self.query)), false),
         };
 
         // Retrieve the private key.
@@ -168,8 +163,10 @@ impl Execute {
             // Initialize the VM.
             let vm = VM::from(store)?;
 
-            // Load the program and it's imports into the process.
-            load_program(&self.query, &mut vm.process().write(), &program_id)?;
+            if !is_static_query {
+                // Load the program and it's imports into the process.
+                load_program(&self.query, &mut vm.process().write(), &program_id)?;
+            }
 
             // Prepare the fee.
             let fee_record = match &self.record {
@@ -178,7 +175,6 @@ impl Execute {
             };
             let priority_fee = self.priority_fee.unwrap_or(0);
 
-            println!("Here 1");
             // Create a new transaction.
             vm.execute(
                 &private_key,
@@ -192,7 +188,7 @@ impl Execute {
         };
 
         // Check if the public balance is sufficient.
-        if self.record.is_none() {
+        if self.record.is_none() && !is_static_query {
             // Fetch the public balance.
             let address = Address::try_from(&private_key)?;
             let public_balance = Developer::get_public_balance(&address, &self.query)?;
