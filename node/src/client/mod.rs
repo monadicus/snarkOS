@@ -250,7 +250,7 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
 impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
     const SYNC_INTERVAL: Duration = std::time::Duration::from_secs(5);
 
-    /// Initializes the sync pool.
+    /// Spawns the tasks that performs the syncing logic for this client.
     fn initialize_sync(&self) {
         // Start the sync loop.
         let _self = self.clone();
@@ -317,7 +317,13 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
         if block_requests.is_empty() && self.sync.has_pending_responses() {
             // Try to advance the ledger with the sync pool.
             trace!("No block requests to send. Will process pending responses.");
-            let has_new_blocks = self.sync.try_advancing_block_synchronization();
+            let has_new_blocks = match self.sync.try_advancing_block_synchronization().await {
+                Ok(val) => val,
+                Err(err) => {
+                    error!("{err}");
+                    return;
+                }
+            };
 
             if has_new_blocks {
                 match self.sync.get_block_locators() {
