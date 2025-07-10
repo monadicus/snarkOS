@@ -15,6 +15,7 @@
 
 use super::Developer;
 use crate::commands::StoreFormat;
+use crate::helpers::StaticQuery;
 use snarkvm::{
     console::network::{CanaryV0, MainnetV0, Network, TestnetV0},
     ledger::store::helpers::memory::BlockMemory,
@@ -28,6 +29,7 @@ use snarkvm::{
         VM,
         Value,
         query::Query,
+        query::QueryTrait,
         store::{ConsensusStore, helpers::memory::ConsensusMemory},
     },
 };
@@ -115,7 +117,15 @@ impl Execute {
     /// Construct and process the execution transaction.
     fn construct_execution<N: Network>(&self) -> Result<String> {
         // Specify the query
-        let query = Query::<N, BlockMemory<N>>::from(&self.query);
+        //let query = Query::<N, BlockMemory<N>>::from(&self.query);
+        let query: Box<dyn QueryTrait<N>> = match StaticQuery::<N>::try_from(&self.query) {
+            Ok(query) => {
+                Box::new(query)
+            },
+            Err(_) => {
+                Box::new(Query::<N, BlockMemory<N>>::from(&self.query))
+            }
+        };
 
         // Retrieve the private key.
         let key_str = match (self.private_key.as_ref(), self.private_key_file.as_ref()) {
@@ -168,6 +178,7 @@ impl Execute {
             };
             let priority_fee = self.priority_fee.unwrap_or(0);
 
+            println!("Here 1");
             // Create a new transaction.
             vm.execute(
                 &private_key,
@@ -175,7 +186,7 @@ impl Execute {
                 inputs.iter(),
                 fee_record,
                 priority_fee,
-                Some(&query),
+                Some(&*query),
                 rng,
             )?
         };

@@ -3745,6 +3745,7 @@ dependencies = [
  "aleo-std",
  "anstyle",
  "anyhow",
+ "async-trait",
  "base64 0.22.1",
  "base64ct",
  "clap",

@@ -28,6 +28,9 @@ pub use logger::*;
 pub mod updater;
 pub use updater::*;
 
+pub mod static_query;
+pub use static_query::*;
+
 use snarkos_node::router::messages::NodeType;
 
 use colored::*;

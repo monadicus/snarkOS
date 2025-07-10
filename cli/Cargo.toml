@@ -17,6 +17,7 @@ license = "Apache-2.0"
 edition = "2021"
 
 [features]
+async = []
 locktick = [
   "dep:locktick",
   "snarkos-node/locktick",
@@ -45,6 +46,9 @@ version = "1"
 
 [dependencies.anyhow]
 workspace = true
+
+[dependencies.async-trait]
+version = "0.1"
 
 [dependencies.base64]
 workspace = true
