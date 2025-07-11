@@ -562,8 +562,6 @@ impl<N: Network> BlockSync<N> {
         };
 
         // Compute the common ancestor with every other peer.
-        // Scope the lock, so it is dropped before locking `sync_state`.
-        //
         // Do not hold write lock to `common_ancestors` here, because this can take a while with many peers.
         let ancestor_updates: Vec<_> = self
             .locators
