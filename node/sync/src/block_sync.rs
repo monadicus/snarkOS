@@ -525,29 +525,37 @@ impl<N: Network> BlockSync<N> {
         }
 
         // Compute the common ancestor with this node.
-        // Attention: Please do not optimize this loop, as it performs fork-detection. In addition,
-        // by iterating upwards, it also early-terminates malicious block locators at the *first* point
-        // of bifurcation in their ledger history, which is a critical safety guarantee provided here.
-        let mut ancestor = 0;
-        for (height, hash) in locators.clone().into_iter() {
-            if let Ok(ledger_hash) = self.ledger.get_block_hash(height) {
-                match ledger_hash == hash {
-                    true => ancestor = height,
-                    false => break, // fork
+        let new_local_ancestor = {
+            let mut ancestor = 0;
+            // Attention: Please do not optimize this loop, as it performs fork-detection. In addition,
+            // by iterating upwards, it also early-terminates malicious block locators at the *first* point
+            // of bifurcation in their ledger history, which is a critical safety guarantee provided here.
+            for (height, hash) in locators.clone().into_iter() {
+                if let Ok(ledger_hash) = self.ledger.get_block_hash(height) {
+                    match ledger_hash == hash {
+                        true => ancestor = height,
+                        false => {
+                            debug!("Detected fork with peer \"{peer_ip}\" at height {height}");
+                            break;
+                        }
+                    }
                 }
             }
-        }
-        // Update the common ancestor entry for this node.
-        // Scope the lock, so it is dropped before locking `sync_state`.
-        {
-            let mut common_ancestors = self.common_ancestors.write();
-            common_ancestors.insert(PeerPair(DUMMY_SELF_IP, peer_ip), ancestor);
+            ancestor
+        };
 
-            // Compute the common ancestor with every other peer.
-            for (other_ip, other_locators) in self.locators.read().iter() {
+        // Compute the common ancestor with every other peer.
+        // Scope the lock, so it is dropped before locking `sync_state`.
+        //
+        // Do not hold write lock to `common_ancestors` here, because this can take a while with many peers.
+        let ancestor_updates: Vec<_> = self
+            .locators
+            .read()
+            .iter()
+            .filter_map(|(other_ip, other_locators)| {
                 // Skip if the other peer is the given peer.
                 if other_ip == &peer_ip {
-                    continue;
+                    return None;
                 }
                 // Compute the common ancestor with the other peer.
                 let mut ancestor = 0;
@@ -555,11 +563,35 @@ impl<N: Network> BlockSync<N> {
                     if let Some(expected_hash) = locators.get_hash(height) {
                         match expected_hash == hash {
                             true => ancestor = height,
-                            false => break, // fork
+                            false => {
+                                debug!(
+                                    "Detected fork between peers \"{other_ip}\" and \"{peer_ip}\" at height {height}"
+                                );
+                                break;
+                            }
                         }
                     }
                 }
-                common_ancestors.insert(PeerPair(peer_ip, *other_ip), ancestor);
+
+                Some((PeerPair(peer_ip, *other_ip), ancestor))
+            })
+            .collect();
+
+        // Update the map of common ancestors.
+        // Scope the lock, so it is dropped before locking `sync_state`.
+        {
+            let mut common_ancestors = self.common_ancestors.write();
+            common_ancestors
+                .entry(PeerPair(DUMMY_SELF_IP, peer_ip))
+                .and_modify(|value| *value = (*value).max(new_local_ancestor))
+                .or_insert(new_local_ancestor);
+
+            for (peer_pair, new_ancestor) in ancestor_updates.into_iter() {
+                // Ensure we do not downgrade the shared ancestor when there is a concurrent update.
+                common_ancestors
+                    .entry(peer_pair)
+                    .and_modify(|value| *value = (*value).max(new_ancestor))
+                    .or_insert(new_ancestor);
             }
         }
 
@@ -841,6 +873,7 @@ impl<N: Network> BlockSync<N> {
         let mut num_timed_out_block_requests = 0;
 
         // Track which peers should be banned due to unresponsiveness.
+        let mut locators_to_remove: HashSet<SocketAddr> = HashSet::new();
         let mut peers_to_ban: HashSet<SocketAddr> = HashSet::new();
         let mut removed_requests = vec![];
 
@@ -872,8 +905,11 @@ impl<N: Network> BlockSync<N> {
                 removed_requests.push(*height);
                 for peer_ip in e.sync_ips().iter() {
                         debug!("Removing peer {peer_ip} from block request {height}");
-                        // Remove the locators entry for the given peer IP.
-                        self.locators.write().remove(peer_ip);
+
+                        // Mark the locators for the given peer to be removed.
+                        locators_to_remove.insert(*peer_ip);
+
+                        // If the peer timed is unresponsive, also block it.
                         if is_timeout {
                             peers_to_ban.insert(*peer_ip);
                         }
@@ -891,6 +927,17 @@ impl<N: Network> BlockSync<N> {
 
         if num_timed_out_block_requests > 0 {
             debug!("{num_timed_out_block_requests} block requests timed out");
+        }
+
+        // Avoid locking `locators` and `requests` at the same time.
+        drop(lock);
+
+        // Remove all obsolete block locators.
+        if !locators_to_remove.is_empty() {
+            let mut locators = self.locators.write();
+            for peer_ip in locators_to_remove {
+                locators.remove(&peer_ip);
+            }
         }
 
         peers_to_ban
