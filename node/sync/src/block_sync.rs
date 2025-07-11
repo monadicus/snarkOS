@@ -228,6 +228,12 @@ impl<N: Network> BlockSync<N> {
     pub fn num_outstanding_block_requests(&self) -> usize {
         self.requests.read().iter().filter(|(_, e)| !e.sync_ips().is_empty()).count()
     }
+
+    /// The total number of block request, including the ones that have been answered already but not processed yet.
+    #[inline]
+    pub fn num_total_block_requests(&self) -> usize {
+        self.requests.read().len()
+    }
 }
 
 // Helper functions needed for testing
@@ -647,21 +653,8 @@ impl<N: Network> BlockSync<N> {
     ///  - For clients, `Client::initialize_sync` also spawns exactly one task that periodically calls this function.
     ///  - Provers do not call this function.
     pub fn prepare_block_requests(&self) -> BlockRequestBatch<N> {
-        // Do not hold lock here as, currently, `find_sync_peers_inner` can take a while.
-        let current_height = self.get_sync_height();
-
-        // Ensure to not exceed the maximum number of outstanding block requests.
-        let max_blocks_to_request = (MAX_BLOCK_REQUESTS as u32) * (DataBlocks::<N>::MAXIMUM_NUMBER_OF_BLOCKS as u32);
-        let max_new_blocks_to_request =
-            max_blocks_to_request.saturating_sub(self.num_outstanding_block_requests() as u32);
-
-        // Prepare the block requests.
-        if max_new_blocks_to_request == 0 {
-            trace!(
-                "Already reached the maximum number of outstanding blocks ({max_blocks_to_request}). Will not issue more."
-            );
-
-            // Print more information when we max out on requests.
+        // Used to print more information when we max out on requests.
+        let print_requests = || {
             trace!(
                 "The following requests are complete but not processed yet: {:?}",
                 self.requests
@@ -678,6 +671,34 @@ impl<N: Network> BlockSync<N> {
                     .filter_map(|(h, e)| if !e.sync_ips().is_empty() { Some(h) } else { None })
                     .collect::<Vec<_>>()
             );
+        };
+
+        // Do not hold lock here as, currently, `find_sync_peers_inner` can take a while.
+        let current_height = self.get_sync_height();
+
+        // Ensure to not exceed the maximum number of outstanding block requests.
+        let max_outstanding_block_requests =
+            (MAX_BLOCK_REQUESTS as u32) * (DataBlocks::<N>::MAXIMUM_NUMBER_OF_BLOCKS as u32);
+        let max_total_requests = 4 * max_outstanding_block_requests;
+        let max_new_blocks_to_request =
+            max_outstanding_block_requests.saturating_sub(self.num_outstanding_block_requests() as u32);
+
+        // Prepare the block requests.
+        if self.num_total_block_requests() >= max_total_requests as usize {
+            trace!(
+                "We are already requested at least {max_total_requests} blocks that have not been fully processed yet. Will not issue more."
+            );
+
+            print_requests();
+
+            // Return an empty list of block requests.
+            (Default::default(), Default::default())
+        } else if max_new_blocks_to_request == 0 {
+            trace!(
+                "Already reached the maximum number of outstanding blocks ({max_outstanding_block_requests}). Will not issue more."
+            );
+            print_requests();
+
             // Return an empty list of block requests.
             (Default::default(), Default::default())
         } else if let Some((sync_peers, min_common_ancestor)) = self.find_sync_peers_inner(current_height) {
