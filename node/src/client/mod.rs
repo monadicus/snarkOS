@@ -332,10 +332,15 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
                 }
             }
         } else if block_requests.is_empty() {
-            warn!(
-                "Not block synced yet, and there are no outstanding block requests or \
+            let num_outstanding = self.sync.num_outstanding_block_requests();
+            if num_outstanding > 0 {
+                trace!("Not block synced yet. Still waiting on {num_outstanding} outstanding block requests.");
+            } else {
+                warn!(
+                    "Not block synced yet, and there are no outstanding block requests or \
                  new block requests to send"
-            );
+                );
+            }
         } else {
             trace!("Prepared {} new block requests.", block_requests.len());
 
