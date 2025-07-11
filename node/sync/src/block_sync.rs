@@ -706,7 +706,13 @@ impl<N: Network> BlockSync<N> {
             self.sync_state.write().set_greatest_peer_height(greatest_peer_height);
             // Return the list of block requests.
             (
-                self.construct_requests(&sync_peers, current_height, min_common_ancestor, max_new_blocks_to_request),
+                self.construct_requests(
+                    &sync_peers,
+                    current_height,
+                    min_common_ancestor,
+                    max_new_blocks_to_request,
+                    greatest_peer_height,
+                ),
                 sync_peers,
             )
         } else {
@@ -1065,6 +1071,7 @@ impl<N: Network> BlockSync<N> {
         sync_height: u32,
         min_common_ancestor: u32,
         max_blocks_to_request: u32,
+        greatest_peer_height: u32,
     ) -> Vec<(u32, PrepareSyncRequest<N>)> {
         // Compute the start height for the block requests.
         let start_height = {
@@ -1084,9 +1091,11 @@ impl<N: Network> BlockSync<N> {
 
         // If the minimum common ancestor is at or below the latest ledger height, then return early.
         if min_common_ancestor <= start_height {
-            trace!(
-                "No request to construct. Height for the next block request is {start_height}, but minimum common block locator ancestor is only {min_common_ancestor} (sync_height={sync_height})"
-            );
+            if start_height < greatest_peer_height {
+                trace!(
+                    "No request to construct. Height for the next block request is {start_height}, but minimum common block locator ancestor is only {min_common_ancestor} (sync_height={sync_height} greatest_peer_height={greatest_peer_height})"
+                );
+            }
             return Default::default();
         }
 
