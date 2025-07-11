@@ -216,6 +216,13 @@ impl<N: Network> BlockSync<N> {
         self.sync_state.read().get_greatest_peer_height()
     }
 
+    /// Returns the current sync height of this node.
+    /// The sync height is always greater or equal to the ledger height.
+    #[inline]
+    pub fn get_sync_height(&self) -> u32 {
+        self.sync_state.read().get_sync_height()
+    }
+
     /// Returns the number of blocks we requested from peers, but have not received yet.
     #[inline]
     pub fn num_outstanding_block_requests(&self) -> usize {
@@ -486,9 +493,12 @@ impl<N: Network> BlockSync<N> {
     /// Returns the sync peers with their latest heights, and their minimum common ancestor, if the node can sync.
     /// This function returns peers that are consistent with each other, and have a block height
     /// that is greater than the ledger height of this node.
+    ///
+    /// # Locking
+    /// This will read-lock `common_ancestors` and `sync_state`, but not at the same time.
     pub fn find_sync_peers(&self) -> Option<(IndexMap<SocketAddr, u32>, u32)> {
         // Retrieve the current sync height.
-        let current_height = self.sync_state.read().get_sync_height();
+        let current_height = self.get_sync_height();
 
         if let Some((sync_peers, min_common_ancestor)) = self.find_sync_peers_inner(current_height) {
             // Map the locators into the latest height.
@@ -943,7 +953,13 @@ impl<N: Network> BlockSync<N> {
         peers_to_ban
     }
 
-    /// Returns the sync peers and their minimum common ancestor, if the node needs to sync.
+    /// Finds the peers to sync from and the shared common ancestor, starting at the give height.
+    ///
+    /// Unlike [`Self::find_sync_peers`] this does not only return the latest locators height, but the full BlockLocators for each peer.
+    /// Returns `None` if there are no peers to sync from.
+    ///
+    /// # Locking
+    /// This function will read-lock `common_ancstors`.
     fn find_sync_peers_inner(&self, current_height: u32) -> Option<(IndexMap<SocketAddr, BlockLocators<N>>, u32)> {
         // Retrieve the latest ledger height.
         let latest_ledger_height = self.ledger.latest_block_height();
