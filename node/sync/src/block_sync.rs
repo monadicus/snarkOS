@@ -418,6 +418,7 @@ impl<N: Network> BlockSync<N> {
         //
         // Note: This lock should not be needed anymore as there is only one place we call it from,
         // but we keep it for now out of caution.
+        // TODO(kaimast): remove this eventually.
         let Ok(_lock) = self.advance_with_sync_blocks_lock.try_lock() else {
             trace!("Skipping attempt to advance block synchronziation as it is already in progress");
             return Ok(false);
@@ -637,9 +638,17 @@ impl<N: Network> BlockSync<N> {
     /// Returns a list of block requests and the sync peers, if the node needs to sync.
     ///
     /// You usually want to call `remove_timed_out_block_requests` before invoking this function.
+    ///
+    /// # Concurrency
+    /// This should be called by at most one task at a time.
+    ///
+    /// # Usage
+    ///  - For validators, the primary spawns one task that periodically calls `bft::Sync::try_block_sync`. There is no possibility of multiple calls to it at a time.
+    ///  - For clients, `Client::initialize_sync` also spawns exactly one task that periodically calls this function.
+    ///  - Provers do not call this function.
     pub fn prepare_block_requests(&self) -> BlockRequestBatch<N> {
-        let mut state = self.sync_state.write();
-        let current_height = state.get_sync_height();
+        // Do not hold lock here as, currently, `find_sync_peers_inner` can take a while.
+        let current_height = self.get_sync_height();
 
         // Ensure to not exceed the maximum number of outstanding block requests.
         let max_blocks_to_request = (MAX_BLOCK_REQUESTS as u32) * (DataBlocks::<N>::MAXIMUM_NUMBER_OF_BLOCKS as u32);
@@ -675,7 +684,7 @@ impl<N: Network> BlockSync<N> {
             // Retrieve the highest block height.
             let greatest_peer_height = sync_peers.values().map(|l| l.latest_locator_height()).max().unwrap_or(0);
             // Update the state of `is_block_synced` for the sync module.
-            state.set_greatest_peer_height(greatest_peer_height);
+            self.sync_state.write().set_greatest_peer_height(greatest_peer_height);
             // Return the list of block requests.
             (
                 self.construct_requests(&sync_peers, current_height, min_common_ancestor, max_new_blocks_to_request),
@@ -692,7 +701,7 @@ impl<N: Network> BlockSync<N> {
                 trace!("All requests have been processed. Will set block synced to true.");
                 // Update the state of `is_block_synced` for the sync module.
                 // TODO(kaimast): remove this workaround
-                state.set_greatest_peer_height(0);
+                self.sync_state.write().set_greatest_peer_height(0);
             } else {
                 trace!("No new blocks can be requests, but there are still outstanding requests.");
             }
