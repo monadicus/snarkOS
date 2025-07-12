@@ -35,7 +35,7 @@ use snarkvm::{
     prelude::{Ledger, Network, cfg_into_iter, store::ConsensusStorage},
 };
 
-use anyhow::Result;
+use anyhow::{Context, Result, bail};
 use axum::{
     Json,
     body::Body,
@@ -90,7 +90,7 @@ impl<N: Network, C: 'static + ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> 
         // Initialize the server.
         let mut server = Self { consensus, ledger, routing, cdn_sync, handles: Default::default() };
         // Spawn the server.
-        server.spawn_server(rest_ip, rest_rps).await;
+        server.spawn_server(rest_ip, rest_rps).await?;
         // Return the server.
         Ok(server)
     }
@@ -109,7 +109,7 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
 }
 
 impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
-    async fn spawn_server(&mut self, rest_ip: SocketAddr, rest_rps: u32) {
+    async fn spawn_server(&mut self, rest_ip: SocketAddr, rest_rps: u32) -> Result<()> {
         let cors = CorsLayer::new()
             .allow_origin(Any)
             .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
@@ -143,8 +143,7 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
             snarkvm::console::network::TestnetV0::ID => "testnet",
             snarkvm::console::network::CanaryV0::ID => "canary",
             unknown_id => {
-                eprintln!("Unknown network ID ({unknown_id})");
-                return;
+                bail!("Unknown network ID ({unknown_id})");
             }
         };
 
@@ -245,12 +244,17 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
             })
         };
 
-        let rest_listener = TcpListener::bind(rest_ip).await.unwrap();
-        self.handles.lock().push(tokio::spawn(async move {
+        let rest_listener =
+            TcpListener::bind(rest_ip).await.with_context(|| "Failed to bind TCP port for REST endpoints")?;
+
+        let handle = tokio::spawn(async move {
             axum::serve(rest_listener, router.into_make_service_with_connect_info::<SocketAddr>())
                 .await
                 .expect("couldn't start rest server");
-        }))
+        });
+
+        self.handles.lock().push(handle);
+        Ok(())
     }
 }
 
