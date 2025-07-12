@@ -339,7 +339,8 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
                     "Not block synced yet, but there are still {total_requests} in-flight requests. {num_outstanding} are still awaiting responses."
                 );
             } else {
-                warn!(
+                // This can happen during peer rotation and should not be a warning.
+                debug!(
                     "Not block synced yet, and there are no outstanding block requests or \
                  new block requests to send"
                 );

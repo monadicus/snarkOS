@@ -534,6 +534,13 @@ impl<N: Network> BlockSync<N> {
                 if e.get() == &locators {
                     return Ok(());
                 }
+
+                let old_height = e.get().latest_locator_height();
+                let new_height = locators.latest_locator_height();
+
+                if old_height > new_height {
+                    debug!("Block height for peer {peer_ip} decreased from {old_height} to {new_height}",);
+                }
                 e.insert(locators.clone());
             }
             hash_map::Entry::Vacant(e) => {
@@ -596,17 +603,10 @@ impl<N: Network> BlockSync<N> {
         // Scope the lock, so it is dropped before locking `sync_state`.
         {
             let mut common_ancestors = self.common_ancestors.write();
-            common_ancestors
-                .entry(PeerPair(DUMMY_SELF_IP, peer_ip))
-                .and_modify(|value| *value = (*value).max(new_local_ancestor))
-                .or_insert(new_local_ancestor);
+            common_ancestors.insert(PeerPair(DUMMY_SELF_IP, peer_ip), new_local_ancestor);
 
             for (peer_pair, new_ancestor) in ancestor_updates.into_iter() {
-                // Ensure we do not downgrade the shared ancestor when there is a concurrent update.
-                common_ancestors
-                    .entry(peer_pair)
-                    .and_modify(|value| *value = (*value).max(new_ancestor))
-                    .or_insert(new_ancestor);
+                common_ancestors.insert(peer_pair, new_ancestor);
             }
         }
 
