@@ -332,10 +332,19 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
                 }
             }
         } else if block_requests.is_empty() {
-            warn!(
-                "Not block synced yet, and there are no outstanding block requests or \
+            let total_requests = self.sync.num_total_block_requests();
+            let num_outstanding = self.sync.num_outstanding_block_requests();
+            if total_requests > 0 {
+                trace!(
+                    "Not block synced yet, but there are still {total_requests} in-flight requests. {num_outstanding} are still awaiting responses."
+                );
+            } else {
+                // This can happen during peer rotation and should not be a warning.
+                debug!(
+                    "Not block synced yet, and there are no outstanding block requests or \
                  new block requests to send"
-            );
+                );
+            }
         } else {
             trace!("Prepared {} new block requests.", block_requests.len());
 

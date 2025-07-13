@@ -216,10 +216,23 @@ impl<N: Network> BlockSync<N> {
         self.sync_state.read().get_greatest_peer_height()
     }
 
+    /// Returns the current sync height of this node.
+    /// The sync height is always greater or equal to the ledger height.
+    #[inline]
+    pub fn get_sync_height(&self) -> u32 {
+        self.sync_state.read().get_sync_height()
+    }
+
     /// Returns the number of blocks we requested from peers, but have not received yet.
     #[inline]
     pub fn num_outstanding_block_requests(&self) -> usize {
         self.requests.read().iter().filter(|(_, e)| !e.sync_ips().is_empty()).count()
+    }
+
+    /// The total number of block request, including the ones that have been answered already but not processed yet.
+    #[inline]
+    pub fn num_total_block_requests(&self) -> usize {
+        self.requests.read().len()
     }
 }
 
@@ -411,6 +424,7 @@ impl<N: Network> BlockSync<N> {
         //
         // Note: This lock should not be needed anymore as there is only one place we call it from,
         // but we keep it for now out of caution.
+        // TODO(kaimast): remove this eventually.
         let Ok(_lock) = self.advance_with_sync_blocks_lock.try_lock() else {
             trace!("Skipping attempt to advance block synchronziation as it is already in progress");
             return Ok(false);
@@ -486,9 +500,12 @@ impl<N: Network> BlockSync<N> {
     /// Returns the sync peers with their latest heights, and their minimum common ancestor, if the node can sync.
     /// This function returns peers that are consistent with each other, and have a block height
     /// that is greater than the ledger height of this node.
+    ///
+    /// # Locking
+    /// This will read-lock `common_ancestors` and `sync_state`, but not at the same time.
     pub fn find_sync_peers(&self) -> Option<(IndexMap<SocketAddr, u32>, u32)> {
         // Retrieve the current sync height.
-        let current_height = self.sync_state.read().get_sync_height();
+        let current_height = self.get_sync_height();
 
         if let Some((sync_peers, min_common_ancestor)) = self.find_sync_peers_inner(current_height) {
             // Map the locators into the latest height.
@@ -517,6 +534,13 @@ impl<N: Network> BlockSync<N> {
                 if e.get() == &locators {
                     return Ok(());
                 }
+
+                let old_height = e.get().latest_locator_height();
+                let new_height = locators.latest_locator_height();
+
+                if old_height > new_height {
+                    debug!("Block height for peer {peer_ip} decreased from {old_height} to {new_height}",);
+                }
                 e.insert(locators.clone());
             }
             hash_map::Entry::Vacant(e) => {
@@ -525,29 +549,35 @@ impl<N: Network> BlockSync<N> {
         }
 
         // Compute the common ancestor with this node.
-        // Attention: Please do not optimize this loop, as it performs fork-detection. In addition,
-        // by iterating upwards, it also early-terminates malicious block locators at the *first* point
-        // of bifurcation in their ledger history, which is a critical safety guarantee provided here.
-        let mut ancestor = 0;
-        for (height, hash) in locators.clone().into_iter() {
-            if let Ok(ledger_hash) = self.ledger.get_block_hash(height) {
-                match ledger_hash == hash {
-                    true => ancestor = height,
-                    false => break, // fork
+        let new_local_ancestor = {
+            let mut ancestor = 0;
+            // Attention: Please do not optimize this loop, as it performs fork-detection. In addition,
+            // by iterating upwards, it also early-terminates malicious block locators at the *first* point
+            // of bifurcation in their ledger history, which is a critical safety guarantee provided here.
+            for (height, hash) in locators.clone().into_iter() {
+                if let Ok(ledger_hash) = self.ledger.get_block_hash(height) {
+                    match ledger_hash == hash {
+                        true => ancestor = height,
+                        false => {
+                            debug!("Detected fork with peer \"{peer_ip}\" at height {height}");
+                            break;
+                        }
+                    }
                 }
             }
-        }
-        // Update the common ancestor entry for this node.
-        // Scope the lock, so it is dropped before locking `sync_state`.
-        {
-            let mut common_ancestors = self.common_ancestors.write();
-            common_ancestors.insert(PeerPair(DUMMY_SELF_IP, peer_ip), ancestor);
+            ancestor
+        };
 
-            // Compute the common ancestor with every other peer.
-            for (other_ip, other_locators) in self.locators.read().iter() {
+        // Compute the common ancestor with every other peer.
+        // Do not hold write lock to `common_ancestors` here, because this can take a while with many peers.
+        let ancestor_updates: Vec<_> = self
+            .locators
+            .read()
+            .iter()
+            .filter_map(|(other_ip, other_locators)| {
                 // Skip if the other peer is the given peer.
                 if other_ip == &peer_ip {
-                    continue;
+                    return None;
                 }
                 // Compute the common ancestor with the other peer.
                 let mut ancestor = 0;
@@ -555,11 +585,28 @@ impl<N: Network> BlockSync<N> {
                     if let Some(expected_hash) = locators.get_hash(height) {
                         match expected_hash == hash {
                             true => ancestor = height,
-                            false => break, // fork
+                            false => {
+                                debug!(
+                                    "Detected fork between peers \"{other_ip}\" and \"{peer_ip}\" at height {height}"
+                                );
+                                break;
+                            }
                         }
                     }
                 }
-                common_ancestors.insert(PeerPair(peer_ip, *other_ip), ancestor);
+
+                Some((PeerPair(peer_ip, *other_ip), ancestor))
+            })
+            .collect();
+
+        // Update the map of common ancestors.
+        // Scope the lock, so it is dropped before locking `sync_state`.
+        {
+            let mut common_ancestors = self.common_ancestors.write();
+            common_ancestors.insert(PeerPair(DUMMY_SELF_IP, peer_ip), new_local_ancestor);
+
+            for (peer_pair, new_ancestor) in ancestor_updates.into_iter() {
+                common_ancestors.insert(peer_pair, new_ancestor);
             }
         }
 
@@ -595,22 +642,17 @@ impl<N: Network> BlockSync<N> {
     /// Returns a list of block requests and the sync peers, if the node needs to sync.
     ///
     /// You usually want to call `remove_timed_out_block_requests` before invoking this function.
+    ///
+    /// # Concurrency
+    /// This should be called by at most one task at a time.
+    ///
+    /// # Usage
+    ///  - For validators, the primary spawns one task that periodically calls `bft::Sync::try_block_sync`. There is no possibility of multiple calls to it at a time.
+    ///  - For clients, `Client::initialize_sync` also spawns exactly one task that periodically calls this function.
+    ///  - Provers do not call this function.
     pub fn prepare_block_requests(&self) -> BlockRequestBatch<N> {
-        let mut state = self.sync_state.write();
-        let current_height = state.get_sync_height();
-
-        // Ensure to not exceed the maximum number of outstanding block requests.
-        let max_blocks_to_request = (MAX_BLOCK_REQUESTS as u32) * (DataBlocks::<N>::MAXIMUM_NUMBER_OF_BLOCKS as u32);
-        let max_new_blocks_to_request =
-            max_blocks_to_request.saturating_sub(self.num_outstanding_block_requests() as u32);
-
-        // Prepare the block requests.
-        if max_new_blocks_to_request == 0 {
-            trace!(
-                "Already reached the maximum number of outstanding blocks ({max_blocks_to_request}). Will not issue more."
-            );
-
-            // Print more information when we max out on requests.
+        // Used to print more information when we max out on requests.
+        let print_requests = || {
             trace!(
                 "The following requests are complete but not processed yet: {:?}",
                 self.requests
@@ -627,16 +669,50 @@ impl<N: Network> BlockSync<N> {
                     .filter_map(|(h, e)| if !e.sync_ips().is_empty() { Some(h) } else { None })
                     .collect::<Vec<_>>()
             );
+        };
+
+        // Do not hold lock here as, currently, `find_sync_peers_inner` can take a while.
+        let current_height = self.get_sync_height();
+
+        // Ensure to not exceed the maximum number of outstanding block requests.
+        let max_outstanding_block_requests =
+            (MAX_BLOCK_REQUESTS as u32) * (DataBlocks::<N>::MAXIMUM_NUMBER_OF_BLOCKS as u32);
+        let max_total_requests = 4 * max_outstanding_block_requests;
+        let max_new_blocks_to_request =
+            max_outstanding_block_requests.saturating_sub(self.num_outstanding_block_requests() as u32);
+
+        // Prepare the block requests.
+        if self.num_total_block_requests() >= max_total_requests as usize {
+            trace!(
+                "We are already requested at least {max_total_requests} blocks that have not been fully processed yet. Will not issue more."
+            );
+
+            print_requests();
+
+            // Return an empty list of block requests.
+            (Default::default(), Default::default())
+        } else if max_new_blocks_to_request == 0 {
+            trace!(
+                "Already reached the maximum number of outstanding blocks ({max_outstanding_block_requests}). Will not issue more."
+            );
+            print_requests();
+
             // Return an empty list of block requests.
             (Default::default(), Default::default())
         } else if let Some((sync_peers, min_common_ancestor)) = self.find_sync_peers_inner(current_height) {
             // Retrieve the highest block height.
             let greatest_peer_height = sync_peers.values().map(|l| l.latest_locator_height()).max().unwrap_or(0);
             // Update the state of `is_block_synced` for the sync module.
-            state.set_greatest_peer_height(greatest_peer_height);
+            self.sync_state.write().set_greatest_peer_height(greatest_peer_height);
             // Return the list of block requests.
             (
-                self.construct_requests(&sync_peers, current_height, min_common_ancestor, max_new_blocks_to_request),
+                self.construct_requests(
+                    &sync_peers,
+                    current_height,
+                    min_common_ancestor,
+                    max_new_blocks_to_request,
+                    greatest_peer_height,
+                ),
                 sync_peers,
             )
         } else {
@@ -650,7 +726,7 @@ impl<N: Network> BlockSync<N> {
                 trace!("All requests have been processed. Will set block synced to true.");
                 // Update the state of `is_block_synced` for the sync module.
                 // TODO(kaimast): remove this workaround
-                state.set_greatest_peer_height(0);
+                self.sync_state.write().set_greatest_peer_height(0);
             } else {
                 trace!("No new blocks can be requests, but there are still outstanding requests.");
             }
@@ -841,6 +917,7 @@ impl<N: Network> BlockSync<N> {
         let mut num_timed_out_block_requests = 0;
 
         // Track which peers should be banned due to unresponsiveness.
+        let mut locators_to_remove: HashSet<SocketAddr> = HashSet::new();
         let mut peers_to_ban: HashSet<SocketAddr> = HashSet::new();
         let mut removed_requests = vec![];
 
@@ -872,8 +949,11 @@ impl<N: Network> BlockSync<N> {
                 removed_requests.push(*height);
                 for peer_ip in e.sync_ips().iter() {
                         debug!("Removing peer {peer_ip} from block request {height}");
-                        // Remove the locators entry for the given peer IP.
-                        self.locators.write().remove(peer_ip);
+
+                        // Mark the locators for the given peer to be removed.
+                        locators_to_remove.insert(*peer_ip);
+
+                        // If the peer timed is unresponsive, also block it.
                         if is_timeout {
                             peers_to_ban.insert(*peer_ip);
                         }
@@ -893,10 +973,27 @@ impl<N: Network> BlockSync<N> {
             debug!("{num_timed_out_block_requests} block requests timed out");
         }
 
+        // Avoid locking `locators` and `requests` at the same time.
+        drop(lock);
+
+        // Remove all obsolete block locators.
+        if !locators_to_remove.is_empty() {
+            let mut locators = self.locators.write();
+            for peer_ip in locators_to_remove {
+                locators.remove(&peer_ip);
+            }
+        }
+
         peers_to_ban
     }
 
-    /// Returns the sync peers and their minimum common ancestor, if the node needs to sync.
+    /// Finds the peers to sync from and the shared common ancestor, starting at the give height.
+    ///
+    /// Unlike [`Self::find_sync_peers`] this does not only return the latest locators height, but the full BlockLocators for each peer.
+    /// Returns `None` if there are no peers to sync from.
+    ///
+    /// # Locking
+    /// This function will read-lock `common_ancstors`.
     fn find_sync_peers_inner(&self, current_height: u32) -> Option<(IndexMap<SocketAddr, BlockLocators<N>>, u32)> {
         // Retrieve the latest ledger height.
         let latest_ledger_height = self.ledger.latest_block_height();
@@ -974,6 +1071,7 @@ impl<N: Network> BlockSync<N> {
         sync_height: u32,
         min_common_ancestor: u32,
         max_blocks_to_request: u32,
+        greatest_peer_height: u32,
     ) -> Vec<(u32, PrepareSyncRequest<N>)> {
         // Compute the start height for the block requests.
         let start_height = {
@@ -993,9 +1091,11 @@ impl<N: Network> BlockSync<N> {
 
         // If the minimum common ancestor is at or below the latest ledger height, then return early.
         if min_common_ancestor <= start_height {
-            trace!(
-                "No request to construct. Height for the next block request is {start_height}, but minimum common block locator ancestor is only {min_common_ancestor} (sync_height={sync_height})"
-            );
+            if start_height < greatest_peer_height {
+                trace!(
+                    "No request to construct. Height for the next block request is {start_height}, but minimum common block locator ancestor is only {min_common_ancestor} (sync_height={sync_height} greatest_peer_height={greatest_peer_height})"
+                );
+            }
             return Default::default();
         }
 
