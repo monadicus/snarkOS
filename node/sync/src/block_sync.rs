@@ -963,7 +963,7 @@ impl<N: Network> BlockSync<N> {
 
             // Is there a gap?
             if next_height > start {
-                // Only request the given range
+                // Only request the given range, so there are no overlaps with other requests.
                 let end = next_height; // exclusive
                 let max_new_blocks_to_request = end - start;
 
@@ -975,10 +975,12 @@ impl<N: Network> BlockSync<N> {
                 // Retrieve the highest block height.
                 let greatest_peer_height = sync_peers.values().map(|l| l.latest_locator_height()).max().unwrap_or(0);
 
+                debug!("Re-requesting blocks starting at height {start}");
+
                 return Some((
                     self.construct_requests(
                         &sync_peers,
-                        start,
+                        sync_height,
                         min_common_ancestor,
                         max_new_blocks_to_request,
                         greatest_peer_height,
