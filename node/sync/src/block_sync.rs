@@ -43,6 +43,9 @@ use std::{
 use tokio::sync::Mutex as TMutex;
 use tokio::sync::Notify;
 
+mod helpers;
+use helpers::rangify_heights;
+
 mod sync_state;
 use sync_state::SyncState;
 
@@ -659,22 +662,24 @@ impl<N: Network> BlockSync<N> {
     pub fn prepare_block_requests(&self) -> BlockRequestBatch<N> {
         // Used to print more information when we max out on requests.
         let print_requests = || {
-            trace!(
-                "The following requests are complete but not processed yet: {:?}",
-                self.requests
+            if tracing::enabled!(tracing::Level::TRACE) {
+                let complete = self
+                    .requests
                     .read()
                     .iter()
-                    .filter_map(|(h, e)| if e.sync_ips().is_empty() { Some(h) } else { None })
-                    .collect::<Vec<_>>()
-            );
-            trace!(
-                "The following requests are still outstanding: {:?}",
-                self.requests
+                    .filter_map(|(h, e)| if e.sync_ips().is_empty() { Some(*h) } else { None })
+                    .collect::<Vec<_>>();
+
+                let outstanding = self
+                    .requests
                     .read()
                     .iter()
-                    .filter_map(|(h, e)| if !e.sync_ips().is_empty() { Some(h) } else { None })
-                    .collect::<Vec<_>>()
-            );
+                    .filter_map(|(h, e)| if !e.sync_ips().is_empty() { Some(*h) } else { None })
+                    .collect::<Vec<_>>();
+
+                trace!("The following requests are complete but not processed yet: {:?}", rangify_heights(&complete));
+                trace!("The following requests are still outstanding: {:?}", rangify_heights(&outstanding));
+            }
         };
 
         // Do not hold lock here as, currently, `find_sync_peers_inner` can take a while.
