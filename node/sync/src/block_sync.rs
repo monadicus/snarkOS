@@ -221,7 +221,7 @@ impl<N: Network> BlockSync<N> {
     }
 
     //// Returns information about all outstanding block requests.
-    pub fn get_block_requests_info(&self) -> HashMap<u32, RequestInfo> {
+    pub fn get_block_requests_info(&self) -> BTreeMap<u32, RequestInfo> {
         self.requests
             .read()
             .iter()
