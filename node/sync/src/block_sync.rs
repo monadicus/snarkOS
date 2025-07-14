@@ -377,7 +377,7 @@ impl<N: Network> BlockSync<N> {
     /// Inserts a new block response from the given peer IP.
     ///
     /// Returns an error if the block was malformed, or we already received a different block for this height.
-    /// This functiona also removes all block requests from the given peer IP on failure.
+    /// This function also removes all block requests from the given peer IP on failure.
     ///
     /// Note, that this only queues the response. After this, you most likely want to call `Self::try_advancing_block_synchronization`.
     ///
@@ -642,7 +642,7 @@ impl<N: Network> BlockSync<N> {
 }
 
 // Helper type for prepare_block_requests
-type BlockRequestBatch<N> = (Vec<(u32, PrepareSyncRequest<N>)>, IndexMap<SocketAddr, BlockLocators<N>>);
+pub type BlockRequestBatch<N> = (Vec<(u32, PrepareSyncRequest<N>)>, IndexMap<SocketAddr, BlockLocators<N>>);
 
 impl<N: Network> BlockSync<N> {
     /// Returns a list of block requests and the sync peers, if the node needs to sync.
@@ -868,7 +868,7 @@ impl<N: Network> BlockSync<N> {
     /// Removes block requests that have timed out, i.e, requests we sent that did not receive a response in time.
     ///
     /// This removes the corresponding block responses and returns the set of peers/addresses that timed out.
-    pub fn remove_timed_out_block_requests(&self) -> HashSet<SocketAddr> {
+    pub fn handle_block_request_timeouts<C: CommunicationService>(&self, communication: &C) {
         // Acquire the write lock on the requests map.
         let mut lock = self.requests.write();
 
@@ -939,7 +939,10 @@ impl<N: Network> BlockSync<N> {
             }
         }
 
-        peers_to_ban
+        // Now remove and ban any unresponsive peers
+        for peer_ip in peers_to_ban {
+            communication.ban_peer(peer_ip);
+        }
     }
 
     /// Finds the peers to sync from and the shared common ancestor, starting at the give height.
@@ -1185,6 +1188,7 @@ mod tests {
     };
 
     use snarkos_node_bft_ledger_service::MockLedgerService;
+    use snarkos_node_sync_communication_service::test_helpers::DummyCommunicationService;
     use snarkvm::{
         ledger::committee::Committee,
         prelude::{Field, TestRng},
@@ -1712,7 +1716,8 @@ mod tests {
         assert_eq!(new_sync.requests.read().len(), requests.len());
 
         // Remove timed out block requests.
-        new_sync.remove_timed_out_block_requests();
+        let c = DummyCommunicationService::default();
+        new_sync.handle_block_request_timeouts(&c);
 
         // Check that the number of requests is reduced based on the ledger height.
         assert_eq!(new_sync.requests.read().len(), (locator_height - ledger_height) as usize);
@@ -1739,10 +1744,12 @@ mod tests {
         assert_eq!(sync.requests.read().len(), 1);
 
         // Remove timed out block requests.
-        let peers_to_ban = sync.remove_timed_out_block_requests();
+        let c = DummyCommunicationService::default();
+        sync.handle_block_request_timeouts(&c);
 
-        assert_eq!(peers_to_ban.len(), 1);
-        assert_eq!(peers_to_ban.iter().next(), Some(&peer_ip));
+        let ban_list = c.peers_to_ban.lock();
+        assert_eq!(ban_list.len(), 1);
+        assert_eq!(ban_list.iter().next(), Some(&peer_ip));
 
         assert!(sync.requests.read().is_empty());
     }

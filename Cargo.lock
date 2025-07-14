@@ -3801,6 +3801,7 @@ dependencies = [
  "colored 2.2.0",
  "deadline",
  "futures-util",
+ "indexmap 2.10.0",
  "locktick",
  "lru",
  "num_cpus",
@@ -4088,6 +4089,7 @@ name = "snarkos-node-sync-communication-service"
 version = "3.8.0"
 dependencies = [
  "async-trait",
+ "parking_lot",
  "tokio",
 ]
 

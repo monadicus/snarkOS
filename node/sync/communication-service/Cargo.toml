@@ -22,3 +22,14 @@ version = "0.1"
 [dependencies.tokio]
 workspace = true
 features = [ "sync" ]
+
+[dependencies.parking_lot]
+workspace = true
+optional = true
+
+[dev-dependencies.parking_lot]
+workspace = true
+
+[features]
+default = [ ]
+test-helpers = [ "dep:parking_lot" ]

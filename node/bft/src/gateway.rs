@@ -278,6 +278,17 @@ impl<N: Network> CommunicationService for Gateway<N> {
     async fn send(&self, peer_ip: SocketAddr, message: Self::Message) -> Option<oneshot::Receiver<io::Result<()>>> {
         Transport::send(self, peer_ip, message).await
     }
+
+    fn ban_peer(&self, peer_ip: SocketAddr) {
+        trace!("Banning peer {peer_ip} for timing out on block requests");
+
+        let tcp = self.tcp().clone();
+        tcp.banned_peers().update_ip_ban(peer_ip.ip());
+
+        tokio::spawn(async move {
+            tcp.disconnect(peer_ip).await;
+        });
+    }
 }
 
 impl<N: Network> Gateway<N> {

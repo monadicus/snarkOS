@@ -24,8 +24,7 @@ use crate::{
 };
 use snarkos_node_bft_events::{CertificateRequest, CertificateResponse, Event};
 use snarkos_node_bft_ledger_service::LedgerService;
-use snarkos_node_sync::{BLOCK_REQUEST_BATCH_DELAY, BlockSync, Ping, locators::BlockLocators};
-use snarkos_node_tcp::P2P;
+use snarkos_node_sync::{BLOCK_REQUEST_BATCH_DELAY, BlockRequestBatch, BlockSync, Ping, locators::BlockLocators};
 use snarkvm::{
     console::{network::Network, types::Field},
     ledger::{authority::Authority, block::Block, narwhal::BatchCertificate},
@@ -133,17 +132,12 @@ impl<N: Network> Sync<N> {
         Ok(())
     }
 
-    /// Issues new requests for blocks, if needed.
-    ///
-    /// Additionally, this function removes obsolete and timed out block requests,
-    /// and disconnects/bans unresponsive peers.
+    /// Sends the given batch of block requests to peers.
     ///
     /// Responses to block requests will eventually be processed by `Self::try_advancing_block_synchronization`.
     #[inline]
-    async fn issue_block_requests(&self) {
-        // Prepare the block requests, if any.
-        // In the process, we update the state of `is_block_synced` for the sync module.
-        let (block_requests, sync_peers) = self.block_sync.prepare_block_requests();
+    async fn send_block_requests(&self, batch: BlockRequestBatch<N>) {
+        let (block_requests, sync_peers) = batch;
 
         trace!("Prepared {num_requests} block requests", num_requests = block_requests.len());
 
@@ -295,19 +289,7 @@ impl<N: Network> Sync<N> {
         // Check if any existing requests can be removed.
         // We should do this even if we cannot block sync, to ensure
         // there are no dangling block requests.
-        let peers_to_ban = self.block_sync.remove_timed_out_block_requests();
-
-        // Peers might be banned due to not responding.
-        for peer_ip in peers_to_ban {
-            trace!("Banning peer {peer_ip} for timing out on block requests");
-
-            let tcp = self.gateway.tcp().clone();
-            tcp.banned_peers().update_ip_ban(peer_ip.ip());
-
-            tokio::spawn(async move {
-                tcp.disconnect(peer_ip).await;
-            });
-        }
+        self.block_sync.handle_block_request_timeouts(&self.gateway);
 
         // Do not attempt to sync if there are no blocks to sync.
         // This prevents redundant log messages and performing unnecessary computation.
@@ -316,7 +298,10 @@ impl<N: Network> Sync<N> {
             return false;
         }
 
-        self.issue_block_requests().await;
+        // Prepare the block requests, if any.
+        // In the process, we update the state of `is_block_synced` for the sync module.
+        let batch = self.block_sync.prepare_block_requests();
+        self.send_block_requests(batch).await;
 
         // Sync the storage with the blocks
         match self.try_advancing_block_synchronization().await {

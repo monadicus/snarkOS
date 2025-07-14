@@ -29,7 +29,7 @@ use snarkos_node_router::{
     Routing,
     messages::{Message, NodeType, UnconfirmedSolution, UnconfirmedTransaction},
 };
-use snarkos_node_sync::{BLOCK_REQUEST_BATCH_DELAY, BlockSync, Ping};
+use snarkos_node_sync::{BLOCK_REQUEST_BATCH_DELAY, BlockSync, Ping, PrepareSyncRequest, locators::BlockLocators};
 use snarkos_node_tcp::{
     P2P,
     protocols::{Disconnect, Handshake, OnConnect, Reading},
@@ -48,6 +48,7 @@ use snarkvm::{
 use aleo_std::StorageMode;
 use anyhow::Result;
 use core::future::Future;
+use indexmap::IndexMap;
 #[cfg(feature = "locktick")]
 use locktick::parking_lot::Mutex;
 use lru::LruCache;
@@ -297,18 +298,7 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
             return;
         }
 
-        // First see if any peers need removal.
-        let peers_to_ban = self.sync.remove_timed_out_block_requests();
-        for peer_ip in peers_to_ban {
-            debug!("Banning peer {peer_ip} for timing out on block requests");
-
-            let tcp = self.router.tcp().clone();
-            tcp.banned_peers().update_ip_ban(peer_ip.ip());
-
-            tokio::spawn(async move {
-                tcp.disconnect(peer_ip).await;
-            });
-        }
+        self.sync.handle_block_request_timeouts(self);
 
         // Prepare the block requests, if any.
         // In the process, we update the state of `is_block_synced` for the sync module.
@@ -348,18 +338,24 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
                 );
             }
         } else {
-            debug!("Prepared {} new block request(s).", block_requests.len());
+            self.send_block_requests(block_requests, sync_peers).await;
+        }
+    }
 
-            // Issues the block requests in batches.
-            for requests in block_requests.chunks(DataBlocks::<N>::MAXIMUM_NUMBER_OF_BLOCKS as usize) {
-                if !self.sync.send_block_requests(self, &sync_peers, requests).await {
-                    // Stop if we fail to process a batch of requests.
-                    break;
-                }
-
-                // Sleep to avoid triggering spam detection.
-                tokio::time::sleep(BLOCK_REQUEST_BATCH_DELAY).await;
+    async fn send_block_requests(
+        &self,
+        block_requests: Vec<(u32, PrepareSyncRequest<N>)>,
+        sync_peers: IndexMap<SocketAddr, BlockLocators<N>>,
+    ) {
+        // Issues the block requests in batches.
+        for requests in block_requests.chunks(DataBlocks::<N>::MAXIMUM_NUMBER_OF_BLOCKS as usize) {
+            if !self.sync.send_block_requests(self, &sync_peers, requests).await {
+                // Stop if we fail to process a batch of requests.
+                break;
             }
+
+            // Sleep to avoid triggering spam detection.
+            tokio::time::sleep(BLOCK_REQUEST_BATCH_DELAY).await;
         }
     }
 

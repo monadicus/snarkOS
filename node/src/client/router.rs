@@ -157,6 +157,17 @@ impl<N: Network, C: ConsensusStorage<N>> CommunicationService for Client<N, C> {
     ) -> Option<tokio::sync::oneshot::Receiver<io::Result<()>>> {
         self.router().send(peer_ip, message)
     }
+
+    fn ban_peer(&self, peer_ip: SocketAddr) {
+        debug!("Banning peer {peer_ip} for timing out on block requests");
+
+        let tcp = self.router.tcp().clone();
+        tcp.banned_peers().update_ip_ban(peer_ip.ip());
+
+        tokio::spawn(async move {
+            tcp.disconnect(peer_ip).await;
+        });
+    }
 }
 
 #[async_trait]

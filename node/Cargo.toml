@@ -81,7 +81,7 @@ version = "1"
 version = "1"
 
 [dependencies.parking_lot]
-version = "0.12"
+workspace = true
 
 [dependencies.rand]
 version = "0.8"
@@ -137,6 +137,9 @@ features = [ "rt", "signal" ]
 workspace = true
 
 [dependencies.tracing]
+workspace = true
+
+[dependencies.indexmap]
 workspace = true
 
 [dev-dependencies.deadline]
