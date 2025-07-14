@@ -19,7 +19,9 @@
 pub fn rangify_heights(heights: &[u32]) -> String {
     // This impl assumes that the heights are sorted and non-empty.
     let mut iter = heights.iter().copied().peekable();
-    let mut curr_height = iter.next().unwrap();
+    let Some(mut curr_height) = iter.next() else {
+        return String::from("[]");
+    };
 
     let mut ret = String::from("[");
 

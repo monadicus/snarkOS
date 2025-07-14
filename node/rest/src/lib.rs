@@ -203,8 +203,8 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
             .route(&format!("/{network}/program/{{id}}/mappings"), get(Self::get_mapping_names))
             .route(&format!("/{network}/program/{{id}}/mapping/{{name}}/{{key}}"), get(Self::get_mapping_value))
 
-            // GET sync endpoints.
-            // Note: keeping sync_status for compatibility
+            // GET ../sync/..
+            // Note: keeping ../sync_status for compatibility
             .route(&format!("/{network}/sync_status"), get(Self::get_sync_status))
             .route(&format!("/{network}/sync/status"), get(Self::get_sync_status))
             .route(&format!("/{network}/sync/peers"), get(Self::get_sync_peers))
