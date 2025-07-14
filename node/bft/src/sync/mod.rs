@@ -447,9 +447,15 @@ impl<N: Network> Sync<N> {
 
     /// Returns which height we are synchronized to.
     /// If there are queued block responses, this might be higher than the latest block in the ledger.
-    async fn current_sync_height(&self) -> u32 {
-        let responses = self.latest_block_responses.lock().await;
-        if let Some((height, _)) = responses.last_key_value() { *height } else { self.ledger.latest_block_height() }
+    async fn compute_sync_height(&self) -> u32 {
+        let ledger_height = self.ledger.latest_block_height();
+        let mut responses = self.latest_block_responses.lock().await;
+
+        // Remove any old responses.
+        responses.retain(|height, _| *height > ledger_height);
+
+        // Ensure the returned value is always greater or equal than ledger height.
+        responses.last_key_value().map(|(height, _)| *height).unwrap_or(0).max(ledger_height)
     }
 
     /// Aims to advance synchronization using any recent block responses received from peers.
@@ -470,11 +476,17 @@ impl<N: Network> Sync<N> {
         // Acquire the response lock.
         let _lock = self.response_lock.lock().await;
 
+        // For sanity, check that sync height is never below ledger height.
+
         // Retrieve the next block height.
         // This variable is used to index blocks that are added to the ledger;
         // it is incremented as blocks are added.
         // So 'current' means 'currently being added'.
-        let start_height = self.current_sync_height().await;
+        let start_height = self.compute_sync_height().await;
+        // For sanity, set the sync height again.
+        // (if the sync height is already larger or equal, this is a noop)
+        self.block_sync.set_sync_height(start_height);
+
         let mut current_height = start_height;
         trace!("Try advancing with block responses (at block {})", current_height);
 
