@@ -868,9 +868,15 @@ impl<N: Network> BlockSync<N> {
     /// Removes block requests that have timed out, i.e, requests we sent that did not receive a response in time.
     ///
     /// This removes the corresponding block responses and returns the set of peers/addresses that timed out.
-    pub fn handle_block_request_timeouts<C: CommunicationService>(&self, communication: &C) {
+    /// It will ask the communication service to ban any timed-out peers.
+    ///
+    /// Finally, it will return a set of new of block requests that replaced the timed-out requests (if needed).
+    pub fn handle_block_request_timeouts<C: CommunicationService>(
+        &self,
+        communication: &C,
+    ) -> Option<BlockRequestBatch<N>> {
         // Acquire the write lock on the requests map.
-        let mut lock = self.requests.write();
+        let mut requests = self.requests.write();
 
         // Retrieve the current time.
         let now = Instant::now();
@@ -879,14 +885,14 @@ impl<N: Network> BlockSync<N> {
         let current_height = self.ledger.latest_block_height();
 
         // Track the number of timed out block requests (only used to print a log message).
-        let mut num_timed_out_block_requests = 0;
+        let mut timed_out_requests = vec![];
 
         // Track which peers should be banned due to unresponsiveness.
         let mut locators_to_remove: HashSet<SocketAddr> = HashSet::new();
         let mut peers_to_ban: HashSet<SocketAddr> = HashSet::new();
 
         // Remove timed out block requests.
-        lock.retain(|height, e| {
+        requests.retain(|height, e| {
             let is_obsolete = *height <= current_height;
             // Determine if the duration since the request timestamp has exceeded the request timeout.
             let timer_elapsed = now.duration_since(e.timestamp) > BLOCK_REQUEST_TIMEOUT;
@@ -903,7 +909,7 @@ impl<N: Network> BlockSync<N> {
                 trace!("Block request at height {height} has timed out: timer_elapsed={timer_elapsed}, is_complete={is_complete}, is_obsolete={is_obsolete}");
 
                 // Increment the number of timed out block requests.
-                num_timed_out_block_requests += 1;
+                timed_out_requests.push(*height);
             } else if is_obsolete {
                 trace!("Block request at height {height} became obsolete (current_height={current_height})");
             }
@@ -924,12 +930,14 @@ impl<N: Network> BlockSync<N> {
             retain
         });
 
-        if num_timed_out_block_requests > 0 {
-            debug!("{num_timed_out_block_requests} block requests timed out");
+        if !timed_out_requests.is_empty() {
+            debug!("{num} block requests timed out", num = timed_out_requests.len());
         }
 
+        let next_request_height = requests.iter().next().map(|(h, _)| *h);
+
         // Avoid locking `locators` and `requests` at the same time.
-        drop(lock);
+        drop(requests);
 
         // Remove all obsolete block locators.
         if !locators_to_remove.is_empty() {
@@ -943,6 +951,44 @@ impl<N: Network> BlockSync<N> {
         for peer_ip in peers_to_ban {
             communication.ban_peer(peer_ip);
         }
+
+        // Re-issue any timed-out requests.
+        //
+        // Do this even if timed_out_requests is empty, because we might not be able to re-issue
+        // requests immediately if there are no other peers at a given time.
+        // Further, this only closes the first gap. So multiple calls to this might be needed.
+        let sync_height = self.get_sync_height();
+        if let Some(next_height) = next_request_height {
+            let start = sync_height + 1;
+
+            // Is there a gap?
+            if next_height > start {
+                // Only request the given range
+                let end = next_height; // exclusive
+                let max_new_blocks_to_request = end - start;
+
+                let Some((sync_peers, min_common_ancestor)) = self.find_sync_peers_inner(start) else {
+                    warn!("Block requests timed out, but found no other peers to re-request from");
+                    return None;
+                };
+
+                // Retrieve the highest block height.
+                let greatest_peer_height = sync_peers.values().map(|l| l.latest_locator_height()).max().unwrap_or(0);
+
+                return Some((
+                    self.construct_requests(
+                        &sync_peers,
+                        start,
+                        min_common_ancestor,
+                        max_new_blocks_to_request,
+                        greatest_peer_height,
+                    ),
+                    sync_peers,
+                ));
+            }
+        }
+
+        None
     }
 
     /// Finds the peers to sync from and the shared common ancestor, starting at the give height.

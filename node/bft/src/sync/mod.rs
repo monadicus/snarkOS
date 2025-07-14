@@ -24,7 +24,7 @@ use crate::{
 };
 use snarkos_node_bft_events::{CertificateRequest, CertificateResponse, Event};
 use snarkos_node_bft_ledger_service::LedgerService;
-use snarkos_node_sync::{BLOCK_REQUEST_BATCH_DELAY, BlockRequestBatch, BlockSync, Ping, locators::BlockLocators};
+use snarkos_node_sync::{BLOCK_REQUEST_BATCH_DELAY, BlockSync, Ping, PrepareSyncRequest, locators::BlockLocators};
 use snarkvm::{
     console::{network::Network, types::Field},
     ledger::{authority::Authority, block::Block, narwhal::BatchCertificate},
@@ -32,6 +32,7 @@ use snarkvm::{
 };
 
 use anyhow::{Result, anyhow, bail};
+use indexmap::IndexMap;
 #[cfg(feature = "locktick")]
 use locktick::{parking_lot::Mutex, tokio::Mutex as TMutex};
 #[cfg(not(feature = "locktick"))]
@@ -136,9 +137,12 @@ impl<N: Network> Sync<N> {
     ///
     /// Responses to block requests will eventually be processed by `Self::try_advancing_block_synchronization`.
     #[inline]
-    async fn send_block_requests(&self, batch: BlockRequestBatch<N>) {
-        let (block_requests, sync_peers) = batch;
+    async fn send_block_requests(
+        &self,
 
+        block_requests: Vec<(u32, PrepareSyncRequest<N>)>,
+        sync_peers: IndexMap<SocketAddr, BlockLocators<N>>,
+    ) {
         trace!("Prepared {num_requests} block requests", num_requests = block_requests.len());
 
         // Sends the block requests to the sync peers.
@@ -289,7 +293,10 @@ impl<N: Network> Sync<N> {
         // Check if any existing requests can be removed.
         // We should do this even if we cannot block sync, to ensure
         // there are no dangling block requests.
-        self.block_sync.handle_block_request_timeouts(&self.gateway);
+        let new_requests = self.block_sync.handle_block_request_timeouts(&self.gateway);
+        if let Some((sync_peers, requests)) = new_requests {
+            self.send_block_requests(sync_peers, requests).await;
+        }
 
         // Do not attempt to sync if there are no blocks to sync.
         // This prevents redundant log messages and performing unnecessary computation.
@@ -300,8 +307,8 @@ impl<N: Network> Sync<N> {
 
         // Prepare the block requests, if any.
         // In the process, we update the state of `is_block_synced` for the sync module.
-        let batch = self.block_sync.prepare_block_requests();
-        self.send_block_requests(batch).await;
+        let (sync_peers, requests) = self.block_sync.prepare_block_requests();
+        self.send_block_requests(sync_peers, requests).await;
 
         // Sync the storage with the blocks
         match self.try_advancing_block_synchronization().await {

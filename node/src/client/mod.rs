@@ -292,13 +292,16 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
         // (if the ledger height is lower or equal to the current sync height, this is a noop)
         self.sync.set_sync_height(self.ledger.latest_height());
 
+        let new_requests = self.sync.handle_block_request_timeouts(self);
+        if let Some((block_requests, sync_peers)) = new_requests {
+            self.send_block_requests(block_requests, sync_peers).await;
+        }
+
         // Do not attempt to sync if there are not blocks to sync.
         // This prevents redundant log messages and performing unnecessary computation.
         if !self.sync.can_block_sync() {
             return;
         }
-
-        self.sync.handle_block_request_timeouts(self);
 
         // Prepare the block requests, if any.
         // In the process, we update the state of `is_block_synced` for the sync module.
