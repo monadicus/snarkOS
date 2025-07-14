@@ -84,6 +84,13 @@ version = "0.14"
 version = "2"
 default-features = false
 
+[workspace.dependencies.serde]
+version = "1"
+default-features = false
+
+[workspace.dependencies.parking_lot]
+version = "0.12"
+
 [workspace.dependencies.tracing]
 version = "0.1"
 default-features = false
@@ -97,6 +104,14 @@ version = "0.3"
 [workspace.dependencies.test-strategy]
 version = "0.4"
 
+[workspace.dependencies.snarkos-node-bft-storage-service]
+path = "node/bft/storage-service"
+version = "=3.8.0"
+
+[workspace.dependencies.snarkos-node-bft-ledger-service]
+path = "node/bft/ledger-service"
+version = "=3.8.0"
+
 [workspace.dependencies.snarkos-node-consensus]
 path = "node/consensus"
 version = "=3.8.0"
@@ -106,7 +121,19 @@ path = "node/cdn"
 version = "=3.8.0"
 
 [workspace.dependencies.snarkos-node-router]
-path = "./node/router"
+path = "node/router"
+version = "=3.8.0"
+
+[workspace.dependencies.snarkos-node-sync]
+path = "node/sync"
+version = "=3.8.0"
+
+[workspace.dependencies.snarkos-node-sync-communication-service]
+path = "node/sync/communication-service"
+version = "=3.8.0"
+
+[workspace.dependencies.snarkos-node-sync-locators]
+path = "node/sync/locators"
 version = "=3.8.0"
 
 [[bin]]
@@ -188,8 +215,7 @@ path = "./node/rest"
 version = "=3.8.0"
 
 [dependencies.snarkos-node-sync]
-path = "./node/sync"
-version = "=3.8.0"
+workspace = true
 
 [dependencies.snarkos-node-tcp]
 path = "./node/tcp"

@@ -157,6 +157,17 @@ impl<N: Network, C: ConsensusStorage<N>> CommunicationService for Client<N, C> {
     ) -> Option<tokio::sync::oneshot::Receiver<io::Result<()>>> {
         self.router().send(peer_ip, message)
     }
+
+    fn ban_peer(&self, peer_ip: SocketAddr) {
+        debug!("Banning peer {peer_ip} for timing out on block requests");
+
+        let tcp = self.router.tcp().clone();
+        tcp.banned_peers().update_ip_ban(peer_ip.ip());
+
+        tokio::spawn(async move {
+            tcp.disconnect(peer_ip).await;
+        });
+    }
 }
 
 #[async_trait]
@@ -179,16 +190,6 @@ impl<N: Network, C: ConsensusStorage<N>> Outbound<N> for Client<N, C> {
     /// or `None` if not connected to peers yet.
     fn num_blocks_behind(&self) -> Option<u32> {
         self.sync.num_blocks_behind()
-    }
-
-    /// Returns the greatest block height of any connected peer.
-    fn greatest_peer_block_height(&self) -> Option<u32> {
-        self.sync.greatest_peer_block_height()
-    }
-
-    /// The number of blocks we requested but have not received yet from peers.
-    fn num_outstanding_block_requests(&self) -> usize {
-        self.sync.num_outstanding_block_requests()
     }
 }
 

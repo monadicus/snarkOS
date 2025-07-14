@@ -3801,6 +3801,7 @@ dependencies = [
  "colored 2.2.0",
  "deadline",
  "futures-util",
+ "indexmap 2.10.0",
  "locktick",
  "lru",
  "num_cpus",
@@ -4004,6 +4005,7 @@ dependencies = [
  "snarkos-node-cdn",
  "snarkos-node-consensus",
  "snarkos-node-router",
+ "snarkos-node-sync",
  "snarkvm",
  "time",
  "tokio",
@@ -4071,6 +4073,7 @@ dependencies = [
  "locktick",
  "parking_lot",
  "rand 0.8.5",
+ "serde",
  "snarkos-node-bft-ledger-service",
  "snarkos-node-metrics",
  "snarkos-node-router",
@@ -4086,6 +4089,7 @@ name = "snarkos-node-sync-communication-service"
 version = "3.8.0"
 dependencies = [
  "async-trait",
+ "parking_lot",
  "tokio",
 ]
 
