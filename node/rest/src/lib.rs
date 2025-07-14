@@ -208,7 +208,8 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
             .route(&format!("/{network}/sync_status"), get(Self::get_sync_status))
             .route(&format!("/{network}/sync/status"), get(Self::get_sync_status))
             .route(&format!("/{network}/sync/peers"), get(Self::get_sync_peers))
-            .route(&format!("/{network}/sync/requests"), get(Self::get_sync_requests))
+            .route(&format!("/{network}/sync/requests"), get(Self::get_sync_requests_summary))
+            .route(&format!("/{network}/sync/requests/list"), get(Self::get_sync_requests_list))
 
             // GET misc endpoints.
             .route(&format!("/{network}/blocks"), get(Self::get_blocks))

@@ -179,7 +179,13 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
     }
 
     // GET /<network>/sync/requests
-    pub(crate) async fn get_sync_requests(State(rest): State<Self>) -> Result<ErasedJson, RestError> {
+    pub(crate) async fn get_sync_requests_summary(State(rest): State<Self>) -> Result<ErasedJson, RestError> {
+        let summary = rest.block_sync.get_block_requests_summary();
+        Ok(ErasedJson::pretty(summary))
+    }
+
+    // GET /<network>/sync/requests/list
+    pub(crate) async fn get_sync_requests_list(State(rest): State<Self>) -> Result<ErasedJson, RestError> {
         let requests = rest.block_sync.get_block_requests_info();
         Ok(ErasedJson::pretty(requests))
     }

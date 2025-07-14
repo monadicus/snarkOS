@@ -90,11 +90,18 @@ struct OutstandingRequest<N: Network> {
 
 /// Information about a block request (used for the REST API).
 #[derive(Clone, serde::Serialize)]
-pub struct RequestInfo {
+pub struct BlockRequestInfo {
     /// Seconds since the request was created
     elapsed: u64,
     /// Has the request been responded to?
     done: bool,
+}
+
+/// Summary of completed all in-flight requests.
+#[derive(Clone, serde::Serialize)]
+pub struct BlockRequestsSummary {
+    outstanding: String,
+    completed: String,
 }
 
 impl<N: Network> OutstandingRequest<N> {
@@ -223,18 +230,37 @@ impl<N: Network> BlockSync<N> {
         self.locators.read().iter().map(|(addr, locators)| (*addr, locators.latest_locator_height())).collect()
     }
 
-    //// Returns information about all outstanding block requests.
-    pub fn get_block_requests_info(&self) -> BTreeMap<u32, RequestInfo> {
+    //// Returns information about all in-flight block requests.
+    pub fn get_block_requests_info(&self) -> BTreeMap<u32, BlockRequestInfo> {
         self.requests
             .read()
             .iter()
             .map(|(height, request)| {
-                (*height, RequestInfo {
+                (*height, BlockRequestInfo {
                     done: request.sync_ips().is_empty(),
                     elapsed: request.timestamp.elapsed().as_secs(),
                 })
             })
             .collect()
+    }
+
+    /// Returns a summary of all in-flight requests.
+    pub fn get_block_requests_summary(&self) -> BlockRequestsSummary {
+        let completed = self
+            .requests
+            .read()
+            .iter()
+            .filter_map(|(h, e)| if e.sync_ips().is_empty() { Some(*h) } else { None })
+            .collect::<Vec<_>>();
+
+        let outstanding = self
+            .requests
+            .read()
+            .iter()
+            .filter_map(|(h, e)| if !e.sync_ips().is_empty() { Some(*h) } else { None })
+            .collect::<Vec<_>>();
+
+        BlockRequestsSummary { completed: rangify_heights(&completed), outstanding: rangify_heights(&outstanding) }
     }
 }
 
@@ -663,22 +689,10 @@ impl<N: Network> BlockSync<N> {
         // Used to print more information when we max out on requests.
         let print_requests = || {
             if tracing::enabled!(tracing::Level::TRACE) {
-                let complete = self
-                    .requests
-                    .read()
-                    .iter()
-                    .filter_map(|(h, e)| if e.sync_ips().is_empty() { Some(*h) } else { None })
-                    .collect::<Vec<_>>();
+                let summary = self.get_block_requests_summary();
 
-                let outstanding = self
-                    .requests
-                    .read()
-                    .iter()
-                    .filter_map(|(h, e)| if !e.sync_ips().is_empty() { Some(*h) } else { None })
-                    .collect::<Vec<_>>();
-
-                trace!("The following requests are complete but not processed yet: {:?}", rangify_heights(&complete));
-                trace!("The following requests are still outstanding: {:?}", rangify_heights(&outstanding));
+                trace!("The following requests are complete but not processed yet: {:?}", summary.completed);
+                trace!("The following requests are still outstanding: {:?}", summary.outstanding);
             }
         };
 
