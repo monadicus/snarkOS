@@ -99,3 +99,7 @@ features = [ "test-helpers" ]
 [dev-dependencies.snarkvm]
 workspace = true
 features = [ "test-helpers" ]
+
+[dev-dependencies.tracing-subscriber]
+workspace = true
+features = [ "env-filter", "fmt" ]
