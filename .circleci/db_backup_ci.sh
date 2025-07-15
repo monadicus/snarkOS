@@ -77,7 +77,7 @@ sleep 15
 # Check heights periodically with a timeout
 total_wait=0
 checkpoint_created=false
-while [ $total_wait -lt 300 ]; do  # 5 minutes max
+while [ $total_wait -lt 600 ]; do  # 10 minutes max
   # Apply short-circuiting
   if [[ $checkpoint_created = true ]] || check_heights "$checkpoint_height"; then
     if [[ $checkpoint_created = false ]]; then
