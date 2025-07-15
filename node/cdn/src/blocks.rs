@@ -24,7 +24,7 @@ use snarkvm::prelude::{
     Network,
     Serialize,
     block::Block,
-    store::{ConsensusStorage, cow_to_copied},
+    store::ConsensusStorage,
 };
 
 use anyhow::{Result, anyhow, bail};
@@ -140,7 +140,7 @@ impl CdnBlockSync {
                 debug!("Synced the ledger up to block {completed_height}");
 
                 // Retrieve the latest height, according to the ledger.
-                let node_height = cow_to_copied!(ledger.vm().block_store().heights().max().unwrap_or_default());
+                let node_height = ledger.vm().block_store().heights().max().unwrap_or_default().into_owned();
                 // Check the integrity of the latest height.
                 if &node_height != completed_height {
                     return Err((*completed_height, anyhow!("The ledger height does not match the last sync height")));
