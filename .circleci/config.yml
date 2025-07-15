@@ -77,7 +77,7 @@ commands:
             export RUSTC_WRAPPER="sccache"
             rm -rf "$CIRCLE_WORKING_DIRECTORY/.cargo/registry"
             DEBIAN_FRONTEND=noninteractive sudo apt-get update
-            DEBIAN_FRONTEND=noninteractive sudo apt-get install -y --no-install-recommends clang llvm-dev llvm pkg-config xz-utils make libssl-dev libssl-dev
+            DEBIAN_FRONTEND=noninteractive sudo apt-get install -y --no-install-recommends clang llvm-dev llvm lld pkg-config xz-utils make libssl-dev libssl-dev
       - restore_cache:
           keys:
             - << parameters.cache_key >>
@@ -192,14 +192,18 @@ commands:
           command: |
             cargo install --locked --path .
       - run:
-          name: "Run devnet test"
-          timeout: 20m  # Allow 20 minutes total
+          name: "Run DB backup test"
+          timeout: 10m  # Allow 10 minutes total
           command: |
             ./.circleci/db_backup_ci.sh # run the db checkpoint test script first, and clean the dev ledgers afterwards
             snarkos clean --dev 0
             snarkos clean --dev 1
             snarkos clean --dev 2
             snarkos clean --dev 3
+      - run:
+          name: "Run block advancement test"
+          imeout: 20m  # Allow 20 minutes total
+          command: |
             ./.circleci/devnet_ci.sh << parameters.validators >> << parameters.clients >> << parameters.network_id >> << parameters.min_height >>
       - clear_environment:
           cache_key: << parameters.cache_key >>
