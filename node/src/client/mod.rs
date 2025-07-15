@@ -145,6 +145,7 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
         cdn: Option<String>,
         storage_mode: StorageMode,
         rotate_external_peers: bool,
+        dev: Option<u16>,
         shutdown: Arc<AtomicBool>,
     ) -> Result<Self> {
         // Initialize the signal handler.
@@ -168,7 +169,7 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
             Self::MAXIMUM_NUMBER_OF_PEERS as u16,
             rotate_external_peers,
             allow_external_peers,
-            matches!(storage_mode, StorageMode::Development(_)),
+            dev.is_some(),
         )
         .await?;
 

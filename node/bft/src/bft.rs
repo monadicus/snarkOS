@@ -88,6 +88,7 @@ pub struct BFT<N: Network> {
 
 impl<N: Network> BFT<N> {
     /// Initializes a new instance of the BFT.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         account: Account<N>,
         storage: Storage<N>,
@@ -96,9 +97,10 @@ impl<N: Network> BFT<N> {
         ip: Option<SocketAddr>,
         trusted_validators: &[SocketAddr],
         storage_mode: StorageMode,
+        dev: Option<u16>,
     ) -> Result<Self> {
         Ok(Self {
-            primary: Primary::new(account, storage, ledger, block_sync, ip, trusted_validators, storage_mode)?,
+            primary: Primary::new(account, storage, ledger, block_sync, ip, trusted_validators, storage_mode, dev)?,
             dag: Default::default(),
             leader_certificate: Default::default(),
             leader_certificate_timer: Default::default(),
@@ -991,7 +993,16 @@ mod tests {
         // Create the block synchronization logic.
         let block_sync = Arc::new(BlockSync::new(ledger.clone()));
         // Initialize the BFT.
-        BFT::new(account.clone(), storage.clone(), ledger.clone(), block_sync, None, &[], StorageMode::new_test(None))
+        BFT::new(
+            account.clone(),
+            storage.clone(),
+            ledger.clone(),
+            block_sync,
+            None,
+            &[],
+            StorageMode::new_test(None),
+            None,
+        )
     }
 
     #[test]

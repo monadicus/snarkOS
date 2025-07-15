@@ -477,6 +477,39 @@ async fn cdn_get<T: 'static + DeserializeOwned + Send>(client: Client, url: &str
     }
 }
 
+/// Converts a duration into a string that humans can read easily.
+///
+/// # Output
+/// The output remains to be accurate but not too detailed (to reduce noise in the log).
+/// It will give at most two levels of granularity, e.g., days and hours,
+/// and only shows seconds if less than a minute remains.
+fn to_human_readable_duration(duration: Duration) -> String {
+    // TODO: simplify this once the duration_constructors feature is stable
+    // See: https://github.com/rust-lang/rust/issues/140881
+    const SECS_PER_MIN: u64 = 60;
+    const MINS_PER_HOUR: u64 = 60;
+    const SECS_PER_HOUR: u64 = SECS_PER_MIN * MINS_PER_HOUR;
+    const HOURS_PER_DAY: u64 = 24;
+    const SECS_PER_DAY: u64 = SECS_PER_HOUR * HOURS_PER_DAY;
+
+    let duration = duration.as_secs();
+
+    if duration < 1 {
+        "less than one second".to_string()
+    } else if duration < SECS_PER_MIN {
+        format!("{duration} seconds")
+    } else if duration < SECS_PER_HOUR {
+        format!("{} minutes", duration / SECS_PER_MIN)
+    } else if duration < SECS_PER_DAY {
+        let mins = duration / SECS_PER_MIN;
+        format!("{hours} hours and {remainder} minutes", hours = mins / 60, remainder = mins % 60)
+    } else {
+        let days = duration / SECS_PER_DAY;
+        let hours = (duration % SECS_PER_DAY) / SECS_PER_HOUR;
+        format!("{days} days and {hours} hours")
+    }
+}
+
 /// Logs the progress of the sync.
 fn log_progress<const OBJECTS_PER_FILE: u32>(
     timer: Instant,
@@ -485,10 +518,17 @@ fn log_progress<const OBJECTS_PER_FILE: u32>(
     mut cdn_end: u32,
     object_name: &str,
 ) {
+    debug_assert!(cdn_start <= cdn_end);
+    debug_assert!(current_index <= cdn_end);
+    debug_assert!(cdn_end >= 1);
+
     // Subtract 1, as the end of the range is exclusive.
     cdn_end -= 1;
-    // Compute the percentage completed.
-    let percentage = current_index * 100 / cdn_end;
+
+    // Compute the percentage completed of this particular sync.
+    let sync_percentage =
+        (current_index.saturating_sub(cdn_start) * 100).checked_div(cdn_end.saturating_sub(cdn_start)).unwrap_or(100);
+
     // Compute the number of files processed so far.
     let num_files_done = 1 + (current_index - cdn_start) / OBJECTS_PER_FILE;
     // Compute the number of files remaining.
@@ -498,11 +538,17 @@ fn log_progress<const OBJECTS_PER_FILE: u32>(
     // Compute the heuristic slowdown factor (in millis).
     let slowdown = 100 * num_files_remaining as u128;
     // Compute the time remaining (in millis).
-    let time_remaining = num_files_remaining as u128 * millis_per_file + slowdown;
+    let time_remaining = {
+        let remaining = num_files_remaining as u128 * millis_per_file + slowdown;
+        to_human_readable_duration(Duration::from_secs((remaining / 1000) as u64))
+    };
     // Prepare the estimate message (in secs).
-    let estimate = format!("(est. {} minutes remaining)", time_remaining / (60 * 1000));
+    let estimate = format!("(started at height {cdn_start}, est. {time_remaining} remaining)");
     // Log the progress.
-    info!("Synced up to {object_name} {current_index} of {cdn_end} - {percentage}% complete {}", estimate.dimmed());
+    info!(
+        "Reached {object_name} {current_index} of {cdn_end} - Sync is {sync_percentage}% complete {}",
+        estimate.dimmed()
+    );
 }
 
 #[cfg(test)]

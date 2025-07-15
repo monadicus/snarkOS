@@ -56,6 +56,7 @@ impl<N: Network> Node<N> {
         storage_mode: StorageMode,
         allow_external_peers: bool,
         dev_txs: bool,
+        dev: Option<u16>,
         shutdown: Arc<AtomicBool>,
     ) -> Result<Self> {
         Ok(Self::Validator(Arc::new(
@@ -72,6 +73,7 @@ impl<N: Network> Node<N> {
                 storage_mode,
                 allow_external_peers,
                 dev_txs,
+                dev,
                 shutdown,
             )
             .await?,
@@ -84,10 +86,10 @@ impl<N: Network> Node<N> {
         account: Account<N>,
         trusted_peers: &[SocketAddr],
         genesis: Block<N>,
-        storage_mode: StorageMode,
+        dev: Option<u16>,
         shutdown: Arc<AtomicBool>,
     ) -> Result<Self> {
-        Ok(Self::Prover(Arc::new(Prover::new(node_ip, account, trusted_peers, genesis, storage_mode, shutdown).await?)))
+        Ok(Self::Prover(Arc::new(Prover::new(node_ip, account, trusted_peers, genesis, dev, shutdown).await?)))
     }
 
     /// Initializes a new client node.
@@ -101,6 +103,7 @@ impl<N: Network> Node<N> {
         cdn: Option<String>,
         storage_mode: StorageMode,
         rotate_external_peers: bool,
+        dev: Option<u16>,
         shutdown: Arc<AtomicBool>,
     ) -> Result<Self> {
         Ok(Self::Client(Arc::new(
@@ -114,6 +117,7 @@ impl<N: Network> Node<N> {
                 cdn,
                 storage_mode,
                 rotate_external_peers,
+                dev,
                 shutdown,
             )
             .await?,
