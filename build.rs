@@ -164,14 +164,7 @@ fn check_file_licenses<P: AsRef<Path>>(path: P) {
     }
 }
 
-// The build script; it currently only checks the licenses.
-fn main() {
-    // Check licenses in the current folder.
-    check_file_licenses(".");
-    // Ensure that lock imports have locktick counterparts.
-    check_locktick_imports(".");
-
-    // Check if locktick feature is correctly enabled.
+fn check_locktick_profile() {
     let locktick_enabled = env::var("CARGO_FEATURE_LOCKTICK").is_ok();
     if locktick_enabled {
         let profile = env::var("PROFILE").unwrap_or_else(|_| "".to_string());
@@ -201,6 +194,17 @@ fn main() {
             }
         }
     }
+}
+
+// The build script; it currently only checks the licenses.
+fn main() {
+    // Check licenses in the current folder.
+    check_file_licenses(".");
+    // Ensure that lock imports have locktick counterparts.
+    check_locktick_imports(".");
+    // Check if locktick feature is correctly enabled.
+    check_locktick_profile();
+
     // Register build-time information.
     built::write_built_file().expect("Failed to acquire build-time information");
 }
