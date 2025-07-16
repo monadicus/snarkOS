@@ -146,7 +146,7 @@ impl<N: Network, C: ConsensusStorage<N>> Validator<N, C> {
             consensus: consensus.clone(),
             router,
             rest: None,
-            sync,
+            sync: sync.clone(),
             ping,
             handles: Default::default(),
             shutdown: shutdown.clone(),
@@ -168,6 +168,7 @@ impl<N: Network, C: ConsensusStorage<N>> Validator<N, C> {
                     ledger.clone(),
                     Arc::new(node.clone()),
                     cdn_sync.clone(),
+                    sync,
                 )
                 .await?,
             );

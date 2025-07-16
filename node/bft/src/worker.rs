@@ -562,8 +562,8 @@ mod tests {
         ledger::{
             block::Block,
             committee::Committee,
-            ledger_test_helpers::sample_execution_transaction_with_fee,
             narwhal::{BatchCertificate, Subdag, Transmission, TransmissionID},
+            snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee,
         },
         prelude::Address,
     };
