@@ -1955,7 +1955,7 @@ mod tests {
     use snarkvm::{
         ledger::{
             committee::{Committee, MIN_VALIDATOR_STAKE},
-            ledger_test_helpers::sample_execution_transaction_with_fee,
+            snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee,
         },
         prelude::{Address, Signature},
     };
