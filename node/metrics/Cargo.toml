@@ -14,13 +14,13 @@ keywords = [
 ]
 categories = [ "cryptography", "cryptography::cryptocurrencies", "os" ]
 license = "Apache-2.0"
-edition = "2021"
+edition = "2024"
 
 [features]
 default = [ "rayon", "snarkvm/metrics" ]
 locktick = [ "dep:locktick", "snarkvm/locktick" ]
 metrics = [ "snarkvm/metrics" ]
-serial = [ "snarkvm/metrics" ]
+serial = [ ]
 
 [dependencies.locktick]
 version = "0.3"

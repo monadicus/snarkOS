@@ -37,6 +37,7 @@ use indexmap::IndexMap;
 use locktick::{parking_lot::Mutex, tokio::Mutex as TMutex};
 #[cfg(not(feature = "locktick"))]
 use parking_lot::Mutex;
+#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 use std::{
     collections::{BTreeMap, HashMap},
@@ -983,7 +984,7 @@ mod tests {
         let account: Account<CurrentNetwork> = Account::new(rng)?;
 
         // Create a genesis block with a seeded RNG to reproduce the same genesis private keys.
-        let seed: u64 = rng.gen();
+        let seed: u64 = rng.r#gen();
         let genesis_rng = &mut TestRng::from_seed(seed);
         let genesis = VM::from(store).unwrap().genesis_beacon(account.private_key(), genesis_rng).unwrap();
 
@@ -1209,7 +1210,7 @@ mod tests {
         let account: Account<CurrentNetwork> = Account::new(rng)?;
 
         // Create a genesis block with a seeded RNG to reproduce the same genesis private keys.
-        let seed: u64 = rng.gen();
+        let seed: u64 = rng.r#gen();
         let genesis_rng = &mut TestRng::from_seed(seed);
         let genesis = VM::from(store).unwrap().genesis_beacon(account.private_key(), genesis_rng).unwrap();
 
