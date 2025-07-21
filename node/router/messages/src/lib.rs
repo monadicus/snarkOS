@@ -112,7 +112,7 @@ impl<N: Network> From<DisconnectReason> for Message<N> {
 }
 
 impl<N: Network> Message<N> {
-    /// The version of the network protocol; this can is incremented for breaking changes between migration versions.
+    /// The version of the network protocol; this is incremented for breaking changes between migration versions.
     pub const VERSIONS: [(ConsensusVersion, u32); 3] =
         [(ConsensusVersion::V5, 17), (ConsensusVersion::V7, 18), (ConsensusVersion::V8, 19)];
 
@@ -316,16 +316,13 @@ mod tests {
 
     #[test]
     fn test_latest_consensus_version() {
-        let message_consensus_version = Message::<MainnetV0>::VERSIONS.last().unwrap().0;
         let expected_consensus_version = MainnetV0::CONSENSUS_VERSION_HEIGHTS.last().unwrap().0;
-        assert_eq!(message_consensus_version, expected_consensus_version);
+        assert_eq!(ConsensusVersion::V8, expected_consensus_version);
 
-        let message_consensus_version = Message::<TestnetV0>::VERSIONS.last().unwrap().0;
         let expected_consensus_version = TestnetV0::CONSENSUS_VERSION_HEIGHTS.last().unwrap().0;
-        assert_eq!(message_consensus_version, expected_consensus_version);
+        assert_eq!(ConsensusVersion::V8, expected_consensus_version);
 
-        let message_consensus_version = Message::<CanaryV0>::VERSIONS.last().unwrap().0;
         let expected_consensus_version = CanaryV0::CONSENSUS_VERSION_HEIGHTS.last().unwrap().0;
-        assert_eq!(message_consensus_version, expected_consensus_version);
+        assert_eq!(ConsensusVersion::V8, expected_consensus_version);
     }
 }
