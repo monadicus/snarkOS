@@ -39,7 +39,7 @@ optional = true
 
 [dependencies.snarkvm]
 workspace = true
-features = [ "metrics" ]
+features = [ "console", "ledger", "metrics" ]
 
 [dependencies.time]
 version = "0.3"
