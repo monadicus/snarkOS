@@ -316,13 +316,13 @@ mod tests {
 
     #[test]
     fn test_latest_consensus_version() {
-        let expected_consensus_version = MainnetV0::CONSENSUS_VERSION_HEIGHTS.last().unwrap().0;
-        assert_eq!(ConsensusVersion::V8, expected_consensus_version);
+        let message_consensus_version = Message::<MainnetV0>::VERSIONS.last().unwrap().0;
+        assert_eq!(message_consensus_version, ConsensusVersion::V8);
 
-        let expected_consensus_version = TestnetV0::CONSENSUS_VERSION_HEIGHTS.last().unwrap().0;
-        assert_eq!(ConsensusVersion::V8, expected_consensus_version);
+        let message_consensus_version = Message::<TestnetV0>::VERSIONS.last().unwrap().0;
+        assert_eq!(message_consensus_version, ConsensusVersion::V8);
 
-        let expected_consensus_version = CanaryV0::CONSENSUS_VERSION_HEIGHTS.last().unwrap().0;
-        assert_eq!(ConsensusVersion::V8, expected_consensus_version);
+        let message_consensus_version = Message::<CanaryV0>::VERSIONS.last().unwrap().0;
+        assert_eq!(message_consensus_version, ConsensusVersion::V8);
     }
 }
