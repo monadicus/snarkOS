@@ -39,10 +39,13 @@ pub use outbound::*;
 mod routing;
 pub use routing::*;
 
-use crate::messages::{Message, NodeType};
+mod writing;
+
+use crate::messages::{Message, MessageCodec, NodeType};
+
 use snarkos_account::Account;
 use snarkos_node_bft_ledger_service::LedgerService;
-use snarkos_node_tcp::{Config, P2P, Tcp, is_bogon_ip, is_unspecified_or_broadcast_ip};
+use snarkos_node_tcp::{Config, ConnectionSide, P2P, Tcp, is_bogon_ip, is_unspecified_or_broadcast_ip};
 
 use snarkvm::prelude::{Address, Network, PrivateKey, ViewKey};
 
@@ -64,6 +67,12 @@ use std::{
 };
 use tokio::task::JoinHandle;
 
+/// The default port used by the router.
+pub const DEFAULT_NODE_PORT: u16 = 4130;
+
+/// The router keeps track of connected and connecting peers.
+/// The actual network communication happens in Inbound/Outbound,
+/// which is implemented by Validator, Prover, and Client.
 #[derive(Clone)]
 pub struct Router<N: Network>(Arc<InnerRouter<N>>);
 
@@ -87,7 +96,7 @@ pub struct InnerRouter<N: Network> {
     /// The cache.
     cache: Cache<N>,
     /// The resolver.
-    resolver: Resolver,
+    resolver: RwLock<Resolver>,
     /// The set of trusted peers.
     trusted_peers: HashSet<SocketAddr>,
     /// The map of connected peer IPs to their peer handlers.
@@ -113,14 +122,14 @@ pub struct InnerRouter<N: Network> {
 
 impl<N: Network> Router<N> {
     /// The minimum permitted interval between connection attempts for an IP; anything shorter is considered malicious.
-    #[cfg(not(any(test)))]
+    #[cfg(not(test))]
     const CONNECTION_ATTEMPTS_SINCE_SECS: i64 = 10;
     /// The maximum number of candidate peers permitted to be stored in the node.
     const MAXIMUM_CANDIDATE_PEERS: usize = 10_000;
     /// The maximum number of connection failures permitted by an inbound connecting peer.
     const MAXIMUM_CONNECTION_FAILURES: usize = 5;
     /// The maximum amount of connection attempts withing a 10 second threshold
-    #[cfg(not(any(test)))]
+    #[cfg(not(test))]
     const MAX_CONNECTION_ATTEMPTS: usize = 10;
     /// The duration in seconds after which a connected peer is considered inactive or
     /// disconnected if no message has been received in the meantime.
@@ -143,6 +152,7 @@ impl<N: Network> Router<N> {
     ) -> Result<Self> {
         // Initialize the TCP stack.
         let tcp = Tcp::new(Config::new(node_ip, max_peers));
+
         // Initialize the router.
         Ok(Self(Arc::new(InnerRouter {
             tcp,
@@ -251,6 +261,12 @@ impl<N: Network> Router<N> {
                 }
                 disconnected
             } else {
+                // FIXME (ljedrz): this shouldn't be necessary; it's a double-check
+                //  that the higher-level collection is consistent with the resolver.
+                if router.is_connected(&peer_ip) {
+                    warn!("Fallback connection artifact cleanup (report this to @ljedrz)");
+                    router.remove_connected_peer(peer_ip);
+                }
                 false
             }
         })
@@ -327,12 +343,12 @@ impl<N: Network> Router<N> {
 
     /// Returns the listener IP address from the (ambiguous) peer address.
     pub fn resolve_to_listener(&self, peer_addr: &SocketAddr) -> Option<SocketAddr> {
-        self.resolver.get_listener(peer_addr)
+        self.resolver.read().get_listener(peer_addr)
     }
 
     /// Returns the (ambiguous) peer address from the listener IP address.
     pub fn resolve_to_ambiguous(&self, peer_ip: &SocketAddr) -> Option<SocketAddr> {
-        self.resolver.get_ambiguous(peer_ip)
+        self.resolver.read().get_ambiguous(peer_ip)
     }
 
     /// Returns `true` if the node is connected to the given peer IP.
@@ -342,17 +358,17 @@ impl<N: Network> Router<N> {
 
     /// Returns `true` if the given peer IP is a connected validator.
     pub fn is_connected_validator(&self, peer_ip: &SocketAddr) -> bool {
-        self.connected_peers.read().get(peer_ip).map_or(false, |peer| peer.is_validator())
+        self.connected_peers.read().get(peer_ip).is_some_and(|peer| peer.is_validator())
     }
 
     /// Returns `true` if the given peer IP is a connected prover.
     pub fn is_connected_prover(&self, peer_ip: &SocketAddr) -> bool {
-        self.connected_peers.read().get(peer_ip).map_or(false, |peer| peer.is_prover())
+        self.connected_peers.read().get(peer_ip).is_some_and(|peer| peer.is_prover())
     }
 
     /// Returns `true` if the given peer IP is a connected client.
     pub fn is_connected_client(&self, peer_ip: &SocketAddr) -> bool {
-        self.connected_peers.read().get(peer_ip).map_or(false, |peer| peer.is_client())
+        self.connected_peers.read().get(peer_ip).is_some_and(|peer| peer.is_client())
     }
 
     /// Returns `true` if the node is currently connecting to the given peer IP.
@@ -599,14 +615,14 @@ impl<N: Network> Router<N> {
 
     /// Removes the connected peer and adds them to the candidate peers.
     pub fn remove_connected_peer(&self, peer_ip: SocketAddr) {
-        // Removes the bidirectional map between the listener address and (ambiguous) peer address.
-        self.resolver.remove_peer(&peer_ip);
         // Remove this peer from the connected peers, if it exists.
         self.connected_peers.write().remove(&peer_ip);
-        // Add the peer to the candidate peers.
-        self.candidate_peers.write().insert(peer_ip);
+        // Removes the bidirectional map between the listener address and (ambiguous) peer address.
+        self.resolver.write().remove_peer(&peer_ip);
         // Clear cached entries applicable to the peer.
         self.cache.clear_peer_entries(peer_ip);
+        // Add the peer to the candidate peers.
+        self.candidate_peers.write().insert(peer_ip);
         #[cfg(feature = "metrics")]
         self.update_metrics();
     }

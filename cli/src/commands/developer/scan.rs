@@ -15,7 +15,7 @@
 
 #![allow(clippy::type_complexity)]
 
-use crate::commands::CDN_BASE_URL;
+use snarkos_node_cdn::CDN_BASE_URL;
 use snarkvm::{
     console::network::{CanaryV0, MainnetV0, Network, TestnetV0},
     prelude::{Ciphertext, Field, FromBytes, Plaintext, PrivateKey, Record, ViewKey, block::Block},
@@ -64,7 +64,7 @@ pub struct Scan {
     last: Option<u32>,
 
     /// The endpoint to scan blocks from.
-    #[clap(long)]
+    #[clap(long, default_value = "https://api.explorer.provable.com/v1")]
     endpoint: String,
 }
 
@@ -177,9 +177,9 @@ impl Scan {
     /// Returns the CDN to prefetch initial blocks from, from the given configurations.
     fn parse_cdn<N: Network>() -> Result<String> {
         match N::ID {
-            MainnetV0::ID => Ok(format!("{CDN_BASE_URL}/mainnet/v0")),
-            TestnetV0::ID => Ok(format!("{CDN_BASE_URL}/testnet/v0")),
-            CanaryV0::ID => Ok(format!("{CDN_BASE_URL}/canary/v0")),
+            MainnetV0::ID => Ok(format!("{CDN_BASE_URL}/mainnet")),
+            TestnetV0::ID => Ok(format!("{CDN_BASE_URL}/testnet")),
+            CanaryV0::ID => Ok(format!("{CDN_BASE_URL}/canary")),
             _ => bail!("Unknown network ID ({})", N::ID),
         }
     }
@@ -305,7 +305,7 @@ impl Scan {
 
         // Scan the blocks via the CDN.
         rt.block_on(async move {
-            let _ = snarkos_node_cdn::load_blocks(
+            let result = snarkos_node_cdn::load_blocks(
                 &cdn,
                 cdn_request_start,
                 Some(cdn_request_end),
@@ -336,6 +336,9 @@ impl Scan {
                 },
             )
             .await;
+            if let Err(error) = result {
+                eprintln!("Error loading blocks from CDN - (height, error):{error:?}");
+            }
         });
 
         Ok(())

@@ -14,7 +14,7 @@ keywords = [
 ]
 categories = [ "cryptography", "cryptography::cryptocurrencies", "os" ]
 license = "Apache-2.0"
-edition = "2021"
+edition = "2024"
 
 [features]
 default = [ ]
@@ -28,18 +28,20 @@ locktick = [
 metrics = [ "dep:metrics" ]
 telemetry = [ "snarkos-node-bft/telemetry" ]
 cuda = [ "snarkvm/cuda", "snarkos-account/cuda", "snarkos-node-bft-ledger-service/cuda" ]
+serial = [ "snarkos-node-bft-ledger-service/serial" ]
+
 
 [dependencies.aleo-std]
 workspace = true
 
 [dependencies.anyhow]
-version = "1.0.79"
+workspace = true
 
 [dependencies.colored]
 version = "2"
 
 [dependencies.indexmap]
-version = "2.1"
+workspace = true
 features = [ "serde", "rayon" ]
 
 [dependencies.locktick]
@@ -87,14 +89,14 @@ version = "=3.8.0"
 workspace = true
 
 [dependencies.tokio]
-version = "1.28"
+workspace = true
 features = [ "macros", "rt-multi-thread", "signal" ]
 
 [dependencies.tracing]
-version = "0.1"
+workspace = true
 
 [dev-dependencies.indexmap]
-version = "2.0"
+workspace = true
 
 [dev-dependencies.itertools]
 version = "0.12"
@@ -103,4 +105,4 @@ version = "0.12"
 version = "1.19"
 
 [dev-dependencies.tracing-test]
-version = "0.2"
+workspace = true

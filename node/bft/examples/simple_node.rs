@@ -74,35 +74,34 @@ type CurrentNetwork = snarkvm::prelude::MainnetV0;
 
 /// Initializes the logger.
 pub fn initialize_logger(verbosity: u8) {
-    match verbosity {
-        0 => std::env::set_var("RUST_LOG", "info"),
-        1 => std::env::set_var("RUST_LOG", "debug"),
-        2..=4 => std::env::set_var("RUST_LOG", "trace"),
-        _ => std::env::set_var("RUST_LOG", "info"),
+    let verbosity_str = match verbosity {
+        0 => "info",
+        1 => "debug",
+        2..=4 => "trace",
+        _ => "info",
     };
 
     // Filter out undesirable logs. (unfortunately EnvFilter cannot be cloned)
-    let [filter] = std::array::from_fn(|_| {
-        let filter = tracing_subscriber::EnvFilter::from_default_env()
-            .add_directive("mio=off".parse().unwrap())
-            .add_directive("tokio_util=off".parse().unwrap())
-            .add_directive("hyper=off".parse().unwrap())
-            .add_directive("reqwest=off".parse().unwrap())
-            .add_directive("want=off".parse().unwrap())
-            .add_directive("h2=off".parse().unwrap());
+    let filter = tracing_subscriber::EnvFilter::from_str(verbosity_str)
+        .unwrap()
+        .add_directive("mio=off".parse().unwrap())
+        .add_directive("tokio_util=off".parse().unwrap())
+        .add_directive("hyper=off".parse().unwrap())
+        .add_directive("reqwest=off".parse().unwrap())
+        .add_directive("want=off".parse().unwrap())
+        .add_directive("h2=off".parse().unwrap());
 
-        let filter = if verbosity > 3 {
-            filter.add_directive("snarkos_node_bft::gateway=trace".parse().unwrap())
-        } else {
-            filter.add_directive("snarkos_node_bft::gateway=off".parse().unwrap())
-        };
+    let filter = if verbosity > 3 {
+        filter.add_directive("snarkos_node_bft::gateway=trace".parse().unwrap())
+    } else {
+        filter.add_directive("snarkos_node_bft::gateway=off".parse().unwrap())
+    };
 
-        if verbosity > 4 {
-            filter.add_directive("snarkos_node_tcp=trace".parse().unwrap())
-        } else {
-            filter.add_directive("snarkos_node_tcp=off".parse().unwrap())
-        }
-    });
+    let filter = if verbosity > 4 {
+        filter.add_directive("snarkos_node_tcp=trace".parse().unwrap())
+    } else {
+        filter.add_directive("snarkos_node_tcp=off".parse().unwrap())
+    };
 
     // Initialize tracing.
     let _ = tracing_subscriber::registry()
@@ -145,9 +144,9 @@ pub async fn start_bft(
     // Initialize the BFT instance.
     let block_sync = Arc::new(BlockSync::new(ledger.clone()));
     let mut bft =
-        BFT::<CurrentNetwork>::new(account, storage, ledger, block_sync, ip, &trusted_validators, storage_mode)?;
+        BFT::<CurrentNetwork>::new(account, storage, ledger, block_sync, ip, &trusted_validators, storage_mode, None)?;
     // Run the BFT instance.
-    bft.run(Some(consensus_sender), sender.clone(), receiver).await?;
+    bft.run(None, Some(consensus_sender), sender.clone(), receiver).await?;
     // Retrieve the BFT's primary.
     let primary = bft.primary();
     // Handle OS signals.
@@ -184,10 +183,18 @@ pub async fn start_primary(
     let trusted_validators = trusted_validators(node_id, num_nodes, peers);
     // Initialize the primary instance.
     let block_sync = Arc::new(BlockSync::new(ledger.clone()));
-    let mut primary =
-        Primary::<CurrentNetwork>::new(account, storage, ledger, block_sync, ip, &trusted_validators, storage_mode)?;
+    let mut primary = Primary::<CurrentNetwork>::new(
+        account,
+        storage,
+        ledger,
+        block_sync,
+        ip,
+        &trusted_validators,
+        storage_mode,
+        None,
+    )?;
     // Run the primary instance.
-    primary.run(None, sender.clone(), receiver).await?;
+    primary.run(None, None, sender.clone(), receiver).await?;
     // Handle OS signals.
     handle_signals(&primary);
     // Return the primary instance.
@@ -367,9 +374,9 @@ fn fire_unconfirmed_solutions(sender: &PrimarySender<CurrentNetwork>, node_id: u
         // A closure to generate a solution ID and solution.
         fn sample(mut rng: impl Rng) -> (SolutionID<CurrentNetwork>, Data<Solution<CurrentNetwork>>) {
             // Sample a random fake solution ID.
-            let solution_id = rng.gen::<u64>().into();
+            let solution_id = rng.r#gen::<u64>().into();
             // Sample random fake solution bytes.
-            let solution = Data::Buffer(Bytes::from((0..1024).map(|_| rng.gen::<u8>()).collect::<Vec<_>>()));
+            let solution = Data::Buffer(Bytes::from((0..1024).map(|_| rng.r#gen::<u8>()).collect::<Vec<_>>()));
             // Return the ID and solution.
             (solution_id, solution)
         }
@@ -412,7 +419,7 @@ fn fire_unconfirmed_transactions(sender: &PrimarySender<CurrentNetwork>, node_id
             // Sample a random fake transaction ID.
             let id = Field::<CurrentNetwork>::rand(&mut rng).into();
             // Sample random fake transaction bytes.
-            let transaction = Data::Buffer(Bytes::from((0..1024).map(|_| rng.gen::<u8>()).collect::<Vec<_>>()));
+            let transaction = Data::Buffer(Bytes::from((0..1024).map(|_| rng.r#gen::<u8>()).collect::<Vec<_>>()));
             // Return the ID and transaction.
             (id, transaction)
         }

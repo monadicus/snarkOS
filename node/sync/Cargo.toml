@@ -14,7 +14,7 @@ keywords = [
 ]
 categories = [ "cryptography", "cryptography::cryptocurrencies", "os" ]
 license = "Apache-2.0"
-edition = "2021"
+edition = "2024"
 
 [features]
 default = [ ]
@@ -23,20 +23,24 @@ locktick = [
   "snarkos-node-bft-ledger-service/locktick",
   "snarkos-node-router/locktick",
 ]
+serial = ["snarkos-node-bft-ledger-service/serial"]
 
 metrics = [ "dep:metrics" ]
 cuda = [ "snarkvm/cuda", "snarkos-node-bft-ledger-service/cuda", "snarkos-node-router/cuda" ]
 test = [ "snarkos-node-sync-locators/test" ]
 
 [dependencies.anyhow]
-version = "1.0"
+workspace = true
 
 [dependencies.indexmap]
-version = "2.1"
+workspace = true
 features = [ "serde", "rayon" ]
 
 [dependencies.itertools]
-version = "0.12"
+workspace = true
+
+[dependencies.futures]
+workspace = true
 
 [dependencies.locktick]
 version = "0.3"
@@ -44,14 +48,20 @@ features = [ "parking_lot" ]
 optional = true
 
 [dependencies.parking_lot]
-version = "0.12"
+workspace = true
+
+[dependencies.serde]
+workspace = true
+
+[dependencies.tokio]
+workspace = true
+features = [ "sync" ]
 
 [dependencies.rand]
 version = "0.8"
 
 [dependencies.snarkos-node-bft-ledger-service]
-path = "../bft/ledger-service"
-version = "=3.8.0"
+workspace = true
 features = [ "ledger-write" ]
 
 [dependencies.metrics]
@@ -61,22 +71,19 @@ version = "=3.8.0"
 optional = true
 
 [dependencies.snarkos-node-router]
-path = "../router"
-version = "=3.8.0"
+workspace = true
 
 [dependencies.snarkos-node-sync-communication-service]
-path = "communication-service"
-version = "=3.8.0"
+workspace = true
 
 [dependencies.snarkos-node-sync-locators]
-path = "locators"
-version = "=3.8.0"
+workspace =true
 
 [dependencies.snarkvm]
 workspace = true
 
 [dependencies.tracing]
-version = "0.1"
+workspace = true
 
 [dev-dependencies.snarkos-node-bft-ledger-service]
 path = "../bft/ledger-service"
@@ -86,6 +93,14 @@ features = [ "test" ]
 path = "locators"
 features = [ "test" ]
 
+[dev-dependencies.snarkos-node-sync-communication-service]
+workspace = true
+features = [ "test-helpers" ]
+
 [dev-dependencies.snarkvm]
 workspace = true
 features = [ "test-helpers" ]
+
+[dev-dependencies.tracing-subscriber]
+workspace = true
+features = [ "env-filter", "fmt" ]

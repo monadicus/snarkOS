@@ -14,16 +14,16 @@ keywords = [
 ]
 categories = [ "cryptography", "cryptography::cryptocurrencies", "os" ]
 license = "Apache-2.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies.anyhow]
-version = "1.0.79"
+workspace = true
 
 [dependencies.crossterm]
-version = "0.27"
+workspace = true
 
 [dependencies.ratatui]
-version = "0.25"
+version = "0.29"
 
 [dependencies.snarkos-node]
 path = "../node"
@@ -33,5 +33,5 @@ version = "=3.8.0"
 workspace = true
 
 [dependencies.tokio]
-version = "1.28"
+workspace = true
 features = [ "rt" ]

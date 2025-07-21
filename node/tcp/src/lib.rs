@@ -24,7 +24,7 @@ pub use helpers::*;
 pub mod protocols;
 
 mod tcp;
-pub use tcp::Tcp;
+pub use tcp::{ConnectError, Tcp};
 
 use std::net::IpAddr;
 

@@ -14,7 +14,7 @@ keywords = [
 ]
 categories = [ "cryptography", "cryptography::cryptocurrencies", "os" ]
 license = "Apache-2.0"
-edition = "2021"
+edition = "2024"
 
 [features]
 default = [ ]
@@ -38,11 +38,11 @@ version = "=3.8.0"
 workspace = true
 
 [dependencies.tokio-util]
-version = "0.7"
+workspace = true
 features = [ "codec" ]
 
 [dependencies.tracing]
-version = "0.1"
+workspace = true
 
 [dev-dependencies.snarkos-node-sync-locators]
 path = "../../sync/locators"
@@ -56,4 +56,4 @@ features = [ "algorithms", "test-helpers" ]
 workspace = true
 
 [dev-dependencies.test-strategy]
-version = "0.3.1"
+workspace = true

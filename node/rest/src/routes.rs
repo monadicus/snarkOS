@@ -14,17 +14,20 @@
 // limitations under the License.
 
 use super::*;
-use snarkos_node_router::{SYNC_LENIENCY, messages::UnconfirmedSolution};
+use snarkos_node_router::messages::UnconfirmedSolution;
 use snarkvm::{
     ledger::puzzle::Solution,
-    prelude::{Address, Identifier, LimitedWriter, Plaintext, ToBytes, block::Transaction},
+    prelude::{Address, Identifier, LimitedWriter, Plaintext, Program, ToBytes, block::Transaction},
 };
 
 use indexmap::IndexMap;
-use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use snarkvm::prelude::Program;
+use serde_with::skip_serializing_none;
+use std::collections::HashMap;
+
+#[cfg(not(feature = "serial"))]
+use rayon::prelude::*;
 
 /// The `get_blocks` query object.
 #[derive(Deserialize, Serialize)]
@@ -35,11 +38,35 @@ pub(crate) struct BlockRange {
     end: u32,
 }
 
+#[derive(Deserialize, Serialize)]
+pub(crate) struct BackupPath {
+    path: std::path::PathBuf,
+}
+
 /// The query object for `get_mapping_value` and `get_mapping_values`.
 #[derive(Copy, Clone, Deserialize, Serialize)]
 pub(crate) struct Metadata {
     metadata: Option<bool>,
     all: Option<bool>,
+}
+
+/// The return value for a `sync_status` query.
+#[skip_serializing_none]
+#[derive(Copy, Clone, Serialize)]
+struct SyncStatus<'a> {
+    /// Is this node fully synced with the network?
+    is_synced: bool,
+    /// The block height of this node.
+    ledger_height: u32,
+    /// Which way are we sync'ing (either "cdn" or "p2p")
+    sync_mode: &'a str,
+    /// The block height of the CDN (if connected to a CDN).
+    cdn_height: Option<u32>,
+    /// The greatest known block height of a peer.
+    /// None, if no peers are connected yet.
+    p2p_height: Option<u32>,
+    /// The number of outstanding p2p sync requests.
+    outstanding_block_requests: usize,
 }
 
 impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
@@ -109,7 +136,7 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
 
         // Prepare a closure for the blocking work.
         let get_json_blocks = move || -> Result<ErasedJson, RestError> {
-            let blocks = cfg_into_iter!((start_height..end_height))
+            let blocks = cfg_into_iter!(start_height..end_height)
                 .map(|height| rest.ledger.get_block(height))
                 .collect::<Result<Vec<_>, _>>()?;
 
@@ -121,6 +148,53 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
             Ok(json) => json,
             Err(err) => Err(RestError(format!("Failed to get blocks '{start_height}..{end_height}' - {err}"))),
         }
+    }
+
+    // GET /<network>/sync/status
+    pub(crate) async fn get_sync_status(State(rest): State<Self>) -> Result<ErasedJson, RestError> {
+        // Get the CDN height (if we are syncing from a CDN)
+        let (cdn_sync, cdn_height) = if let Some(cdn_sync) = &rest.cdn_sync {
+            let done = cdn_sync.is_done();
+
+            // Do not show CDN height if we are already done syncing from the CDN.
+            let cdn_height = if done { None } else { Some(cdn_sync.get_cdn_height().await?) };
+
+            // Report CDN sync until it is finished.
+            (!done, cdn_height)
+        } else {
+            (false, None)
+        };
+
+        // Generate a string representing the current sync mode.
+        let sync_mode = if cdn_sync { "cdn" } else { "p2p" };
+
+        Ok(ErasedJson::pretty(SyncStatus {
+            sync_mode,
+            cdn_height,
+            is_synced: !cdn_sync && rest.routing.is_block_synced(),
+            ledger_height: rest.ledger.latest_height(),
+            p2p_height: rest.block_sync.greatest_peer_block_height(),
+            outstanding_block_requests: rest.block_sync.num_outstanding_block_requests(),
+        }))
+    }
+
+    // GET /<network>/sync/peers
+    pub(crate) async fn get_sync_peers(State(rest): State<Self>) -> Result<ErasedJson, RestError> {
+        let peers: HashMap<String, u32> =
+            rest.block_sync.get_peer_heights().into_iter().map(|(addr, height)| (addr.to_string(), height)).collect();
+        Ok(ErasedJson::pretty(peers))
+    }
+
+    // GET /<network>/sync/requests
+    pub(crate) async fn get_sync_requests_summary(State(rest): State<Self>) -> Result<ErasedJson, RestError> {
+        let summary = rest.block_sync.get_block_requests_summary();
+        Ok(ErasedJson::pretty(summary))
+    }
+
+    // GET /<network>/sync/requests/list
+    pub(crate) async fn get_sync_requests_list(State(rest): State<Self>) -> Result<ErasedJson, RestError> {
+        let requests = rest.block_sync.get_block_requests_info();
+        Ok(ErasedJson::pretty(requests))
     }
 
     // GET /<network>/height/{blockHash}
@@ -237,10 +311,10 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
     fn return_program_with_metadata(&self, program: Program<N>, edition: u16) -> Result<ErasedJson, RestError> {
         let id = program.id();
         // Get the transaction ID associated with the program and edition.
-        let tid = self.ledger.find_transaction_id_from_program_id_and_edition(id, edition)?;
+        let tx_id = self.ledger.find_transaction_id_from_program_id_and_edition(id, edition)?;
         // Get the optional program owner associated with the program.
-        // Note: The owner is only available after the `ConsensusVersion::V7`.
-        let program_owner = match &tid {
+        // Note: The owner is only available after the `ConsensusVersion::V9`.
+        let program_owner = match &tx_id {
             Some(tid) => self
                 .ledger
                 .vm()
@@ -254,7 +328,7 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
         Ok(ErasedJson::pretty(json!({
             "program": program,
             "edition": edition,
-            "tid": tid,
+            "transaction_id": tx_id,
             "program_owner": program_owner,
         })))
     }
@@ -372,7 +446,7 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
         Path(validator): Path<Address<N>>,
     ) -> Result<ErasedJson, RestError> {
         // Do not process the request if the node is too far behind to avoid sending outdated data.
-        if rest.routing.num_blocks_behind() > SYNC_LENIENCY {
+        if !rest.routing.is_within_sync_leniency() {
             return Err(RestError("Unable to  request delegators (node is syncing)".to_string()));
         }
 
@@ -458,7 +532,7 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
         Json(tx): Json<Transaction<N>>,
     ) -> Result<ErasedJson, RestError> {
         // Do not process the transaction if the node is too far behind.
-        if rest.routing.num_blocks_behind() > SYNC_LENIENCY {
+        if !rest.routing.is_within_sync_leniency() {
             return Err(RestError(format!("Unable to broadcast transaction '{}' (node is syncing)", fmt_id(tx.id()))));
         }
 
@@ -496,7 +570,7 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
         Json(solution): Json<Solution<N>>,
     ) -> Result<ErasedJson, RestError> {
         // Do not process the solution if the node is too far behind.
-        if rest.routing.num_blocks_behind() > SYNC_LENIENCY {
+        if !rest.routing.is_within_sync_leniency() {
             return Err(RestError(format!(
                 "Unable to broadcast solution '{}' (node is syncing)",
                 fmt_id(solution.id())
@@ -516,6 +590,16 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
                 let proof_target = rest.ledger.latest_proof_target();
                 // Ensure that the solution is valid for the given epoch.
                 let puzzle = rest.ledger.puzzle().clone();
+                // Check if the prover has reached their solution limit.
+                // While snarkVM will ultimately abort any excess solutions for safety, performing this check
+                // here prevents the to-be aborted solutions from propagating through the network.
+                let prover_address = solution.address();
+                if rest.ledger.is_solution_limit_reached(&prover_address, 0) {
+                    return Err(RestError(format!(
+                        "Invalid solution '{}' - Prover '{prover_address}' has reached their solution limit for the current epoch",
+                        fmt_id(solution.id())
+                    )));
+                }
                 // Verify the solution in a blocking task.
                 match tokio::task::spawn_blocking(move || puzzle.check_solution(&solution, epoch_hash, proof_target))
                     .await
@@ -538,6 +622,16 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
         rest.routing.propagate(message, &[]);
 
         Ok(ErasedJson::pretty(solution_id))
+    }
+
+    // POST /{network}/db_backup?path=new_fs_path
+    pub(crate) async fn db_backup(
+        State(rest): State<Self>,
+        backup_path: Query<BackupPath>,
+    ) -> Result<ErasedJson, RestError> {
+        rest.ledger.backup_database(&backup_path.path).map_err(RestError::from)?;
+
+        Ok(ErasedJson::pretty(()))
     }
 
     // GET /{network}/block/{blockHeight}/history/{mapping}

@@ -13,6 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// See https://github.com/ProvableHQ/snarkVM/issues/2775
 #![forbid(unsafe_code)]
 #![recursion_limit = "256"]
 
@@ -20,6 +21,8 @@
 extern crate thiserror;
 
 pub mod commands;
+pub use commands::CLI;
+
 pub mod helpers;
 
 use anyhow::Result;

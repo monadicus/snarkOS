@@ -35,7 +35,8 @@ use snarkos_node_bft::{
 };
 use snarkos_node_bft_ledger_service::LedgerService;
 use snarkos_node_bft_storage_service::BFTPersistentStorage;
-use snarkos_node_sync::BlockSync;
+use snarkos_node_sync::{BlockSync, Ping};
+
 use snarkvm::{
     ledger::{
         block::Transaction,
@@ -111,13 +112,18 @@ pub struct Consensus<N: Network> {
     /// The recently-seen unconfirmed transactions.
     seen_transactions: Arc<Mutex<LruCache<N::TransactionID, ()>>>,
     #[cfg(feature = "metrics")]
-    transmissions_queue_timestamps: Arc<Mutex<HashMap<TransmissionID<N>, i64>>>,
-    /// The handles of all spawned tasks.
+    transmissions_tracker: Arc<Mutex<HashMap<TransmissionID<N>, i64>>>,
+    /// The spawned handles.
     handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
+    /// The ping logic.
+    ping: Arc<Ping<N>>,
+    /// The block sync logic.
+    block_sync: Arc<BlockSync<N>>,
 }
 
 impl<N: Network> Consensus<N> {
     /// Initializes a new instance of consensus and spawn its background tasks.
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         account: Account<N>,
         ledger: Arc<dyn LedgerService<N>>,
@@ -125,6 +131,8 @@ impl<N: Network> Consensus<N> {
         ip: Option<SocketAddr>,
         trusted_validators: &[SocketAddr],
         storage_mode: StorageMode,
+        ping: Arc<Ping<N>>,
+        dev: Option<u16>,
     ) -> Result<Self> {
         // Initialize the primary channels.
         let (primary_sender, primary_receiver) = init_primary_channels::<N>();
@@ -133,19 +141,22 @@ impl<N: Network> Consensus<N> {
         // Initialize the Narwhal storage.
         let storage = NarwhalStorage::new(ledger.clone(), transmissions, BatchHeader::<N>::MAX_GC_ROUNDS as u64);
         // Initialize the BFT.
-        let bft = BFT::new(account, storage, ledger.clone(), block_sync, ip, trusted_validators, storage_mode)?;
+        let bft =
+            BFT::new(account, storage, ledger.clone(), block_sync.clone(), ip, trusted_validators, storage_mode, dev)?;
         // Create a new instance of Consensus.
         let mut _self = Self {
             ledger,
             bft,
+            block_sync,
             primary_sender,
             solutions_queue: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(CAPACITY_FOR_SOLUTIONS).unwrap()))),
             transactions_queue: Default::default(),
             seen_solutions: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(1 << 16).unwrap()))),
             seen_transactions: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(1 << 16).unwrap()))),
             #[cfg(feature = "metrics")]
-            transmissions_queue_timestamps: Default::default(),
+            transmissions_tracker: Default::default(),
             handles: Default::default(),
+            ping: ping.clone(),
         };
 
         info!("Starting the consensus instance...");
@@ -155,7 +166,7 @@ impl<N: Network> Consensus<N> {
         // Then, start the consensus handlers.
         _self.start_handlers(consensus_receiver);
         // Lastly, also start BFTs handlers.
-        _self.bft.run(Some(consensus_sender), _self.primary_sender.clone(), primary_receiver).await?;
+        _self.bft.run(Some(ping), Some(consensus_sender), _self.primary_sender.clone(), primary_receiver).await?;
 
         Ok(_self)
     }
@@ -281,14 +292,6 @@ impl<N: Network> Consensus<N> {
     pub async fn add_unconfirmed_solution(&self, solution: Solution<N>) -> Result<()> {
         // Calculate the transmission checksum.
         let checksum = Data::<Solution<N>>::Buffer(solution.to_bytes_le()?.into()).to_checksum::<N>()?;
-        #[cfg(feature = "metrics")]
-        {
-            metrics::increment_gauge(metrics::consensus::UNCONFIRMED_SOLUTIONS, 1f64);
-            let timestamp = snarkos_node_bft::helpers::now();
-            self.transmissions_queue_timestamps
-                .lock()
-                .insert(TransmissionID::Solution(solution.id(), checksum), timestamp);
-        }
         // Queue the unconfirmed solution.
         {
             let solution_id = solution.id();
@@ -301,6 +304,12 @@ impl<N: Network> Consensus<N> {
             // Check if the solution already exists in the ledger.
             if self.ledger.contains_transmission(&TransmissionID::Solution(solution_id, checksum))? {
                 bail!("Solution '{}' exists in the ledger {}", fmt_id(solution_id), "(skipping)".dimmed());
+            }
+            #[cfg(feature = "metrics")]
+            {
+                metrics::increment_gauge(metrics::consensus::UNCONFIRMED_SOLUTIONS, 1f64);
+                let timestamp = snarkos_node_bft::helpers::now();
+                self.transmissions_tracker.lock().insert(TransmissionID::Solution(solution.id(), checksum), timestamp);
             }
             // Add the solution to the memory pool.
             trace!("Received unconfirmed solution '{}' in the queue", fmt_id(solution_id));
@@ -358,14 +367,6 @@ impl<N: Network> Consensus<N> {
     pub async fn add_unconfirmed_transaction(&self, transaction: Transaction<N>) -> Result<()> {
         // Calculate the transmission checksum.
         let checksum = Data::<Transaction<N>>::Buffer(transaction.to_bytes_le()?.into()).to_checksum::<N>()?;
-        #[cfg(feature = "metrics")]
-        {
-            metrics::increment_gauge(metrics::consensus::UNCONFIRMED_TRANSACTIONS, 1f64);
-            let timestamp = snarkos_node_bft::helpers::now();
-            self.transmissions_queue_timestamps
-                .lock()
-                .insert(TransmissionID::Transaction(transaction.id(), checksum), timestamp);
-        }
         // Queue the unconfirmed transaction.
         {
             let transaction_id = transaction.id();
@@ -383,6 +384,14 @@ impl<N: Network> Consensus<N> {
             if self.ledger.contains_transmission(&TransmissionID::Transaction(transaction_id, checksum))? {
                 bail!("Transaction '{}' exists in the ledger {}", fmt_id(transaction_id), "(skipping)".dimmed());
             }
+            #[cfg(feature = "metrics")]
+            {
+                metrics::increment_gauge(metrics::consensus::UNCONFIRMED_TRANSACTIONS, 1f64);
+                let timestamp = snarkos_node_bft::helpers::now();
+                self.transmissions_tracker
+                    .lock()
+                    .insert(TransmissionID::Transaction(transaction.id(), checksum), timestamp);
+            }
             // Add the transaction to the memory pool.
             trace!("Received unconfirmed transaction '{}' in the queue", fmt_id(transaction_id));
             if transaction.is_deploy() {
@@ -392,13 +401,13 @@ impl<N: Network> Consensus<N> {
             } else if self.transactions_queue.lock().executions.put(transaction_id, transaction).is_some() {
                 bail!("Transaction '{}' exists in the memory pool", fmt_id(transaction_id));
             }
-
-            // Try to process the unconfirmed transactions in the memory pool.
-            self.process_unconfirmed_transactions().await
         }
+
+        // Try to process the unconfirmed transactions in the memory pool.
+        self.process_unconfirmed_transactions().await
     }
 
-    /// Processes unconfirmed transctions in the mempool, and passes them to the BFT layer
+    /// Processes unconfirmed transactions in the mempool, and passes them to the BFT layer
     /// (if sufficient space is available).
     async fn process_unconfirmed_transactions(&self) -> Result<()> {
         // If the memory pool of this node is full, return early.
@@ -433,7 +442,13 @@ impl<N: Network> Consensus<N> {
         // Iterate over the transactions.
         for transaction in transactions.into_iter() {
             let transaction_id = transaction.id();
-            trace!("Adding unconfirmed transaction '{}' to the memory pool...", fmt_id(transaction_id));
+            // Determine the type of the transaction. The fee type is technically not possible here.
+            let tx_type_str = match transaction {
+                Transaction::Deploy(..) => "deployment",
+                Transaction::Execute(..) => "execution",
+                Transaction::Fee(..) => "fee",
+            };
+            trace!("Adding unconfirmed {tx_type_str} transaction '{}' to the memory pool...", fmt_id(transaction_id));
             // Send the unconfirmed transaction to the primary.
             if let Err(e) =
                 self.primary_sender.send_unconfirmed_transaction(transaction_id, Data::Object(transaction)).await
@@ -441,7 +456,7 @@ impl<N: Network> Consensus<N> {
                 // If the BFT is synced, then log the warning.
                 if self.bft.is_synced() {
                     warn!(
-                        "Failed to add unconfirmed transaction '{}' to the memory pool - {e}",
+                        "Failed to add unconfirmed {tx_type_str} transaction '{}' to the memory pool - {e}",
                         fmt_id(transaction_id)
                     );
                 }
@@ -510,7 +525,7 @@ impl<N: Network> Consensus<N> {
         callback.send(result).ok();
     }
 
-    /// Attempts to advance the ledger to the next block, and upadtes the metrics (if enabled) accordingly.
+    /// Attempts to advance the ledger to the next block, and updates the metrics (if enabled) accordingly.
     fn try_advance_to_next_block(
         &self,
         subdag: Subdag<N>,
@@ -541,6 +556,13 @@ impl<N: Network> Consensus<N> {
             self.bft.primary().clear_worker_solutions();
         }
 
+        // Notify peers that we have a new block.
+        let locators = self.block_sync.get_block_locators()?;
+        self.ping.update_block_locators(locators);
+
+        // Make block sync aware of the new block.
+        self.block_sync.set_sync_height(next_block.height());
+
         // TODO(kaimast): This should also remove any transmissions/solutions contained in the block from the mempool.
         // Removal currently happens when Consensus eventually passes them to the worker, which then just discards them.
 
@@ -553,7 +575,7 @@ impl<N: Network> Consensus<N> {
             let coinbase_target = next_block.header().coinbase_target();
             let cumulative_proof_target = next_block.header().cumulative_proof_target();
 
-            metrics::add_transmission_latency_metric(&self.transmissions_queue_timestamps, &next_block);
+            metrics::add_transmission_latency_metric(&self.transmissions_tracker, &next_block);
 
             metrics::gauge(metrics::consensus::COMMITTED_CERTIFICATES, num_committed_certificates as f64);
             metrics::histogram(metrics::consensus::CERTIFICATE_COMMIT_LATENCY, elapsed.as_secs_f64());

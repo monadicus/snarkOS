@@ -14,7 +14,7 @@ keywords = [
 ]
 categories = [ "cryptography", "cryptography::cryptocurrencies", "os" ]
 license = "Apache-2.0"
-edition = "2021"
+edition = "2024"
 
 [features]
 default = [ ]
@@ -44,12 +44,13 @@ test = [
   "snarkos-node-bft-ledger-service/test",
   "snarkos-node-bft-storage-service/test"
 ]
+serial = [ "snarkos-node-bft-ledger-service/serial" ]
 
 [dependencies.aleo-std]
 workspace = true
 
 [dependencies.anyhow]
-version = "1.0.79"
+workspace = true
 
 [dependencies.async-recursion]
 version = "1.0"
@@ -64,11 +65,11 @@ version = "1"
 version = "2"
 
 [dependencies.futures]
-version = "0.3.30"
+workspace = true
 features = [ "thread-pool" ]
 
 [dependencies.indexmap]
-version = "2.1"
+workspace = true
 features = [ "serde", "rayon" ]
 
 [dependencies.locktick]
@@ -86,7 +87,7 @@ version = "=3.8.0"
 optional = true
 
 [dependencies.parking_lot]
-version = "0.12"
+workspace = true
 
 [dependencies.rand]
 version = "0.8"
@@ -107,18 +108,15 @@ path = "./events"
 version = "=3.8.0"
 
 [dependencies.snarkos-node-bft-ledger-service]
-path = "./ledger-service"
-version = "=3.8.0"
+workspace = true
 features = [ "ledger", "prover" ]
 
 [dependencies.snarkos-node-bft-storage-service]
-path = "./storage-service"
-version = "=3.8.0"
+workspace = true
 features = [ "memory" ]
 
 [dependencies.snarkos-node-sync]
-path = "../sync"
-version = "=3.8.0"
+workspace = true
 
 [dependencies.snarkos-node-tcp]
 path = "../tcp"
@@ -126,23 +124,24 @@ version = "=3.8.0"
 
 [dependencies.snarkvm]
 workspace = true
+features = [ "utilities" ]
 
 [dependencies.time]
 version = "0.3"
 
 [dependencies.tokio]
-version = "1.28"
+workspace = true
 features = [ "macros", "rt-multi-thread", "signal" ]
 
 [dependencies.tokio-stream]
 version = "=0.1"
 
 [dependencies.tokio-util]
-version = "0.7"
+workspace = true
 features = [ "codec" ]
 
 [dependencies.tracing]
-version = "0.1"
+workspace = true
 
 [dev-dependencies.axum]
 version = "0.8"
@@ -153,7 +152,8 @@ default-features = false
 features = [ "erased-json" ]
 
 [dev-dependencies.clap]
-version = "4.4"
+workspace = true
+features = [ "derive" ]
 
 [dev-dependencies.deadline]
 version = "0.2"
@@ -186,19 +186,23 @@ version = "1"
 path = "."
 features = [ "test" ]
 
+[dev-dependencies.snarkos-node-sync]
+path = "../sync"
+features = [ "test" ]
+
 [dev-dependencies.test-strategy]
-version = "0.3.1"
+workspace = true
 
 [dev-dependencies.tower-http]
 version = "0.6"
 features = [ "fs", "trace" ]
 
 [dev-dependencies.tracing-subscriber]
-version = "0.3"
+workspace = true
 features = [ "env-filter" ]
 
 [dev-dependencies.tracing-test]
-version = "0.2"
+workspace = true
 
 [dev-dependencies.mockall]
 version = "0.12.1"

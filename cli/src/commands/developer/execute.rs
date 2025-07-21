@@ -14,6 +14,7 @@
 // limitations under the License.
 
 use super::Developer;
+use crate::commands::StoreFormat;
 use snarkvm::{
     console::network::{CanaryV0, MainnetV0, Network, TestnetV0},
     ledger::store::helpers::memory::BlockMemory,
@@ -74,6 +75,10 @@ pub struct Execute {
     /// Store generated deployment transaction to a local file.
     #[clap(long)]
     store: Option<String>,
+    /// If --store is specified, the format in which the transaction should be stored : string or
+    /// bytes, by default : bytes.
+    #[clap(long, value_enum, default_value_t = StoreFormat::Bytes)]
+    store_format: StoreFormat,
     /// Specify the path to a directory containing the ledger. Overrides the default path (also for
     /// dev).
     #[clap(long = "storage_path")]
@@ -135,7 +140,7 @@ impl Execute {
         // Retrieve the inputs.
         let inputs = self.inputs.iter().map(|input| Value::from_str(input)).collect::<Result<Vec<Value<N>>>>()?;
 
-        let locator = Locator::<N>::from_str(&format!("{}/{}", program_id, function))?;
+        let locator = Locator::<N>::from_str(&format!("{program_id}/{function}"))?;
         println!("📦 Creating execution transaction for '{}'...\n", &locator.to_string().bold());
 
         // Generate the execution transaction.
@@ -164,7 +169,15 @@ impl Execute {
             let priority_fee = self.priority_fee.unwrap_or(0);
 
             // Create a new transaction.
-            vm.execute(&private_key, (program_id, function), inputs.iter(), fee_record, priority_fee, Some(query), rng)?
+            vm.execute(
+                &private_key,
+                (program_id, function),
+                inputs.iter(),
+                fee_record,
+                priority_fee,
+                Some(&query),
+                rng,
+            )?
         };
 
         // Check if the public balance is sufficient.
@@ -197,7 +210,14 @@ impl Execute {
         println!("✅ Created execution transaction for '{}'", locator.to_string().bold());
 
         // Determine if the transaction should be broadcast, stored, or displayed to the user.
-        Developer::handle_transaction(&self.broadcast, self.dry_run, &self.store, transaction, locator.to_string())
+        Developer::handle_transaction(
+            &self.broadcast,
+            self.dry_run,
+            &self.store,
+            self.store_format,
+            transaction,
+            locator.to_string(),
+        )
     }
 }
 
