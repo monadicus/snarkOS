@@ -1,6 +1,6 @@
 [package]
 name = "snarkos"
-version = "4.0.0"
+version = "4.0.1"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A decentralized operating system"
 homepage = "https://aleo.org"
@@ -106,35 +106,35 @@ version = "0.4"
 
 [workspace.dependencies.snarkos-node-bft-storage-service]
 path = "node/bft/storage-service"
-version = "=4.0.0"
+version = "=4.0.1"
 
 [workspace.dependencies.snarkos-node-bft-ledger-service]
 path = "node/bft/ledger-service"
-version = "=4.0.0"
+version = "=4.0.1"
 
 [workspace.dependencies.snarkos-node-consensus]
 path = "node/consensus"
-version = "=4.0.0"
+version = "=4.0.1"
 
 [workspace.dependencies.snarkos-node-cdn]
 path = "node/cdn"
-version = "=4.0.0"
+version = "=4.0.1"
 
 [workspace.dependencies.snarkos-node-router]
 path = "node/router"
-version = "=4.0.0"
+version = "=4.0.1"
 
 [workspace.dependencies.snarkos-node-sync]
 path = "node/sync"
-version = "=4.0.0"
+version = "=4.0.1"
 
 [workspace.dependencies.snarkos-node-sync-communication-service]
 path = "node/sync/communication-service"
-version = "=4.0.0"
+version = "=4.0.1"
 
 [workspace.dependencies.snarkos-node-sync-locators]
 path = "node/sync/locators"
-version = "=4.0.0"
+version = "=4.0.1"
 
 [[bin]]
 name = "snarkos"
@@ -182,19 +182,19 @@ optional = true
 
 [dependencies.snarkos-account]
 path = "./account"
-version = "=4.0.0"
+version = "=4.0.1"
 
 [dependencies.snarkos-cli]
 path = "./cli"
-version = "=4.0.0"
+version = "=4.0.1"
 
 [dependencies.snarkos-node]
 path = "./node"
-version = "=4.0.0"
+version = "=4.0.1"
 
 [dependencies.snarkos-node-bft]
 path = "./node/bft"
-version = "=4.0.0"
+version = "=4.0.1"
 
 [dependencies.snarkos-node-cdn]
 workspace = true
@@ -204,7 +204,7 @@ workspace = true
 
 [dependencies.snarkos-node-metrics]
 path = "./node/metrics"
-version = "=4.0.0"
+version = "=4.0.1"
 optional = true
 
 [dependencies.snarkos-node-router]
@@ -212,14 +212,14 @@ workspace = true
 
 [dependencies.snarkos-node-rest]
 path = "./node/rest"
-version = "=4.0.0"
+version = "=4.0.1"
 
 [dependencies.snarkos-node-sync]
 workspace = true
 
 [dependencies.snarkos-node-tcp]
 path = "./node/tcp"
-version = "=4.0.0"
+version = "=4.0.1"
 
 [target.'cfg(all(target_os = "linux", target_arch = "x86_64"))'.dependencies]
 tikv-jemallocator = "0.5"
