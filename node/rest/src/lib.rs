@@ -23,11 +23,13 @@ pub use helpers::*;
 
 mod routes;
 
+use snarkos_node_cdn::CdnBlockSync;
 use snarkos_node_consensus::Consensus;
 use snarkos_node_router::{
     Routing,
     messages::{Message, UnconfirmedTransaction},
 };
+use snarkos_node_sync::BlockSync;
 use snarkvm::{
     console::{program::ProgramID, types::Field},
     ledger::narwhal::Data,
@@ -58,9 +60,14 @@ use tower_http::{
     trace::TraceLayer,
 };
 
+/// The default port used for the REST API
+pub const DEFAULT_REST_PORT: u16 = 3030;
+
 /// A REST API server for the ledger.
 #[derive(Clone)]
 pub struct Rest<N: Network, C: ConsensusStorage<N>, R: Routing<N>> {
+    /// CDN sync (only if node is using the CDN to sync).
+    cdn_sync: Option<Arc<CdnBlockSync>>,
     /// The consensus module.
     consensus: Option<Consensus<N>>,
     /// The ledger.
@@ -69,6 +76,8 @@ pub struct Rest<N: Network, C: ConsensusStorage<N>, R: Routing<N>> {
     routing: Arc<R>,
     /// The server handles.
     handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
+    /// A reference to BlockSync,
+    block_sync: Arc<BlockSync<N>>,
 }
 
 impl<N: Network, C: 'static + ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
@@ -79,9 +88,11 @@ impl<N: Network, C: 'static + ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> 
         consensus: Option<Consensus<N>>,
         ledger: Ledger<N, C>,
         routing: Arc<R>,
+        cdn_sync: Option<Arc<CdnBlockSync>>,
+        block_sync: Arc<BlockSync<N>>,
     ) -> Result<Self> {
         // Initialize the server.
-        let mut server = Self { consensus, ledger, routing, handles: Default::default() };
+        let mut server = Self { consensus, ledger, routing, cdn_sync, block_sync, handles: Default::default() };
         // Spawn the server.
         server.spawn_server(rest_ip, rest_rps).await;
         // Return the server.
@@ -149,6 +160,9 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
             .route(&format!("/{network}/program/{{id}}/mapping/{{name}}"), get(Self::get_mapping_values))
             .route_layer(middleware::from_fn(auth_middleware))
 
+             // Get ../consensus_version
+            .route(&format!("/{network}/consensus_version"), get(Self::get_consensus_version))
+
             // GET ../block/..
             .route(&format!("/{network}/block/height/latest"), get(Self::get_block_height_latest))
             .route(&format!("/{network}/block/hash/latest"), get(Self::get_block_hash_latest))
@@ -168,10 +182,12 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
             // POST ../solution/broadcast
             .route(&format!("/{network}/solution/broadcast"), post(Self::solution_broadcast))
 
+
             // GET ../find/..
             .route(&format!("/{network}/find/blockHash/{{tx_id}}"), get(Self::find_block_hash))
             .route(&format!("/{network}/find/blockHeight/{{state_root}}"), get(Self::find_block_height_from_state_root))
-            .route(&format!("/{network}/find/transactionID/deployment/{{program_id}}"), get(Self::find_transaction_id_from_program_id))
+            .route(&format!("/{network}/find/transactionID/deployment/{{program_id}}"), get(Self::find_latest_transaction_id_from_program_id))
+            .route(&format!("/{network}/find/transactionID/deployment/{{program_id}}/{{edition}}"), get(Self::find_transaction_id_from_program_id_and_edition))
             .route(&format!("/{network}/find/transactionID/{{transition_id}}"), get(Self::find_transaction_id_from_transition_id))
             .route(&format!("/{network}/find/transitionID/{{input_or_output_id}}"), get(Self::find_transition_id))
 
@@ -182,8 +198,18 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
 
             // GET ../program/..
             .route(&format!("/{network}/program/{{id}}"), get(Self::get_program))
+            .route(&format!("/{network}/program/{{id}}/latest_edition"), get(Self::get_latest_program_edition))
+            .route(&format!("/{network}/program/{{id}}/{{edition}}"), get(Self::get_program_for_edition))
             .route(&format!("/{network}/program/{{id}}/mappings"), get(Self::get_mapping_names))
             .route(&format!("/{network}/program/{{id}}/mapping/{{name}}/{{key}}"), get(Self::get_mapping_value))
+
+            // GET ../sync/..
+            // Note: keeping ../sync_status for compatibility
+            .route(&format!("/{network}/sync_status"), get(Self::get_sync_status))
+            .route(&format!("/{network}/sync/status"), get(Self::get_sync_status))
+            .route(&format!("/{network}/sync/peers"), get(Self::get_sync_peers))
+            .route(&format!("/{network}/sync/requests"), get(Self::get_sync_requests_summary))
+            .route(&format!("/{network}/sync/requests/list"), get(Self::get_sync_requests_list))
 
             // GET misc endpoints.
             .route(&format!("/{network}/blocks"), get(Self::get_blocks))

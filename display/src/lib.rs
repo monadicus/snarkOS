@@ -136,14 +136,14 @@ impl<N: Network> Display<N> {
             .margin(1)
             .direction(Direction::Vertical)
             .constraints([Constraint::Length(3), Constraint::Min(0)].as_ref())
-            .split(f.size());
+            .split(f.area());
 
         /* Tabs */
 
         // Initialize the tabs.
         let block = Block::default().style(Style::default().bg(Color::Black).fg(Color::White));
-        f.render_widget(block, f.size());
-        let titles = self
+        f.render_widget(block, f.area());
+        let titles: Vec<_> = self
             .tabs
             .titles
             .iter()

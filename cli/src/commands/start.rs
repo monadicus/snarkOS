@@ -15,7 +15,13 @@
 
 use snarkos_account::Account;
 use snarkos_display::Display;
-use snarkos_node::{Node, bft::MEMORY_POOL_PORT, router::messages::NodeType};
+use snarkos_node::{
+    Node,
+    bft::MEMORY_POOL_PORT,
+    rest::DEFAULT_REST_PORT,
+    router::{DEFAULT_NODE_PORT, messages::NodeType},
+};
+use snarkos_node_cdn::CDN_BASE_URL;
 use snarkvm::{
     console::{
         account::{Address, PrivateKey},
@@ -34,6 +40,7 @@ use snarkvm::{
 
 use aleo_std::StorageMode;
 use anyhow::{Context, Result, bail, ensure};
+use base64::prelude::{BASE64_STANDARD, Engine};
 use clap::Parser;
 use colored::Colorize;
 use core::str::FromStr;
@@ -42,7 +49,7 @@ use rand::{Rng, SeedableRng};
 use rand_chacha::ChaChaRng;
 use serde::{Deserialize, Serialize};
 use std::{
-    net::SocketAddr,
+    net::{Ipv4Addr, SocketAddr, SocketAddrV4},
     path::PathBuf,
     sync::{Arc, atomic::AtomicBool},
 };
@@ -59,9 +66,6 @@ const DEVELOPMENT_MODE_RNG_SEED: u64 = 1234567890u64;
 /// The development mode number of genesis committee members.
 const DEVELOPMENT_MODE_NUM_GENESIS_COMMITTEE_MEMBERS: u16 = 4;
 
-/// The CDN base url.
-pub(crate) const CDN_BASE_URL: &str = "https://cdn.provable.com";
-
 /// A mapping of `staker_address` to `(validator_address, withdrawal_address, amount)`.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct BondedBalances(IndexMap<String, (String, String, u64)>);
@@ -76,104 +80,168 @@ impl FromStr for BondedBalances {
 
 /// Starts the snarkOS node.
 #[derive(Clone, Debug, Parser)]
-#[command(group(
-    // Ensure at most one node type is specified
-    clap::ArgGroup::new("node_type").required(false).multiple(false)
-))]
+#[command(
+    // Use kebab-case for all arguments (e.g., use the `private-key` flag for the `private_key` field).
+    // This is already the default, but we specify it in case clap's default changes in the future.
+    rename_all = "kebab-case",
+
+    // Ensure at most one node type is specified.
+    group(clap::ArgGroup::new("node_type").required(false).multiple(false)
+),
+
+    // Ensure all other dev flags can only be set if `--dev` is set.
+    group(clap::ArgGroup::new("dev_flags").required(false).multiple(true).requires("dev")
+),
+    // Ensure any rest flag (including `--rest`) cannot be set
+    // if `--norest` is set.
+    group(clap::ArgGroup::new("rest_flags").required(false).multiple(true).conflicts_with("norest")),
+
+    // Ensure you cannot set --verbosity and --log-filter flags at the same time.
+    group(clap::ArgGroup::new("log_flags").required(false).multiple(false)),
+)]
 pub struct Start {
-    /// Specify the network ID of this node (0 = mainnet, 1 = testnet, 2 = canary)
-    #[clap(default_value_t=MainnetV0::ID, long = "network", value_parser = clap::value_parser!(u16).range((MainnetV0::ID as i64)..=(CanaryV0::ID as i64)))]
+    /// Specify the network ID of this node
+    /// [options: 0 = mainnet, 1 = testnet, 2 = canary]
+    #[clap(long, default_value_t=MainnetV0::ID, long, value_parser = clap::value_parser!(u16).range((MainnetV0::ID as i64)..=(CanaryV0::ID as i64)))]
     pub network: u16,
 
-    /// Start the node as a validator
-    #[clap(long = "validator", group = "node_type")]
-    pub validator: bool,
-    /// Start the node as a prover
-    #[clap(long = "prover", group = "node_type")]
+    /// Start the node as a prover.
+    #[clap(long, group = "node_type")]
     pub prover: bool,
-    /// Start the node as a client (default)
-    #[clap(long = "client", group = "node_type")]
+
+    /// Start the node as a client (default).
+    ///
+    /// Client are "full nodes", i.e, validate and execute all blocks they receive, but they do not participate in AleoBFT consensus.
+    #[clap(long, group = "node_type", verbatim_doc_comment)]
     pub client: bool,
 
+    /// Start the node as a validator.
+    ///
+    /// Validators are "full nodes", like clients, but also participate in AleoBFT.
+    #[clap(long, group = "node_type", verbatim_doc_comment)]
+    pub validator: bool,
+
     /// Specify the account private key of the node
-    #[clap(long = "private-key")]
+    #[clap(long)]
     pub private_key: Option<String>,
+
     /// Specify the path to a file containing the account private key of the node
     #[clap(long = "private-key-file")]
     pub private_key_file: Option<PathBuf>,
 
-    /// Specify the IP address and port for the node server
-    #[clap(long = "node")]
+    /// Set the IP address and port used for P2P communication.
+    #[clap(long)]
     pub node: Option<SocketAddr>,
-    /// Specify the IP address and port for the BFT
-    #[clap(long = "bft")]
+
+    /// Set the IP address and port used for BFT communication.
+    /// This argument is only allowed for validator nodes.
+    #[clap(long, requires = "validator")]
     pub bft: Option<SocketAddr>,
-    /// Specify the IP address and port of the peer(s) to connect to
-    #[clap(default_value = "", long = "peers")]
-    pub peers: String,
-    /// Specify the IP address and port of the validator(s) to connect to
-    #[clap(default_value = "", long = "validators")]
-    pub validators: String,
-    /// If the flag is set, a validator will allow untrusted peers to connect.
-    /// Client and Prover nodes ignore the flag and always allow untrusted peers
-    /// to connect.
-    #[clap(long = "allow-external-peers")]
+
+    /// Specify the IP address and port of the peer(s) to connect to (as a comma-separated list).
+    ///
+    /// These peers will be set as "trusted", which means the node will not disconnect from them when performing peer rotation.
+    ///
+    /// Setting peers to "" has the same effect as not setting the flag at all, except when using `--dev`.
+    #[clap(long, verbatim_doc_comment)]
+    pub peers: Option<String>,
+
+    /// Specify the IP address and port of the validator(s) to connect to.
+    #[clap(long)]
+    pub validators: Option<String>,
+
+    /// Allow untrusted peers (not listed in `--peers`) to connect.
+    ///
+    /// The flag will be ignored by client and prover nodes, as tis behavior is always enabled for these types of nodes.
+    #[clap(long, verbatim_doc_comment)]
     pub allow_external_peers: bool,
+
     /// If the flag is set, a client will periodically evict more external peers
-    #[clap(long = "rotate-external-peers")]
+    #[clap(long)]
     pub rotate_external_peers: bool,
 
     /// Specify the IP address and port for the REST server
-    #[clap(long = "rest")]
+    #[clap(long, group = "rest_flags")]
     pub rest: Option<SocketAddr>,
+
     /// Specify the requests per second (RPS) rate limit per IP for the REST server
-    #[clap(default_value = "10", long = "rest-rps")]
+    #[clap(long, default_value_t = 10, group = "rest_flags")]
     pub rest_rps: u32,
-    /// If the flag is set, the node will not initialize the REST server
+
+    /// Specify the JWT secret for the REST server (16B, base64-encoded).
+    #[clap(long, group = "rest_flags")]
+    pub jwt_secret: Option<String>,
+
+    /// Specify the JWT creation timestamp; can be any time in the last 10 years.
+    #[clap(long, group = "rest_flags")]
+    pub jwt_timestamp: Option<i64>,
+
+    /// If the flag is set, the node will not initialize the REST server.
     #[clap(long)]
     pub norest: bool,
 
-    /// If the flag is set, the node will not render the display
-    #[clap(long)]
+    /// Write log message to stdout instead of showing a terminal UI.
+    ///
+    /// This is useful, for example, for running a node as a service instead of in the foreground or to pipe its output into a file.
+    #[clap(long, verbatim_doc_comment)]
     pub nodisplay: bool,
-    /// Specify the verbosity of the node [options: 0, 1, 2, 3, 4]
-    #[clap(default_value = "1", long = "verbosity")]
+
+    /// Specify the log verbosity of the node.
+    /// [options: 0 (lowest log level) to 6 (highest level)]
+    #[clap(long, default_value_t = 1, group = "log_flags")]
     pub verbosity: u8,
+
+    /// Set a custom log filtering scheme, e.g., "off,snarkos_bft=trace", to show all log messages of snarkos_bft but nothing else.
+    #[clap(long, group = "log_flags")]
+    pub log_filter: Option<String>,
+
     /// Specify the path to the file where logs will be stored
-    #[clap(default_value_os_t = std::env::temp_dir().join("snarkos.log"), long = "logfile")]
+    #[clap(long, default_value_os_t = std::env::temp_dir().join("snarkos.log"))]
     pub logfile: PathBuf,
 
-    /// Enables the metrics exporter
+    /// Enable the metrics exporter
     #[cfg(feature = "metrics")]
-    #[clap(default_value = "false", long = "metrics")]
+    #[clap(long)]
     pub metrics: bool,
+
     /// Specify the IP address and port for the metrics exporter
     #[cfg(feature = "metrics")]
-    #[clap(long = "metrics-ip")]
+    #[clap(long, requires = "metrics")]
     pub metrics_ip: Option<SocketAddr>,
 
-    /// Specify the path to a directory containing the storage database for the ledger. Overrides
-    /// the default path (also for dev).
-    #[clap(long = "storage")]
+    /// Specify the path to a directory containing the storage database for the ledger.
+    /// This flag overrides the default path, even when `--dev` is set.
+    #[clap(long)]
     pub storage: Option<PathBuf>,
+
     /// Enables the node to prefetch initial blocks from a CDN
-    #[clap(long = "cdn")]
+    #[clap(long, conflicts_with = "nocdn")]
     pub cdn: Option<String>,
+
     /// If the flag is set, the node will not prefetch from a CDN
     #[clap(long)]
     pub nocdn: bool,
 
-    /// Enables development mode, specify a unique ID for this node
-    #[clap(long)]
+    /// Enables development mode used to set up test networks.
+    ///
+    /// The purpose of this flag is to run multiple nodes on the same machine and in the same working directory.
+    /// To do this, set the value to a unique ID within the test work. For example if there are four nodes in the network, pass `--dev 0` for the first node, `--dev 1` for the second, and so forth.
+    ///
+    /// If you do not explicitly set the `--peers` flag, this will also populate the set of trusted peers, so that the network is fully connected.
+    /// Additionally, if you do not set the `--rest` or the `--norest` flags, it will also set the REST port to `3030` for the first node, `3031` for the second, and so forth.
+    #[clap(long, verbatim_doc_comment)]
     pub dev: Option<u16>,
-    /// If development mode is enabled, specify the number of genesis validators (default: 4)
-    #[clap(long)]
-    pub dev_num_validators: Option<u16>,
-    /// If development mode is enabled, specify whether node 0 should generate traffic to drive the network
-    #[clap(default_value = "false", long = "no-dev-txs")]
+
+    /// If development mode is enabled, specify the number of genesis validator.
+    #[clap(long, group = "dev-flags", default_value_t=DEVELOPMENT_MODE_NUM_GENESIS_COMMITTEE_MEMBERS)]
+    pub dev_num_validators: u16,
+
+    /// If development mode is enabled, specify whether node 0 should generate traffic to drive the network.
+    #[clap(long, group = "dev-flag")]
     pub no_dev_txs: bool,
-    /// If development mode is enabled, specify the custom bonded balances as a JSON object (default: None)
-    #[clap(long)]
+
+    /// If development mode is enabled, specify the custom bonded balances as a JSON object.
+    #[clap(long, group = "dev-flags")]
     pub dev_bonded_balances: Option<BondedBalances>,
 }
 
@@ -184,8 +252,15 @@ impl Start {
         let shutdown: Arc<AtomicBool> = Default::default();
 
         // Initialize the logger.
-        let log_receiver =
-            crate::helpers::initialize_logger(self.verbosity, self.nodisplay, self.logfile.clone(), shutdown.clone());
+        let log_receiver = crate::helpers::initialize_logger(
+            self.verbosity,
+            &self.log_filter,
+            self.nodisplay,
+            self.logfile.clone(),
+            shutdown.clone(),
+        )
+        .with_context(|| "Failed to set up logger")?;
+
         // Initialize the runtime.
         Self::runtime().block_on(async move {
             // Error messages.
@@ -236,38 +311,42 @@ impl Start {
 impl Start {
     /// Returns the initial peer(s) to connect to, from the given configurations.
     fn parse_trusted_peers(&self) -> Result<Vec<SocketAddr>> {
-        match self.peers.is_empty() {
-            true => Ok(vec![]),
-            false => Ok(self
-                .peers
-                .split(',')
-                .flat_map(|ip| match ip.parse::<SocketAddr>() {
-                    Ok(ip) => Some(ip),
-                    Err(e) => {
-                        eprintln!("The IP supplied to --peers ('{ip}') is malformed: {e}");
-                        None
-                    }
-                })
-                .collect()),
+        let Some(peers) = &self.peers else { return Ok(vec![]) };
+
+        // Split on an empty string returns an empty string.
+        if peers.is_empty() {
+            return Ok(vec![]);
         }
+
+        let mut result = vec![];
+        for ip in peers.split(',') {
+            match ip.parse::<SocketAddr>() {
+                Ok(ip) => result.push(ip),
+                Err(err) => bail!("An address supplied to --peers ('{ip}') is malformed: {err}"),
+            }
+        }
+
+        Ok(result)
     }
 
     /// Returns the initial validator(s) to connect to, from the given configurations.
     fn parse_trusted_validators(&self) -> Result<Vec<SocketAddr>> {
-        match self.validators.is_empty() {
-            true => Ok(vec![]),
-            false => Ok(self
-                .validators
-                .split(',')
-                .flat_map(|ip| match ip.parse::<SocketAddr>() {
-                    Ok(ip) => Some(ip),
-                    Err(e) => {
-                        eprintln!("The IP supplied to --validators ('{ip}') is malformed: {e}");
-                        None
-                    }
-                })
-                .collect()),
+        let Some(validators) = &self.validators else { return Ok(vec![]) };
+
+        // Split on an empty string returns an empty string.
+        if validators.is_empty() {
+            return Ok(vec![]);
         }
+
+        let mut result = vec![];
+        for ip in validators.split(',') {
+            match ip.parse::<SocketAddr>() {
+                Ok(ip) => result.push(ip),
+                Err(err) => bail!("An address supplied to --validators ('{ip}') is malformed: {err}"),
+            }
+        }
+
+        Ok(result)
     }
 
     /// Returns the CDN to prefetch initial blocks from, from the given configurations.
@@ -294,9 +373,9 @@ impl Start {
                 },
                 // If no CDN URL is provided, determine the CDN URL based on the network ID.
                 None => match N::ID {
-                    MainnetV0::ID => Some(format!("{CDN_BASE_URL}/v0/blocks/mainnet")),
-                    TestnetV0::ID => Some(format!("{CDN_BASE_URL}/v0/blocks/testnet")),
-                    CanaryV0::ID => Some(format!("{CDN_BASE_URL}/v0/blocks/canary")),
+                    MainnetV0::ID => Some(format!("{CDN_BASE_URL}/mainnet")),
+                    TestnetV0::ID => Some(format!("{CDN_BASE_URL}/testnet")),
+                    CanaryV0::ID => Some(format!("{CDN_BASE_URL}/canary")),
                     _ => None,
                 },
             }
@@ -343,43 +422,43 @@ impl Start {
     }
 
     /// Updates the configurations if the node is in development mode.
-    fn parse_development(
-        &mut self,
-        trusted_peers: &mut Vec<SocketAddr>,
-        trusted_validators: &mut Vec<SocketAddr>,
-    ) -> Result<()> {
+    fn parse_development(&mut self, trusted_peers: &mut Vec<SocketAddr>, trusted_validators: &mut Vec<SocketAddr>) {
         // If `--dev` is set, assume the dev nodes are initialized from 0 to `dev`,
         // and add each of them to the trusted peers. In addition, set the node IP to `4130 + dev`,
-        // and the REST IP to `3030 + dev`.
+        // and the REST port to `3030 + dev`.
+
         if let Some(dev) = self.dev {
             // Add the dev nodes to the trusted peers.
             if trusted_peers.is_empty() {
                 for i in 0..dev {
-                    trusted_peers.push(SocketAddr::from_str(&format!("127.0.0.1:{}", 4130 + i))?);
+                    trusted_peers.push(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, DEFAULT_NODE_PORT + i)));
                 }
             }
             // Add the dev nodes to the trusted validators.
             if trusted_validators.is_empty() {
                 // To avoid ambiguity, we define the first few nodes to be the trusted validators to connect to.
                 for i in 0..2 {
-                    if i != dev {
-                        trusted_validators.push(SocketAddr::from_str(&format!("127.0.0.1:{}", MEMORY_POOL_PORT + i))?);
+                    // Don't connect to yourself.
+                    if i == dev {
+                        continue;
                     }
+
+                    trusted_validators
+                        .push(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, MEMORY_POOL_PORT + i)));
                 }
             }
             // Set the node IP to `4130 + dev`.
             //
             // Note: the `node` flag is an option to detect remote devnet testing.
             if self.node.is_none() {
-                self.node = Some(SocketAddr::from_str(&format!("0.0.0.0:{}", 4130 + dev))?);
+                self.node = Some(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, DEFAULT_NODE_PORT + dev)));
             }
 
             // If the `norest` flag is not set and the REST IP is not already specified set the REST IP to `3030 + dev`.
             if !self.norest && self.rest.is_none() {
-                self.rest = Some(SocketAddr::from_str(&format!("0.0.0.0:{}", 3030 + dev)).unwrap());
+                self.rest = Some(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, DEFAULT_REST_PORT + dev)));
             }
         }
-        Ok(())
     }
 
     /// Returns an alternative genesis block if the node is in development mode.
@@ -387,10 +466,7 @@ impl Start {
     fn parse_genesis<N: Network>(&self) -> Result<Block<N>> {
         if self.dev.is_some() {
             // Determine the number of genesis committee members.
-            let num_committee_members = match self.dev_num_validators {
-                Some(num_committee_members) => num_committee_members,
-                None => DEVELOPMENT_MODE_NUM_GENESIS_COMMITTEE_MEMBERS,
-            };
+            let num_committee_members = self.dev_num_validators;
             ensure!(
                 num_committee_members >= DEVELOPMENT_MODE_NUM_GENESIS_COMMITTEE_MEMBERS,
                 "Number of genesis committee members is too low"
@@ -504,11 +580,6 @@ impl Start {
             // Construct the genesis block.
             load_or_compute_genesis(dev_keys[0], committee, public_balances, bonded_balances, &mut rng)
         } else {
-            // If the `dev_num_validators` flag is set, inform the user that it is ignored.
-            if self.dev_num_validators.is_some() {
-                eprintln!("The '--dev-num-validators' flag is ignored because '--dev' is not set");
-            }
-
             Block::from_bytes_le(N::genesis_bytes())
         }
     }
@@ -536,16 +607,13 @@ impl Start {
         if cfg!(feature = "test_network") && self.dev.is_none() {
             bail!("The 'test_network' feature is enabled, but the '--dev' flag is not set");
         }
-        if cfg!(feature = "test_network") && N::ID == MainnetV0::ID {
-            bail!("The 'test_network' feature is enabled, but you are trying to use mainnet. This is not supported.");
-        }
 
         // Parse the trusted peers to connect to.
         let mut trusted_peers = self.parse_trusted_peers()?;
         // Parse the trusted validators to connect to.
         let mut trusted_validators = self.parse_trusted_validators()?;
         // Parse the development configurations.
-        self.parse_development(&mut trusted_peers, &mut trusted_validators)?;
+        self.parse_development(&mut trusted_peers, &mut trusted_validators);
 
         // Parse the CDN.
         let cdn = self.parse_cdn::<N>();
@@ -557,11 +625,8 @@ impl Start {
         // Parse the node type.
         let node_type = self.parse_node_type();
 
-        // Parse the node IP.
-        let node_ip = match self.node {
-            Some(node_ip) => node_ip,
-            None => SocketAddr::from_str("0.0.0.0:4130").unwrap(),
-        };
+        // Parse the node IP or use the default IP/port.
+        let node_ip = self.node.unwrap_or(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, DEFAULT_NODE_PORT)));
 
         // Parse the REST IP.
         let rest_ip = match self.norest {
@@ -582,11 +647,24 @@ impl Start {
             );
 
             // If the node is running a REST server, print the REST IP and JWT.
-            if node_type.is_validator() {
+            if node_type.is_validator() || node_type.is_client() {
                 if let Some(rest_ip) = rest_ip {
                     println!("🌐 Starting the REST server at {}.\n", rest_ip.to_string().bold());
 
-                    if let Ok(jwt_token) = snarkos_node_rest::Claims::new(account.address()).to_jwt_string() {
+                    let jwt_secret = if let Some(jwt_b64) = &self.jwt_secret {
+                        if self.jwt_timestamp.is_none() {
+                            bail!("The '--jwt-timestamp' flag must be set if the '--jwt-secret' flag is set");
+                        }
+                        let jwt_bytes = BASE64_STANDARD.decode(jwt_b64).map_err(|_| anyhow::anyhow!("Invalid JWT secret"))?;
+                        if jwt_bytes.len() != 16 {
+                            bail!("The JWT secret must be 16 bytes long");
+                        }
+                        Some(jwt_bytes)
+                    } else {
+                        None
+                    };
+
+                    if let Ok(jwt_token) = snarkos_node_rest::Claims::new(account.address(), jwt_secret, self.jwt_timestamp).to_jwt_string() {
                         println!("🔑 Your one-time JWT token is {}\n", jwt_token.dimmed());
                     }
                 }
@@ -838,6 +916,19 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_log_filter() {
+        // Ensure we cannot set, both, log-filter and verbosity
+        let result = Start::try_parse_from(["snarkos", "--verbosity=5", "--log-filter=warn"].iter());
+        assert!(result.is_err(), "Must not be able to set log-filter and verbosity at the same time");
+
+        // Ensure the values are set correctly.
+        let config = Start::try_parse_from(["snarkos", "--verbosity=5"].iter()).unwrap();
+        assert_eq!(config.verbosity, 5);
+        let config = Start::try_parse_from(["snarkos", "--log-filter=snarkos=warn"].iter()).unwrap();
+        assert_eq!(config.log_filter, Some("snarkos=warn".to_string()));
+    }
+
+    #[test]
     fn test_parse_cdn() {
         // Validator (Prod)
         let config = Start::try_parse_from(["snarkos", "--validator", "--private-key", "aleo1xx"].iter()).unwrap();
@@ -939,7 +1030,7 @@ mod tests {
         let mut trusted_peers = vec![];
         let mut trusted_validators = vec![];
         let mut config = Start::try_parse_from(["snarkos"].iter()).unwrap();
-        config.parse_development(&mut trusted_peers, &mut trusted_validators).unwrap();
+        config.parse_development(&mut trusted_peers, &mut trusted_validators);
         let candidate_genesis = config.parse_genesis::<CurrentNetwork>().unwrap();
         assert_eq!(trusted_peers.len(), 0);
         assert_eq!(trusted_validators.len(), 0);
@@ -950,25 +1041,25 @@ mod tests {
         let mut trusted_peers = vec![];
         let mut trusted_validators = vec![];
         let mut config = Start::try_parse_from(["snarkos", "--dev", "1"].iter()).unwrap();
-        config.parse_development(&mut trusted_peers, &mut trusted_validators).unwrap();
+        config.parse_development(&mut trusted_peers, &mut trusted_validators);
         assert_eq!(config.rest, Some(SocketAddr::from_str("0.0.0.0:3031").unwrap()));
 
         let mut trusted_peers = vec![];
         let mut trusted_validators = vec![];
         let mut config = Start::try_parse_from(["snarkos", "--dev", "1", "--rest", "127.0.0.1:8080"].iter()).unwrap();
-        config.parse_development(&mut trusted_peers, &mut trusted_validators).unwrap();
+        config.parse_development(&mut trusted_peers, &mut trusted_validators);
         assert_eq!(config.rest, Some(SocketAddr::from_str("127.0.0.1:8080").unwrap()));
 
         let mut trusted_peers = vec![];
         let mut trusted_validators = vec![];
         let mut config = Start::try_parse_from(["snarkos", "--dev", "1", "--norest"].iter()).unwrap();
-        config.parse_development(&mut trusted_peers, &mut trusted_validators).unwrap();
+        config.parse_development(&mut trusted_peers, &mut trusted_validators);
         assert!(config.rest.is_none());
 
         let mut trusted_peers = vec![];
         let mut trusted_validators = vec![];
         let mut config = Start::try_parse_from(["snarkos", "--dev", "0"].iter()).unwrap();
-        config.parse_development(&mut trusted_peers, &mut trusted_validators).unwrap();
+        config.parse_development(&mut trusted_peers, &mut trusted_validators);
         let expected_genesis = config.parse_genesis::<CurrentNetwork>().unwrap();
         assert_eq!(config.node, Some(SocketAddr::from_str("0.0.0.0:4130").unwrap()));
         assert_eq!(config.rest, Some(SocketAddr::from_str("0.0.0.0:3030").unwrap()));
@@ -983,7 +1074,7 @@ mod tests {
         let mut trusted_validators = vec![];
         let mut config =
             Start::try_parse_from(["snarkos", "--dev", "1", "--validator", "--private-key", ""].iter()).unwrap();
-        config.parse_development(&mut trusted_peers, &mut trusted_validators).unwrap();
+        config.parse_development(&mut trusted_peers, &mut trusted_validators);
         let genesis = config.parse_genesis::<CurrentNetwork>().unwrap();
         assert_eq!(config.node, Some(SocketAddr::from_str("0.0.0.0:4131").unwrap()));
         assert_eq!(config.rest, Some(SocketAddr::from_str("0.0.0.0:3031").unwrap()));
@@ -998,7 +1089,7 @@ mod tests {
         let mut trusted_validators = vec![];
         let mut config =
             Start::try_parse_from(["snarkos", "--dev", "2", "--prover", "--private-key", ""].iter()).unwrap();
-        config.parse_development(&mut trusted_peers, &mut trusted_validators).unwrap();
+        config.parse_development(&mut trusted_peers, &mut trusted_validators);
         let genesis = config.parse_genesis::<CurrentNetwork>().unwrap();
         assert_eq!(config.node, Some(SocketAddr::from_str("0.0.0.0:4132").unwrap()));
         assert_eq!(config.rest, Some(SocketAddr::from_str("0.0.0.0:3032").unwrap()));
@@ -1013,7 +1104,7 @@ mod tests {
         let mut trusted_validators = vec![];
         let mut config =
             Start::try_parse_from(["snarkos", "--dev", "3", "--client", "--private-key", ""].iter()).unwrap();
-        config.parse_development(&mut trusted_peers, &mut trusted_validators).unwrap();
+        config.parse_development(&mut trusted_peers, &mut trusted_validators);
         let genesis = config.parse_genesis::<CurrentNetwork>().unwrap();
         assert_eq!(config.node, Some(SocketAddr::from_str("0.0.0.0:4133").unwrap()));
         assert_eq!(config.rest, Some(SocketAddr::from_str("0.0.0.0:3033").unwrap()));
@@ -1055,8 +1146,8 @@ mod tests {
             assert_eq!(start.cdn, Some("CDN".to_string()));
             assert_eq!(start.rest, Some("127.0.0.1:3030".parse().unwrap()));
             assert_eq!(start.network, 0);
-            assert_eq!(start.peers, "IP1,IP2,IP3");
-            assert_eq!(start.validators, "IP1,IP2,IP3");
+            assert_eq!(start.peers, Some("IP1,IP2,IP3".to_string()));
+            assert_eq!(start.validators, Some("IP1,IP2,IP3".to_string()));
         } else {
             panic!("Unexpected result of clap parsing!");
         }

@@ -16,8 +16,10 @@
 mod router;
 
 use crate::traits::NodeInterface;
+
 use snarkos_account::Account;
-use snarkos_node_bft::{helpers::init_primary_channels, ledger_service::CoreLedgerService, spawn_blocking};
+use snarkos_node_bft::{ledger_service::CoreLedgerService, spawn_blocking};
+use snarkos_node_cdn::CdnBlockSync;
 use snarkos_node_consensus::Consensus;
 use snarkos_node_rest::Rest;
 use snarkos_node_router::{
@@ -28,10 +30,10 @@ use snarkos_node_router::{
     Routing,
     messages::{NodeType, PuzzleResponse, UnconfirmedSolution, UnconfirmedTransaction},
 };
-use snarkos_node_sync::{BlockSync, BlockSyncMode};
+use snarkos_node_sync::{BlockSync, Ping};
 use snarkos_node_tcp::{
     P2P,
-    protocols::{Disconnect, Handshake, OnConnect, Reading, Writing},
+    protocols::{Disconnect, Handshake, OnConnect, Reading},
 };
 use snarkvm::prelude::{
     Ledger,
@@ -66,12 +68,14 @@ pub struct Validator<N: Network, C: ConsensusStorage<N>> {
     router: Router<N>,
     /// The REST server of the node.
     rest: Option<Rest<N, C, Self>>,
-    /// The sync module.
-    sync: BlockSync<N>,
+    /// The block synchronization logic (used in the Router impl).
+    sync: Arc<BlockSync<N>>,
     /// The spawned handles.
     handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
     /// The shutdown signal.
     shutdown: Arc<AtomicBool>,
+    /// Keeps track of sending pings.
+    ping: Arc<Ping<N>>,
 }
 
 impl<N: Network, C: ConsensusStorage<N>> Validator<N, C> {
@@ -97,27 +101,9 @@ impl<N: Network, C: ConsensusStorage<N>> Validator<N, C> {
         // Initialize the ledger.
         let ledger = Ledger::load(genesis, storage_mode.clone())?;
 
-        // Initialize the CDN.
-        if let Some(base_url) = cdn {
-            // Sync the ledger with the CDN.
-            if let Err((_, error)) =
-                snarkos_node_cdn::sync_ledger_with_cdn(&base_url, ledger.clone(), shutdown.clone()).await
-            {
-                crate::log_clean_error(&storage_mode);
-                return Err(error);
-            }
-        }
-
         // Initialize the ledger service.
         let ledger_service = Arc::new(CoreLedgerService::new(ledger.clone(), shutdown.clone()));
 
-        // Initialize the consensus.
-        let mut consensus =
-            Consensus::new(account.clone(), ledger_service.clone(), bft_ip, trusted_validators, storage_mode.clone())?;
-        // Initialize the primary channels.
-        let (primary_sender, primary_receiver) = init_primary_channels::<N>();
-        // Start the consensus.
-        consensus.run(primary_sender, primary_receiver).await?;
         // Determine if the validator should rotate external peers.
         let rotate_external_peers = false;
 
@@ -135,8 +121,22 @@ impl<N: Network, C: ConsensusStorage<N>> Validator<N, C> {
         )
         .await?;
 
-        // Initialize the sync module.
-        let sync = BlockSync::new(BlockSyncMode::Gateway, ledger_service, router.tcp().clone());
+        // Initialize the block synchronization logic.
+        let sync = Arc::new(BlockSync::new(ledger_service.clone()));
+        let locators = sync.get_block_locators()?;
+        let ping = Arc::new(Ping::new(router.clone(), locators));
+
+        // Initialize the consensus layer.
+        let consensus = Consensus::new(
+            account.clone(),
+            ledger_service.clone(),
+            sync.clone(),
+            bft_ip,
+            trusted_validators,
+            storage_mode.clone(),
+            ping.clone(),
+        )
+        .await?;
 
         // Initialize the node.
         let mut node = Self {
@@ -144,18 +144,43 @@ impl<N: Network, C: ConsensusStorage<N>> Validator<N, C> {
             consensus: consensus.clone(),
             router,
             rest: None,
-            sync,
+            sync: sync.clone(),
+            ping,
             handles: Default::default(),
-            shutdown,
+            shutdown: shutdown.clone(),
         };
+
+        // Perform sync with CDN (if enabled).
+        let cdn_sync = cdn.map(|base_url| Arc::new(CdnBlockSync::new(base_url, ledger.clone(), shutdown)));
+
         // Initialize the transaction pool.
-        node.initialize_transaction_pool(storage_mode, dev_txs)?;
+        node.initialize_transaction_pool(storage_mode.clone(), dev_txs)?;
 
         // Initialize the REST server.
         if let Some(rest_ip) = rest_ip {
-            node.rest =
-                Some(Rest::start(rest_ip, rest_rps, Some(consensus), ledger.clone(), Arc::new(node.clone())).await?);
+            node.rest = Some(
+                Rest::start(
+                    rest_ip,
+                    rest_rps,
+                    Some(consensus),
+                    ledger.clone(),
+                    Arc::new(node.clone()),
+                    cdn_sync.clone(),
+                    sync,
+                )
+                .await?,
+            );
         }
+
+        // Set up everything else after CDN sync is done.
+        if let Some(cdn_sync) = cdn_sync {
+            if let Err(error) = cdn_sync.wait().await {
+                crate::log_clean_error(&storage_mode);
+                node.shut_down().await;
+                return Err(error);
+            }
+        }
+
         // Initialize the routing.
         node.initialize_routing().await;
         // Initialize the notification message loop.

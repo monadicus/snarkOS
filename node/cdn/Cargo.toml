@@ -24,16 +24,13 @@ cuda = [ "snarkvm/cuda" ]
 metrics = [ "dep:snarkos-node-metrics" ]
 
 [dependencies.anyhow]
-version = "1.0.79"
+workspace = true
 
 [dependencies.bincode]
 version = "1.0"
 
 [dependencies.colored]
 version = "2"
-
-[dependencies.futures]
-version = "0.3"
 
 [dependencies.locktick]
 version = "0.3"
@@ -54,11 +51,11 @@ version = "1"
 optional = true
 
 [dependencies.reqwest]
-version = "0.11"
+version = "0.12"
 features = [ "rustls-tls" ]
 
 [dependencies.serde]
-version = "1"
+workspace = true
 
 [dependencies.serde_json]
 version = "1"
@@ -66,18 +63,21 @@ features = [ "preserve_order" ]
 
 [dependencies.snarkvm]
 workspace = true
-features = [ "synthesizer" ]
+features = [ "console", "ledger" ]
 
 [dependencies.tokio]
-version = "1.28"
+workspace = true
 features = [ "rt" ]
 
 [dependencies.tracing]
-version = "0.1"
+workspace = true
 
 [dev-dependencies.tokio]
-version = "1.28"
+workspace = true
 features = [ "rt", "rt-multi-thread" ]
 
 [dev-dependencies.tokio-test]
 version = "0.4"
+
+[package.metadata.cargo-machete]
+ignored = ["serde"]

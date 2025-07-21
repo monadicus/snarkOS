@@ -19,18 +19,17 @@ edition = "2021"
 [features]
 default = [ "parallel" ]
 parallel = [ "rayon" ]
-history = [ "snarkvm-synthesizer/history" ]
-telemetry = [ ]
+history = [ "snarkvm/history" ]
+telemetry = [ "snarkos-node-consensus/telemetry" ]
 cuda = [ "snarkvm/cuda", "snarkos-node-consensus/cuda", "snarkos-node-router/cuda" ]
 locktick = [
   "dep:locktick",
   "snarkos-node-consensus/locktick",
   "snarkos-node-router/locktick",
-  "snarkvm-synthesizer/locktick"
 ]
 
 [dependencies.anyhow]
-version = "1.0.79"
+workspace = true
 
 [dependencies.axum]
 version = "0.8"
@@ -43,7 +42,7 @@ features = [ "erased-json", "typed-header" ]
 version = "1.0"
 
 [dependencies.indexmap]
-version = "2.1"
+workspace = true
 features = [ "serde", "rayon" ]
 
 [dependencies.jsonwebtoken]
@@ -61,29 +60,27 @@ version = "1.19"
 version = "0.12"
 
 [dependencies.serde]
-version = "1"
-default-features = false
+workspace = true 
 features = [ "derive" ]
 
 [dependencies.serde_json]
 version = "1"
 features = [ "preserve_order" ]
 
+[dependencies.serde_with]
+version = "3"
+
+[dependencies.snarkos-node-cdn]
+workspace = true
+
 [dependencies.snarkos-node-consensus]
-path = "../consensus"
-version = "=3.8.0"
+workspace = true
 
 [dependencies.snarkos-node-router]
-path = "../router"
-version = "=3.8.0"
+workspace = true
 
-[dependencies.snarkvm-synthesizer]
-#path = "../../../snarkVM/synthesizer"
-#git = "https://github.com/ProvableHQ/snarkVM.git"
-#rev = "0d744e9"
-version = "=3.8.0"
-default-features = false
-optional = true
+[dependencies.snarkos-node-sync]
+workspace = true
 
 [dependencies.rand]
 version = "0.8"
@@ -99,10 +96,7 @@ workspace = true
 version = "0.3"
 
 [dependencies.tokio]
-version = "1"
-
-[dependencies.tower]
-version = "0.5"
+workspace = true
 
 [dependencies.tower_governor]
 version = "0.7"
@@ -112,4 +106,7 @@ version = "0.6"
 features = [ "cors", "trace" ]
 
 [dependencies.tracing]
-version = "0.1"
+workspace = true
+
+[dev-dependencies.base64]
+workspace = true

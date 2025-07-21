@@ -44,7 +44,7 @@ use crate::{
 use snarkos_account::Account;
 use snarkos_node_bft_events::PrimaryPing;
 use snarkos_node_bft_ledger_service::LedgerService;
-use snarkos_node_sync::DUMMY_SELF_IP;
+use snarkos_node_sync::{BlockSync, DUMMY_SELF_IP, Ping};
 use snarkvm::{
     console::{
         prelude::*,
@@ -55,7 +55,7 @@ use snarkvm::{
         narwhal::{BatchCertificate, BatchHeader, Data, Transmission, TransmissionID},
         puzzle::{Solution, SolutionID},
     },
-    prelude::committee::Committee,
+    prelude::{ConsensusVersion, committee::Committee},
 };
 
 use aleo_std::StorageMode;
@@ -84,11 +84,13 @@ use tokio::{sync::OnceCell, task::JoinHandle};
 /// A helper type for an optional proposed batch.
 pub type ProposedBatch<N> = RwLock<Option<Proposal<N>>>;
 
+/// The primary logic of a node.
+/// AleoBFT adopts a primary-worker architecture as described in the Narwhal and Tusk paper (Section 4.2).
 #[derive(Clone)]
 pub struct Primary<N: Network> {
-    /// The sync module.
+    /// The sync module enables fetching data from other validators.
     sync: Sync<N>,
-    /// The gateway.
+    /// The gateway allows talking to other nodes in the validator set.
     gateway: Gateway<N>,
     /// The storage.
     storage: Storage<N>,
@@ -104,7 +106,7 @@ pub struct Primary<N: Network> {
     latest_proposed_batch_timestamp: Arc<RwLock<i64>>,
     /// The recently-signed batch proposals.
     signed_proposals: Arc<RwLock<SignedProposals<N>>>,
-    /// The spawned handles.
+    /// The handles for all background tasks spawned by this primary.
     handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
     /// The lock for propose_batch.
     propose_lock: Arc<TMutex<u64>>,
@@ -121,6 +123,7 @@ impl<N: Network> Primary<N> {
         account: Account<N>,
         storage: Storage<N>,
         ledger: Arc<dyn LedgerService<N>>,
+        block_sync: Arc<BlockSync<N>>,
         ip: Option<SocketAddr>,
         trusted_validators: &[SocketAddr],
         storage_mode: StorageMode,
@@ -129,7 +132,7 @@ impl<N: Network> Primary<N> {
         let gateway =
             Gateway::new(account, storage.clone(), ledger.clone(), ip, trusted_validators, storage_mode.dev())?;
         // Initialize the sync module.
-        let sync = Sync::new(gateway.clone(), storage.clone(), ledger.clone());
+        let sync = Sync::new(gateway.clone(), storage.clone(), ledger.clone(), block_sync);
 
         // Initialize the primary instance.
         Ok(Self {
@@ -191,6 +194,7 @@ impl<N: Network> Primary<N> {
     /// Run the primary instance.
     pub async fn run(
         &mut self,
+        ping: Option<Arc<Ping<N>>>,
         bft_sender: Option<BFTSender<N>>,
         primary_sender: PrimarySender<N>,
         primary_receiver: PrimaryReceiver<N>,
@@ -236,7 +240,7 @@ impl<N: Network> Primary<N> {
         // Next, load and process the proposal cache before running the sync module.
         self.load_proposal_cache().await?;
         // Next, run the sync module.
-        self.sync.run(sync_receiver).await?;
+        self.sync.run(ping, sync_receiver).await?;
         // Next, initialize the gateway.
         self.gateway.run(primary_sender, worker_senders, Some(sync_sender)).await;
         // Lastly, start the primary handlers.
@@ -515,11 +519,15 @@ impl<N: Network> Primary<N> {
             while let Some((id, transmission)) = worker.remove_front() {
                 // Check the selected transmissions are below the batch limit.
                 if transmissions.len() >= BatchHeader::<N>::MAX_TRANSMISSIONS_PER_BATCH {
+                    // Reinsert the transmission into the worker.
+                    worker.insert_front(id, transmission);
                     break 'outer;
                 }
 
                 // Check the max transmissions per worker is not exceeded.
                 if num_worker_transmissions >= Worker::<N>::MAX_TRANSMISSIONS_PER_WORKER {
+                    // Reinsert the transmission into the worker.
+                    worker.insert_front(id, transmission);
                     continue 'outer;
                 }
 
@@ -569,6 +577,23 @@ impl<N: Network> Primary<N> {
                                 }
                             }
                         })?;
+
+                        // TODO (raychu86): Record Commitment - Remove this logic after the next migration height is reached.
+                        // ConsensusVersion V8 Migration logic -
+                        // Do not include deployments in a batch proposal.
+                        let current_block_height = self.ledger.latest_block_height();
+                        let consensus_version_v7_height = N::CONSENSUS_HEIGHT(ConsensusVersion::V7)?;
+                        let consensus_version_v8_height = N::CONSENSUS_HEIGHT(ConsensusVersion::V8)?;
+                        if current_block_height > consensus_version_v7_height
+                            && current_block_height <= consensus_version_v8_height
+                            && transaction.is_deploy()
+                        {
+                            trace!(
+                                "Proposing - Skipping transaction '{}' - Deployment transactions are not allowed until Consensus V8 (block {consensus_version_v8_height})",
+                                fmt_id(transaction_id)
+                            );
+                            continue;
+                        }
 
                         // Check if the transaction is still valid.
                         // TODO: check if clone is cheap, otherwise fix.
@@ -851,6 +876,20 @@ impl<N: Network> Primary<N> {
                         }
                     })?;
 
+                    // TODO (raychu86): Record Commitment - Remove this logic after the next migration height is reached.
+                    // ConsensusVersion V8 Migration logic -
+                    // Do not include deployments in a batch proposal.
+                    let consensus_version_v7_height = N::CONSENSUS_HEIGHT(ConsensusVersion::V7)?;
+                    let consensus_version_v8_height = N::CONSENSUS_HEIGHT(ConsensusVersion::V8)?;
+                    if block_height > consensus_version_v7_height
+                        && block_height <= consensus_version_v8_height
+                        && transaction.is_deploy()
+                    {
+                        bail!(
+                            "Invalid batch proposal - Batch proposals are not allowed to include deployments until Consensus V8 (block {consensus_version_v8_height})",
+                        )
+                    }
+
                     // Compute the transaction spent cost (in microcredits).
                     // Note: We purposefully discard this transaction if we are unable to compute the spent cost.
                     let Ok(cost) = self.ledger.transaction_spent_cost_in_microcredits(*transaction_id, transaction)
@@ -1132,6 +1171,13 @@ impl<N: Network> Primary<N> {
 
 impl<N: Network> Primary<N> {
     /// Starts the primary handlers.
+    ///
+    /// For each receiver in the `primary_receiver` struct, there will be a dedicated task
+    /// that awaits new data and handles it accordingly.
+    /// Additionally, this spawns a task that periodically issues PrimaryPings and one that periodically
+    /// tries to move the the next round of batches.
+    ///
+    /// This function is called exactly once, in `Self::run()`.
     fn start_handlers(&self, primary_receiver: PrimaryReceiver<N>) {
         let PrimaryReceiver {
             mut rx_batch_propose,
@@ -1142,7 +1188,7 @@ impl<N: Network> Primary<N> {
             mut rx_unconfirmed_transaction,
         } = primary_receiver;
 
-        // Start the primary ping.
+        // Start the primary ping sender.
         let self_ = self.clone();
         self.spawn(async move {
             loop {
@@ -1203,7 +1249,9 @@ impl<N: Network> Primary<N> {
         self.spawn(async move {
             while let Some((peer_ip, primary_certificate)) = rx_primary_ping.recv().await {
                 // If the primary is not synced, then do not process the primary ping.
-                if !self_.sync.is_synced() {
+                if self_.sync.is_synced() {
+                    trace!("Processing new primary ping from '{peer_ip}'");
+                } else {
                     trace!("Skipping a primary ping from '{peer_ip}' {}", "(node is syncing)".dimmed());
                     continue;
                 }
@@ -1276,7 +1324,7 @@ impl<N: Network> Primary<N> {
             }
         });
 
-        // Process the proposed batch.
+        // Start the proposed batch handler.
         let self_ = self.clone();
         self.spawn(async move {
             while let Some((peer_ip, batch_propose)) = rx_batch_propose.recv().await {
@@ -1297,7 +1345,7 @@ impl<N: Network> Primary<N> {
             }
         });
 
-        // Process the batch signature.
+        // Start the batch signature handler.
         let self_ = self.clone();
         self.spawn(async move {
             while let Some((peer_ip, batch_signature)) = rx_batch_signature.recv().await {
@@ -1318,7 +1366,7 @@ impl<N: Network> Primary<N> {
             }
         });
 
-        // Process the certified batch.
+        // Start the certified batch handler.
         let self_ = self.clone();
         self.spawn(async move {
             while let Some((peer_ip, batch_certificate)) = rx_batch_certified.recv().await {
@@ -1345,7 +1393,8 @@ impl<N: Network> Primary<N> {
             }
         });
 
-        // Periodically try to increment to the next round.
+        // This task periodically tries to move to the next round.
+        //
         // Note: This is necessary to ensure that the primary is not stuck on a previous round
         // despite having received enough certificates to advance to the next round.
         let self_ = self.clone();
@@ -1359,24 +1408,27 @@ impl<N: Network> Primary<N> {
                     continue;
                 }
                 // Attempt to increment to the next round.
-                let next_round = self_.current_round().saturating_add(1);
+                let current_round = self_.current_round();
+                let next_round = current_round.saturating_add(1);
                 // Determine if the quorum threshold is reached for the current round.
                 let is_quorum_threshold_reached = {
-                    // Retrieve the certificate authors for the next round.
-                    let authors = self_.storage.get_certificate_authors_for_round(next_round);
+                    // Retrieve the certificate authors for the current round.
+                    let authors = self_.storage.get_certificate_authors_for_round(current_round);
                     // If there are no certificates, then skip this check.
                     if authors.is_empty() {
                         continue;
                     }
-                    let Ok(committee_lookback) = self_.ledger.get_committee_lookback_for_round(next_round) else {
-                        warn!("Failed to retrieve the committee lookback for round {next_round}");
+                    // Retrieve the committee lookback for the current round.
+                    let Ok(committee_lookback) = self_.ledger.get_committee_lookback_for_round(current_round) else {
+                        warn!("Failed to retrieve the committee lookback for round {current_round}");
                         continue;
                     };
+                    // Check if the quorum threshold is reached for the current round.
                     committee_lookback.is_quorum_threshold_reached(&authors)
                 };
                 // Attempt to increment to the next round if the quorum threshold is reached.
                 if is_quorum_threshold_reached {
-                    debug!("Quorum threshold reached for round {}", next_round);
+                    debug!("Quorum threshold reached for round {}", current_round);
                     if let Err(e) = self_.try_increment_to_the_next_round(next_round).await {
                         warn!("Failed to increment to the next round - {e}");
                     }
@@ -1384,7 +1436,7 @@ impl<N: Network> Primary<N> {
             }
         });
 
-        // Process the unconfirmed solutions.
+        // Start a handler to process new unconfirmed solutions.
         let self_ = self.clone();
         self.spawn(async move {
             while let Some((solution_id, solution, callback)) = rx_unconfirmed_solution.recv().await {
@@ -1410,7 +1462,7 @@ impl<N: Network> Primary<N> {
             }
         });
 
-        // Process the unconfirmed transactions.
+        // Start a handler to process new unconfirmed transactions.
         let self_ = self.clone();
         self.spawn(async move {
             while let Some((transaction_id, transaction, callback)) = rx_unconfirmed_transaction.recv().await {
@@ -1537,10 +1589,10 @@ impl<N: Network> Primary<N> {
     fn check_proposal_timestamp(&self, previous_round: u64, author: Address<N>, timestamp: i64) -> Result<()> {
         // Retrieve the timestamp of the previous timestamp to check against.
         let previous_timestamp = match self.storage.get_certificate_for_round_with_author(previous_round, author) {
-            // Ensure that the previous certificate was created at least `MIN_BATCH_DELAY_IN_MS` seconds ago.
+            // Ensure that the previous certificate was created at least `MIN_BATCH_DELAY_IN_SECS` seconds ago.
             Some(certificate) => certificate.timestamp(),
             None => match self.gateway.account().address() == author {
-                // If we are the author, then ensure the previous proposal was created at least `MIN_BATCH_DELAY_IN_MS` seconds ago.
+                // If we are the author, then ensure the previous proposal was created at least `MIN_BATCH_DELAY_IN_SECS` seconds ago.
                 true => *self.latest_proposed_batch_timestamp.read(),
                 // If we do not see a previous certificate for the author, then proceed optimistically.
                 false => return Ok(()),
@@ -1551,7 +1603,7 @@ impl<N: Network> Primary<N> {
         let elapsed = timestamp
             .checked_sub(previous_timestamp)
             .ok_or_else(|| anyhow!("Timestamp cannot be before the previous certificate at round {previous_round}"))?;
-        // Ensure that the previous certificate was created at least `MIN_BATCH_DELAY_IN_MS` seconds ago.
+        // Ensure that the previous certificate was created at least `MIN_BATCH_DELAY_IN_SECS` seconds ago.
         match elapsed < MIN_BATCH_DELAY_IN_SECS as i64 {
             true => bail!("Timestamp is too soon after the previous certificate at round {previous_round}"),
             false => Ok(()),
@@ -1898,6 +1950,7 @@ mod tests {
     use super::*;
     use snarkos_node_bft_ledger_service::MockLedgerService;
     use snarkos_node_bft_storage_service::BFTMemoryService;
+    use snarkos_node_sync::{BlockSync, locators::test_helpers::sample_block_locators};
     use snarkvm::{
         ledger::{
             committee::{Committee, MIN_VALIDATOR_STAKE},
@@ -1941,7 +1994,9 @@ mod tests {
 
         // Initialize the primary.
         let account = accounts[account_index].1.clone();
-        let mut primary = Primary::new(account, storage, ledger, None, &[], StorageMode::new_test(None)).unwrap();
+        let block_sync = Arc::new(BlockSync::new(ledger.clone()));
+        let mut primary =
+            Primary::new(account, storage, ledger, block_sync, None, &[], StorageMode::Test(None)).unwrap();
 
         // Construct a worker instance.
         primary.workers = Arc::from([Worker::new(
@@ -2127,7 +2182,7 @@ mod tests {
         (certificate, transmissions)
     }
 
-    // Create a certificate chain up to round in primary storage.
+    // Create a certificate chain up to, but not including, the specified round in the primary storage.
     fn store_certificate_chain(
         primary: &Primary<CurrentNetwork>,
         accounts: &[(SocketAddr, Account<CurrentNetwork>)],
@@ -2360,8 +2415,11 @@ mod tests {
 
         // The author must be known to resolver to pass propose checks.
         primary.gateway.resolver().insert_peer(peer_ip, peer_ip, peer_account.1.address());
-        // The primary must be considered synced.
-        primary.sync.block_sync().try_block_sync(&primary.gateway.clone()).await;
+
+        // The primary will only consider itself synced if we received
+        // block locators from a peer.
+        primary.sync.test_update_peer_locators(peer_ip, sample_block_locators(0)).unwrap();
+        primary.sync.try_block_sync().await;
 
         // Try to process the batch proposal from the peer, should succeed.
         assert!(
@@ -2397,7 +2455,10 @@ mod tests {
         // The author must be known to resolver to pass propose checks.
         primary.gateway.resolver().insert_peer(peer_ip, peer_ip, peer_account.1.address());
 
-        // Try to process the batch proposal from the peer, should fail.
+        // Add a high block locator to indicate we are not synced.
+        primary.sync.test_update_peer_locators(peer_ip, sample_block_locators(20)).unwrap();
+
+        // Try to process the batch proposal from the peer, should fail
         assert!(
             primary.process_batch_propose_from_peer(peer_ip, (*proposal.batch_header()).clone().into()).await.is_err()
         );
@@ -2433,8 +2494,11 @@ mod tests {
 
         // The author must be known to resolver to pass propose checks.
         primary.gateway.resolver().insert_peer(peer_ip, peer_ip, peer_account.1.address());
-        // The primary must be considered synced.
-        primary.sync.block_sync().try_block_sync(&primary.gateway.clone()).await;
+
+        // The primary will only consider itself synced if we received
+        // block locators from a peer.
+        primary.sync.test_update_peer_locators(peer_ip, sample_block_locators(0)).unwrap();
+        primary.sync.try_block_sync().await;
 
         // Try to process the batch proposal from the peer, should succeed.
         primary.process_batch_propose_from_peer(peer_ip, (*proposal.batch_header()).clone().into()).await.unwrap();
@@ -2468,7 +2532,7 @@ mod tests {
         // The author must be known to resolver to pass propose checks.
         primary.gateway.resolver().insert_peer(peer_ip, peer_ip, peer_account.1.address());
         // The primary must be considered synced.
-        primary.sync.block_sync().try_block_sync(&primary.gateway.clone()).await;
+        primary.sync.try_block_sync().await;
 
         // Try to process the batch proposal from the peer, should error.
         assert!(
@@ -2513,7 +2577,7 @@ mod tests {
         // The author must be known to resolver to pass propose checks.
         primary.gateway.resolver().insert_peer(peer_ip, peer_ip, peer_account.1.address());
         // The primary must be considered synced.
-        primary.sync.block_sync().try_block_sync(&primary.gateway.clone()).await;
+        primary.sync.try_block_sync().await;
 
         // Try to process the batch proposal from the peer, should error.
         assert!(
@@ -2527,6 +2591,7 @@ mod tests {
         );
     }
 
+    /// Tests that the minimum batch delay is enforced as expected, i.e., that proposals with timestamps that are too close to the previous proposal are rejected.
     #[tokio::test]
     async fn test_batch_propose_from_peer_with_past_timestamp() {
         let round = 2;
@@ -2539,13 +2604,23 @@ mod tests {
         // Create a valid proposal with an author that isn't the primary.
         let peer_account = &accounts[1];
         let peer_ip = peer_account.0;
-        let past_timestamp = now() - 100; // Use a timestamp that is in the past.
+
+        // Use a timestamp that is too early.
+        // Set it to something that is less than the minimum batch delay
+        // Note, that the minimum delay is currently 1, so this will be equal to the last timestamp
+        let last_timestamp = primary
+            .storage
+            .get_certificate_for_round_with_author(round - 1, peer_account.1.address())
+            .expect("No previous proposal exists")
+            .timestamp();
+        let invalid_timestamp = last_timestamp + (MIN_BATCH_DELAY_IN_SECS as i64) - 1;
+
         let proposal = create_test_proposal(
             &peer_account.1,
             primary.ledger.current_committee().unwrap(),
             round,
             previous_certificates,
-            past_timestamp,
+            invalid_timestamp,
             1,
             &mut rng,
         );
@@ -2558,7 +2633,7 @@ mod tests {
         // The author must be known to resolver to pass propose checks.
         primary.gateway.resolver().insert_peer(peer_ip, peer_ip, peer_account.1.address());
         // The primary must be considered synced.
-        primary.sync.block_sync().try_block_sync(&primary.gateway.clone()).await;
+        primary.sync.try_block_sync().await;
 
         // Try to process the batch proposal from the peer, should error.
         assert!(
@@ -2566,6 +2641,7 @@ mod tests {
         );
     }
 
+    /// Check that proposals rejected that have timestamps older than the previous proposal.
     #[tokio::test]
     async fn test_batch_propose_from_peer_over_spend_limit() {
         let mut rng = TestRng::default();
@@ -2589,7 +2665,9 @@ mod tests {
         let round = 1;
         let peer_account = &accounts[2];
         let peer_ip = peer_account.0;
+
         let timestamp = now() + MIN_BATCH_DELAY_IN_SECS as i64;
+
         let proposal =
             create_test_proposal(&peer_account.1, committee, round, Default::default(), timestamp, 4, &mut rng);
 
@@ -2602,9 +2680,14 @@ mod tests {
         // The author must be known to resolver to pass propose checks.
         primary_v4.gateway.resolver().insert_peer(peer_ip, peer_ip, peer_account.1.address());
         primary_v5.gateway.resolver().insert_peer(peer_ip, peer_ip, peer_account.1.address());
-        // The primary must be considered synced.
-        primary_v4.sync.block_sync().try_block_sync(&primary_v4.gateway.clone()).await;
-        primary_v5.sync.block_sync().try_block_sync(&primary_v5.gateway.clone()).await;
+
+        // primary v4 must be considered synced.
+        primary_v4.sync.test_update_peer_locators(peer_ip, sample_block_locators(0)).unwrap();
+        primary_v4.sync.try_block_sync().await;
+
+        // primary v5 must be ocnsidered synced.
+        primary_v5.sync.test_update_peer_locators(peer_ip, sample_block_locators(0)).unwrap();
+        primary_v5.sync.try_block_sync().await;
 
         // Check the spend limit is enforced from V5 onwards.
         assert!(
@@ -2613,6 +2696,7 @@ mod tests {
                 .await
                 .is_ok()
         );
+
         assert!(
             primary_v5
                 .process_batch_propose_from_peer(peer_ip, (*proposal.batch_header()).clone().into())

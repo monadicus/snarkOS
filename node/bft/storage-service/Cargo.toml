@@ -27,10 +27,10 @@ test = [ "memory" ]
 workspace = true
 
 [dependencies.anyhow]
-version = "1.0.79"
+workspace = true
 
 [dependencies.indexmap]
-version = "2.1"
+workspace = true
 features = [ "serde", "rayon" ]
 
 [dependencies.locktick]
@@ -47,9 +47,10 @@ optional = true
 
 [dependencies.snarkvm]
 workspace = true
+features = [ "ledger", "console", "rocks" ]
 
 [dependencies.tracing]
-version = "0.1"
+workspace = true
 optional = true
 
 [dev-dependencies.snarkvm]

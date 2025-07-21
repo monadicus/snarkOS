@@ -2,7 +2,7 @@
 name = "snarkos-cli"
 version = "3.8.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
-description = "A CLI for a decentralized operating system"
+description = "Command-line interface for snarkOS"
 homepage = "https://aleo.org"
 repository = "https://github.com/ProvableHQ/snarkOS"
 keywords = [
@@ -44,23 +44,23 @@ workspace = true
 version = "1"
 
 [dependencies.anyhow]
-version = "1.0.79"
+workspace = true
 
-[dependencies.bincode]
-version = "1.0"
+[dependencies.base64]
+workspace = true
 
 [dependencies.clap]
-version = "4.4"
-features = [ "derive", "color", "unstable-styles" ]
+workspace = true
+features = [ "derive", "color", "unstable-styles", "help", "cargo", "usage", "suggestions" ]
 
 [dependencies.colored]
-version = "2"
+version = "3"
 
 [dependencies.crossterm]
-version = "0.27"
+workspace = true
 
 [dependencies.indexmap]
-version = "2.1"
+workspace = true
 features = [ "serde", "rayon" ]
 
 [dependencies.locktick]
@@ -92,11 +92,11 @@ default-features = false
 version = "1"
 
 [dependencies.self_update]
-version = "0.41"
+version = "0.42"
 features = [ "archive-zip", "compression-zip-deflate" ]
 
 [dependencies.serde]
-version = "1"
+workspace = true
 
 [dependencies.serde_json]
 version = "1"
@@ -124,6 +124,7 @@ version = "=3.8.0"
 
 [dependencies.snarkvm]
 workspace = true
+features = [ "parameters", "circuit", "package" ]
 
 [dependencies.sys-info]
 version = "0.9"
@@ -138,22 +139,35 @@ version = "0.3"
 version = "2.0.11"
 
 [dependencies.tokio]
-version = "1.28"
+workspace = true
 features = [ "rt" ]
 
 [dependencies.tracing]
-version = "0.1"
+workspace = true
 
 [dependencies.tracing-subscriber]
-version = "0.3"
+workspace = true
 features = [ "env-filter" ]
 
 [dependencies.ureq]
 version = "2.9"
+features = ["json"]
+default-features = true
 
 [dependencies.zeroize]
 version = "1"
 features = [ "derive" ]
 
+#TODO remove this once we upgrade to Rust 1.85 or above
+[dependencies.base64ct]
+version = "=1.7"
+
 [target."cfg(target_family = \"unix\")".dependencies.nix]
-version = "0.26"
+version = "0.30"
+default-features = false
+features = [ "resource" ]
+
+[package.metadata.cargo-machete]
+ignored = [
+  "base64ct", # needed to force a version compatible with Rust 1.82
+]

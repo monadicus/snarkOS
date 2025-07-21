@@ -29,13 +29,13 @@ test = [ "mock", "translucent" ]
 translucent = [ "ledger" ]
 
 [dependencies.anyhow]
-version = "1.0"
+workspace = true
 
 [dependencies.async-trait]
 version = "0.1"
 
 [dependencies.indexmap]
-version = "2.1"
+workspace = true
 features = [ "serde", "rayon" ]
 
 [dependencies.locktick]
@@ -63,12 +63,13 @@ optional = true
 
 [dependencies.snarkvm]
 workspace = true
+features = [ "console", "ledger", "synthesizer" ]
 
 [dependencies.tokio]
-version = "1.28"
+workspace = true
 features = [ "macros", "rt-multi-thread" ]
 optional = true
 
 [dependencies.tracing]
-version = "0.1"
+workspace = true
 optional = true

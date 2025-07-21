@@ -42,6 +42,8 @@ use rand::seq::IteratorRandom;
 use std::{future::Future, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{sync::oneshot, task::JoinHandle, time::timeout};
 
+/// A worker's main role is maintaining a queue of verified ("ready") transmissions,
+/// which will eventually be fetched by the primary when the primary generates a new batch.
 #[derive(Clone)]
 pub struct Worker<N: Network> {
     /// The worker ID.
@@ -110,8 +112,6 @@ impl<N: Network> Worker<N> {
         BatchHeader::<N>::MAX_TRANSMISSIONS_PER_BATCH / MAX_WORKERS as usize;
     /// The maximum number of transmissions allowed in a worker ping.
     pub const MAX_TRANSMISSIONS_PER_WORKER_PING: usize = BatchHeader::<N>::MAX_TRANSMISSIONS_PER_BATCH / 10;
-
-    // transmissions
 
     /// Returns the number of transmissions in the ready queue.
     pub fn num_transmissions(&self) -> usize {

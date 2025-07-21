@@ -18,26 +18,17 @@ edition = "2021"
 
 [features]
 default = [ ]
-metrics = [ "dep:metrics", "snarkvm/metrics" ]
+metrics = [ "snarkvm/metrics" ]
 
 [dependencies.anyhow]
-version = "1.0"
+workspace = true
 
 [dependencies.bytes]
 version = "1"
 
 [dependencies.indexmap]
-version = "2.1"
+workspace = true
 features = [ "serde", "rayon" ]
-
-[dependencies.metrics]
-package = "snarkos-node-metrics"
-path = "../../metrics"
-version = "=3.8.0"
-optional = true
-
-[dependencies.rayon]
-version = "1"
 
 [dependencies.serde]
 version = "1"
@@ -48,23 +39,24 @@ version = "=3.8.0"
 
 [dependencies.snarkvm]
 workspace = true
+features = [ "ledger", "utilities" ]
 
 [dependencies.tokio-util]
-version = "0.7"
+workspace = true
 features = [ "codec" ]
 
 [dependencies.tracing]
-version = "0.1"
+workspace = true
 
 [dev-dependencies.proptest]
-version = "1.4.0"
+workspace = true
 
 [dev-dependencies.snarkvm]
 workspace = true
 features = [ "test-helpers" ]
 
 [dev-dependencies.test-strategy]
-version = "0.3.1"
+workspace = true
 
 [dev-dependencies.time]
 version = "0.3"

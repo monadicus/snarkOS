@@ -65,7 +65,7 @@ for ((client_index = 0; client_index < $total_clients; client_index++)); do
   fi
 done
 
-# Function to check block heights
+# Function checking that each node reached a sufficient block height.
 check_heights() {
   echo "Checking block heights on all nodes..."
   all_reached=true
@@ -94,9 +94,30 @@ check_heights() {
   fi
 }
 
+# Function checking that nodes created logs on disk.
+check_logs() {
+  echo "Checking logs for all nodes..."
+  all_reached=true
+  highest_height=0
+  for ((validator_index = 0; validator_index < $total_validators; validator_index++)); do
+    if [ ! -s "$log_dir/validator-${validator_index}.log" ]; then
+      echo "❌ Test failed! Validator #${validator_index} did not create any logs."
+      return 1
+    fi
+  done
+  for ((client_index = 0; client_index < $total_clients; client_index++)); do
+    if [ ! -s "$log_dir/client-${client_index}.log" ]; then
+      echo "❌ Test failed! Client #${client_index} did not create any logs."
+      return 1
+    fi
+  done
+
+  return 0
+ }
+
 # Wait for 60 seconds to let the network start up
-echo "Waiting 60 seconds for network to start up..."
-sleep 60
+echo "Waiting 30 seconds for network to start up..."
+sleep 30
 
 # Check heights periodically with a timeout
 total_wait=0
@@ -108,13 +129,17 @@ while [ $total_wait -lt 900 ]; do  # 15 minutes max
     for pid in "${PIDS[@]}"; do
       kill -9 $pid 2>/dev/null || true
     done
-    
-    exit 0
+
+    if check_logs; then
+      exit 0
+    else
+      exit 1
+    fi
   fi
   
   # Continue waiting
-  sleep 60
-  total_wait=$((total_wait + 60))
+  sleep 30
+  total_wait=$((total_wait + 30))
   echo "Waited $total_wait seconds so far..."
 done
 

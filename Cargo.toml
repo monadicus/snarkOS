@@ -1,6 +1,6 @@
 [package]
 name = "snarkos"
-version = "3.8.0"
+version = "4.0.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A decentralized operating system"
 homepage = "https://aleo.org"
@@ -43,12 +43,98 @@ members = [
 version = "1.0.1"
 default-features = false
 
-[workspace.dependencies.snarkvm] # If this is updated, the rev in `node/rest/Cargo.toml` must be updated as well.
+[workspace.dependencies.snarkvm]
 #path = "../snarkVM"
-#git = "https://github.com/ProvableHQ/snarkVM.git"
-#rev = "0d744e9"
+git = "https://github.com/ProvableHQ/snarkVM.git"
+rev = "b82dd4a97"
+#version = "=3.8.0"
+default-features = false
+#features = [ "circuit", "console", "rocks" ]
+
+[workspace.dependencies.anyhow]
+version = "1.0"
+
+[workspace.dependencies.clap]
+version = "4.4"
+default-features = false
+features = [ "std" ]
+
+[workspace.dependencies.crossterm]
+version = "0.29"
+
+[workspace.dependencies.futures]
+version = "0.3"
+
+[workspace.dependencies.proptest]
+version = "=1.6.0" # Remove this once we upgrade to rand 0.9
+
+[workspace.dependencies.base64]
+version = "0.22"
+
+[workspace.dependencies.tokio]
+version = "1.28"
+
+[workspace.dependencies.tokio-util]
+version = "0.7"
+
+[workspace.dependencies.itertools]
+version = "0.14"
+
+[workspace.dependencies.indexmap]
+version = "2"
+default-features = false
+
+[workspace.dependencies.serde]
+version = "1"
+default-features = false
+
+[workspace.dependencies.parking_lot]
+version = "0.12"
+
+[workspace.dependencies.tracing]
+version = "0.1"
+default-features = false
+
+[workspace.dependencies.tracing-test]
+version = "0.2"
+
+[workspace.dependencies.tracing-subscriber]
+version = "0.3"
+
+[workspace.dependencies.test-strategy]
+version = "0.4"
+
+[workspace.dependencies.snarkos-node-bft-storage-service]
+path = "node/bft/storage-service"
 version = "=3.8.0"
-features = [ "circuit", "console", "rocks" ]
+
+[workspace.dependencies.snarkos-node-bft-ledger-service]
+path = "node/bft/ledger-service"
+version = "=3.8.0"
+
+[workspace.dependencies.snarkos-node-consensus]
+path = "node/consensus"
+version = "=3.8.0"
+
+[workspace.dependencies.snarkos-node-cdn]
+path = "node/cdn"
+version = "=3.8.0"
+
+[workspace.dependencies.snarkos-node-router]
+path = "node/router"
+version = "=3.8.0"
+
+[workspace.dependencies.snarkos-node-sync]
+path = "node/sync"
+version = "=3.8.0"
+
+[workspace.dependencies.snarkos-node-sync-communication-service]
+path = "node/sync/communication-service"
+version = "=3.8.0"
+
+[workspace.dependencies.snarkos-node-sync-locators]
+path = "node/sync/locators"
+version = "=3.8.0"
 
 [[bin]]
 name = "snarkos"
@@ -84,21 +170,15 @@ locktick = [
 test_network = [ "snarkos-cli/test_network" ]
 
 [dependencies.anyhow]
-version = "1.0.79"
+workspace = true
 
 [dependencies.clap]
-version = "4.4"
+workspace = true
 features = [ "derive" ]
-
-[dependencies.crossterm]
-version = "0.27.0"
 
 [dependencies.locktick]
 version = "0.3"
 optional = true
-
-[dependencies.once_cell]
-version = "1"
 
 [dependencies.snarkos-account]
 path = "./account"
@@ -106,10 +186,6 @@ version = "=3.8.0"
 
 [dependencies.snarkos-cli]
 path = "./cli"
-version = "=3.8.0"
-
-[dependencies.snarkos-display]
-path = "./display"
 version = "=3.8.0"
 
 [dependencies.snarkos-node]
@@ -121,29 +197,25 @@ path = "./node/bft"
 version = "=3.8.0"
 
 [dependencies.snarkos-node-cdn]
-path = "./node/cdn"
-version = "=3.8.0"
+workspace = true
 
 [dependencies.snarkos-node-consensus]
-path = "./node/consensus"
-version = "=3.8.0"
+workspace = true
 
 [dependencies.snarkos-node-metrics]
 path = "./node/metrics"
 version = "=3.8.0"
 optional = true
 
+[dependencies.snarkos-node-router]
+workspace = true
+
 [dependencies.snarkos-node-rest]
 path = "./node/rest"
 version = "=3.8.0"
 
-[dependencies.snarkos-node-router]
-path = "./node/router"
-version = "=3.8.0"
-
 [dependencies.snarkos-node-sync]
-path = "./node/sync"
-version = "=3.8.0"
+workspace = true
 
 [dependencies.snarkos-node-tcp]
 path = "./node/tcp"
@@ -153,14 +225,14 @@ version = "=3.8.0"
 tikv-jemallocator = "0.5"
 
 [dependencies.tracing]
-version = "0.1"
+workspace = true
 optional = true
 
 [dev-dependencies.rusty-hook]
 version = "0.11.2"
 
 [build-dependencies.built]
-version = "0.7"
+version = "0.8"
 features = [ "git2" ]
 
 [build-dependencies.toml]
@@ -196,3 +268,17 @@ lto = "thin"
 incremental = true
 debug = true
 debug-assertions = true
+
+[package.metadata.cargo-machete]
+ignored = [
+  "snarkos-account", # Needed for cuda feature
+  "snarkos-node", # Needed for metrics feature
+  "snarkos-node-bft", # Needed for cuda and locktick features
+  "snarkos-node-cdn", # Needed for cuda and locktick features
+  "snarkos-node-consensus", # Needed for cuda and locktick features
+  "snarkos-node-tcp", # Needed for locktick feature
+  "snarkos-node-rest", # Needed for cuda and locktick features
+  "snarkos-node-sync", # Needed for cuda and locktick features
+  "snarkos-node-router", # Needed for cuda and locktick features
+  "snarkos-node-metrics", # Needed for locktick feature
+]

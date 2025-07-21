@@ -64,8 +64,8 @@ impl Outbound<Network> for HeartbeatTest {
         true
     }
 
-    fn num_blocks_behind(&self) -> u32 {
-        0
+    fn num_blocks_behind(&self) -> Option<u32> {
+        None
     }
 }
 

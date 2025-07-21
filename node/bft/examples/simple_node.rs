@@ -26,6 +26,7 @@ use snarkos_node_bft::{
 };
 use snarkos_node_bft_ledger_service::TranslucentLedgerService;
 use snarkos_node_bft_storage_service::BFTMemoryService;
+use snarkos_node_sync::BlockSync;
 use snarkvm::{
     console::{account::PrivateKey, algorithms::BHP256, types::Address},
     ledger::{
@@ -142,9 +143,11 @@ pub async fn start_bft(
     // Initialize the consensus receiver handler.
     consensus_handler(consensus_receiver);
     // Initialize the BFT instance.
-    let mut bft = BFT::<CurrentNetwork>::new(account, storage, ledger, ip, &trusted_validators, storage_mode)?;
+    let block_sync = Arc::new(BlockSync::new(ledger.clone()));
+    let mut bft =
+        BFT::<CurrentNetwork>::new(account, storage, ledger, block_sync, ip, &trusted_validators, storage_mode)?;
     // Run the BFT instance.
-    bft.run(Some(consensus_sender), sender.clone(), receiver).await?;
+    bft.run(None, Some(consensus_sender), sender.clone(), receiver).await?;
     // Retrieve the BFT's primary.
     let primary = bft.primary();
     // Handle OS signals.
@@ -180,9 +183,11 @@ pub async fn start_primary(
     // Initialize the trusted validators.
     let trusted_validators = trusted_validators(node_id, num_nodes, peers);
     // Initialize the primary instance.
-    let mut primary = Primary::<CurrentNetwork>::new(account, storage, ledger, ip, &trusted_validators, storage_mode)?;
+    let block_sync = Arc::new(BlockSync::new(ledger.clone()));
+    let mut primary =
+        Primary::<CurrentNetwork>::new(account, storage, ledger, block_sync, ip, &trusted_validators, storage_mode)?;
     // Run the primary instance.
-    primary.run(None, sender.clone(), receiver).await?;
+    primary.run(None, None, sender.clone(), receiver).await?;
     // Handle OS signals.
     handle_signals(&primary);
     // Return the primary instance.
