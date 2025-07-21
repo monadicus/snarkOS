@@ -14,7 +14,7 @@ keywords = [
 ]
 categories = [ "cryptography", "cryptography::cryptocurrencies", "os" ]
 license = "Apache-2.0"
-edition = "2021"
+edition = "2024"
 
 [features]
 async = []
@@ -37,6 +37,7 @@ test_network = [
   "snarkvm/test_targets", 
   "snarkvm/test_consensus_heights" 
 ]
+serial = [ ]
 
 [dependencies.aleo-std]
 workspace = true
@@ -100,7 +101,7 @@ version = "0.42"
 features = [ "archive-zip", "compression-zip-deflate" ]
 
 [dependencies.serde]
-version = "1"
+workspace = true
 
 [dependencies.serde_json]
 version = "1"

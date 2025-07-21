@@ -93,6 +93,7 @@ impl<N: Network, C: ConsensusStorage<N>> Validator<N, C> {
         storage_mode: StorageMode,
         allow_external_peers: bool,
         dev_txs: bool,
+        dev: Option<u16>,
         shutdown: Arc<AtomicBool>,
     ) -> Result<Self> {
         // Initialize the signal handler.
@@ -117,7 +118,7 @@ impl<N: Network, C: ConsensusStorage<N>> Validator<N, C> {
             Self::MAXIMUM_NUMBER_OF_PEERS as u16,
             rotate_external_peers,
             allow_external_peers,
-            matches!(storage_mode, StorageMode::Development(_)),
+            dev.is_some(),
         )
         .await?;
 
@@ -135,6 +136,7 @@ impl<N: Network, C: ConsensusStorage<N>> Validator<N, C> {
             trusted_validators,
             storage_mode.clone(),
             ping.clone(),
+            dev,
         )
         .await?;
 
@@ -144,7 +146,7 @@ impl<N: Network, C: ConsensusStorage<N>> Validator<N, C> {
             consensus: consensus.clone(),
             router,
             rest: None,
-            sync,
+            sync: sync.clone(),
             ping,
             handles: Default::default(),
             shutdown: shutdown.clone(),
@@ -154,7 +156,7 @@ impl<N: Network, C: ConsensusStorage<N>> Validator<N, C> {
         let cdn_sync = cdn.map(|base_url| Arc::new(CdnBlockSync::new(base_url, ledger.clone(), shutdown)));
 
         // Initialize the transaction pool.
-        node.initialize_transaction_pool(storage_mode.clone(), dev_txs)?;
+        node.initialize_transaction_pool(dev, dev_txs)?;
 
         // Initialize the REST server.
         if let Some(rest_ip) = rest_ip {
@@ -166,12 +168,13 @@ impl<N: Network, C: ConsensusStorage<N>> Validator<N, C> {
                     ledger.clone(),
                     Arc::new(node.clone()),
                     cdn_sync.clone(),
+                    sync,
                 )
                 .await?,
             );
         }
 
-        // Set up everythign else after CDN sync is done.
+        // Set up everything else after CDN sync is done.
         if let Some(cdn_sync) = cdn_sync {
             if let Err(error) = cdn_sync.wait().await {
                 crate::log_clean_error(&storage_mode);
@@ -373,7 +376,7 @@ impl<N: Network, C: ConsensusStorage<N>> Validator<N, C> {
     // }
 
     /// Initialize the transaction pool.
-    fn initialize_transaction_pool(&self, storage_mode: StorageMode, dev_txs: bool) -> Result<()> {
+    fn initialize_transaction_pool(&self, dev: Option<u16>, dev_txs: bool) -> Result<()> {
         use snarkvm::console::{
             program::{Identifier, Literal, ProgramID, Value},
             types::U64,
@@ -384,9 +387,9 @@ impl<N: Network, C: ConsensusStorage<N>> Validator<N, C> {
         let locator = (ProgramID::from_str("credits.aleo")?, Identifier::from_str("transfer_public")?);
 
         // Determine whether to start the loop.
-        match storage_mode {
+        match dev {
             // If the node is running in development mode, only generate if you are allowed.
-            StorageMode::Development(id) => {
+            Some(id) => {
                 // If the node is not the first node, or if we should not create dev traffic, do not start the loop.
                 if id != 0 || !dev_txs {
                     return Ok(());
@@ -523,6 +526,7 @@ mod tests {
             storage_mode,
             false,
             dev_txs,
+            None,
             Default::default(),
         )
         .await

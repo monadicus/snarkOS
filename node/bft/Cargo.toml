@@ -14,7 +14,7 @@ keywords = [
 ]
 categories = [ "cryptography", "cryptography::cryptocurrencies", "os" ]
 license = "Apache-2.0"
-edition = "2021"
+edition = "2024"
 
 [features]
 default = [ ]
@@ -44,6 +44,7 @@ test = [
   "snarkos-node-bft-ledger-service/test",
   "snarkos-node-bft-storage-service/test"
 ]
+serial = [ "snarkos-node-bft-ledger-service/serial" ]
 
 [dependencies.aleo-std]
 workspace = true
@@ -86,7 +87,7 @@ version = "=3.8.0"
 optional = true
 
 [dependencies.parking_lot]
-version = "0.12"
+workspace = true
 
 [dependencies.rand]
 version = "0.8"
@@ -107,18 +108,15 @@ path = "./events"
 version = "=3.8.0"
 
 [dependencies.snarkos-node-bft-ledger-service]
-path = "./ledger-service"
-version = "=3.8.0"
+workspace = true
 features = [ "ledger", "prover" ]
 
 [dependencies.snarkos-node-bft-storage-service]
-path = "./storage-service"
-version = "=3.8.0"
+workspace = true
 features = [ "memory" ]
 
 [dependencies.snarkos-node-sync]
-path = "../sync"
-version = "=3.8.0"
+workspace = true
 
 [dependencies.snarkos-node-tcp]
 path = "../tcp"

@@ -14,7 +14,7 @@ keywords = [
 ]
 categories = [ "cryptography", "cryptography::cryptocurrencies", "os" ]
 license = "Apache-2.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies.async-trait]
 version = "0.1"
@@ -22,3 +22,14 @@ version = "0.1"
 [dependencies.tokio]
 workspace = true
 features = [ "sync" ]
+
+[dependencies.parking_lot]
+workspace = true
+optional = true
+
+[dev-dependencies.parking_lot]
+workspace = true
+
+[features]
+default = [ ]
+test-helpers = [ "dep:parking_lot" ]
