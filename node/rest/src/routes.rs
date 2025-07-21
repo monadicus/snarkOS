@@ -313,7 +313,7 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
         // Get the transaction ID associated with the program and edition.
         let tx_id = self.ledger.find_transaction_id_from_program_id_and_edition(id, edition)?;
         // Get the optional program owner associated with the program.
-        // Note: The owner is only available after the `ConsensusVersion::V9`.
+        // Note: The owner is only available after `ConsensusVersion::V9`.
         let program_owner = match &tx_id {
             Some(tid) => self
                 .ledger
