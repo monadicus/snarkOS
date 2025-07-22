@@ -211,7 +211,7 @@ jobs:
 
   cli:
     executor: rust-docker
-    resource_class: << pipeline.parameters.xlarge >>
+    resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - run_serial:
           workspace_member: cli
