@@ -18,6 +18,9 @@
 #[macro_use]
 extern crate tracing;
 
+#[cfg(feature = "metrics")]
+extern crate snarkos_node_metrics as metrics;
+
 use snarkos_account::Account;
 use snarkos_node_bft::{
     BFT,

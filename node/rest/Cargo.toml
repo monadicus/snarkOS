@@ -36,10 +36,10 @@ serial = [
 workspace = true
 
 [dependencies.axum]
-version = "0.8"
+workspace = true
 
 [dependencies.axum-extra]
-version = "0.10"
+workspace = true
 features = [ "erased-json", "typed-header" ]
 
 [dependencies.http]
@@ -53,22 +53,22 @@ features = [ "serde", "rayon" ]
 version = "9.2"
 
 [dependencies.locktick]
-version = "0.3"
+workspace = true
 features = [ "parking_lot" ]
 optional = true
 
 [dependencies.once_cell]
-version = "1.19"
+workspace = true
 
 [dependencies.parking_lot]
-version = "0.12"
+workspace = true
 
 [dependencies.serde]
 workspace = true 
 features = [ "derive" ]
 
 [dependencies.serde_json]
-version = "1"
+workspace = true
 features = [ "preserve_order" ]
 
 [dependencies.serde_with]
@@ -90,13 +90,13 @@ workspace = true
 workspace = true
 
 [dependencies.rand]
-version = "0.8"
+workspace = true
 
 [dependencies.rayon]
-version = "1"
+workspace = true
 
 [dependencies.time]
-version = "0.3"
+workspace = true
 
 [dependencies.tokio]
 workspace = true

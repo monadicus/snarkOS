@@ -3963,7 +3963,7 @@ dependencies = [
  "anyhow",
  "colored 2.2.0",
  "indexmap 2.10.0",
- "itertools 0.12.1",
+ "itertools 0.14.0",
  "locktick",
  "lru",
  "once_cell",
