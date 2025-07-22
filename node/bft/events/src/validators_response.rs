@@ -15,6 +15,9 @@
 
 use super::*;
 
+/// The maximum number of validators to send in a validators response event.
+pub const MAX_VALIDATORS_TO_SEND: usize = 200;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ValidatorsResponse<N: Network> {
     pub validators: IndexMap<SocketAddr, Address<N>>,
@@ -45,6 +48,14 @@ impl<N: Network> FromBytes for ValidatorsResponse<N> {
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
         // Read the number of validators.
         let num_validators = u16::read_le(&mut reader)?;
+
+        // Ensure the number of validators is within bounds
+        if num_validators as usize > MAX_VALIDATORS_TO_SEND {
+            return Err(error(format!(
+                "Number of validators exceeds the maximum number of validators ({num_validators} > {MAX_VALIDATORS_TO_SEND})",
+            )));
+        }
+
         // Read the validators.
         let mut validators = IndexMap::with_capacity(num_validators as usize);
         for _ in 0..num_validators {

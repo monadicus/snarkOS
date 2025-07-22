@@ -82,6 +82,8 @@ use serde::{Deserialize, Serialize};
 pub use std::io::{self, Result as IoResult};
 use std::{borrow::Cow, net::SocketAddr};
 
+pub use validators_response::MAX_VALIDATORS_TO_SEND;
+
 pub trait EventTrait: ToBytes + FromBytes {
     /// Returns the event name.
     fn name(&self) -> Cow<'static, str>;
