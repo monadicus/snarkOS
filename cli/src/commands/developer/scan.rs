@@ -152,7 +152,7 @@ impl Scan {
             (Some(start), None, None) => {
                 // Request the latest block height from the endpoint.
                 let endpoint = format!("{}/{network}/block/height/latest", self.endpoint);
-                let latest_height = u32::from_str(&ureq::get(&endpoint).call()?.into_string()?)?;
+                let latest_height = u32::from_str(&ureq::get(&endpoint).call()?.into_body().read_to_string()?)?;
 
                 // Print a warning message if the user is attempting to scan the whole chain.
                 if start == 0 {
@@ -165,7 +165,7 @@ impl Scan {
             (None, None, Some(last)) => {
                 // Request the latest block height from the endpoint.
                 let endpoint = format!("{}/{network}/block/height/latest", self.endpoint);
-                let latest_height = u32::from_str(&ureq::get(&endpoint).call()?.into_string()?)?;
+                let latest_height = u32::from_str(&ureq::get(&endpoint).call()?.into_body().read_to_string()?)?;
 
                 Ok((latest_height.saturating_sub(last), latest_height))
             }
@@ -219,7 +219,8 @@ impl Scan {
         stdout().flush()?;
 
         // Fetch the genesis block from the endpoint.
-        let genesis_block: Block<N> = ureq::get(&format!("{endpoint}/{network}/block/0")).call()?.into_json()?;
+        let genesis_block: Block<N> =
+            ureq::get(&format!("{endpoint}/{network}/block/0")).call()?.into_body().read_json()?;
         // Determine if the endpoint is on a development network.
         let is_development_network = genesis_block != Block::from_bytes_le(N::genesis_bytes())?;
 
@@ -260,7 +261,7 @@ impl Scan {
             // Establish the endpoint.
             let blocks_endpoint = format!("{endpoint}/{network}/blocks?start={request_start}&end={request_end}");
             // Fetch blocks
-            let blocks: Vec<Block<N>> = ureq::get(&blocks_endpoint).call()?.into_json()?;
+            let blocks: Vec<Block<N>> = ureq::get(&blocks_endpoint).call()?.into_body().read_json()?;
 
             // Scan the blocks for owned records.
             for block in &blocks {

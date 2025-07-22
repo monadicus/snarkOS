@@ -28,6 +28,8 @@ pub use scan::*;
 mod transfer_private;
 pub use transfer_private::*;
 
+use crate::helpers::{handle_ureq_result, http_get_json};
+
 use snarkvm::{
     console::network::Network,
     package::Package,
@@ -48,7 +50,7 @@ use snarkvm::{
     },
 };
 
-use anyhow::{Result, bail, ensure};
+use anyhow::{Result, anyhow, bail, ensure};
 use clap::{Parser, ValueEnum};
 use colored::Colorize;
 use std::{path::PathBuf, str::FromStr};
@@ -131,19 +133,12 @@ impl Developer {
         };
 
         // Send a request to the query node.
-        let response = ureq::get(&format!("{endpoint}/{network}/program/{program_id}")).call();
+        http_get_json(&format!("{endpoint}/{network}/program/{program_id}")).map_err(|(err, message)| {
+            let err_msg = message.unwrap_or(err.to_string());
 
-        // Deserialize the program.
-        match response {
-            Ok(response) => response.into_json().map_err(|err| err.into()),
-            Err(err) => match err {
-                ureq::Error::Status(_status, response) => {
-                    // Debug formatting displays more useful info, especially if the response body is empty.
-                    bail!("Failed to fetch program {program_id}: {response:?}")
-                }
-                err => bail!(err),
-            },
-        }
+            // Debug formatting displays more useful info, especially if the response body is empty.
+            anyhow!("Failed to fetch program {program_id}: {err_msg}")
+        })
     }
 
     /// Fetch the public balance in microcredits associated with the address from the given endpoint.
@@ -161,26 +156,24 @@ impl Developer {
         };
 
         // Send a request to the query node.
-        let response =
-            ureq::get(&format!("{endpoint}/{network}/program/{credits}/mapping/{account_mapping}/{address}")).call();
+        let result = http_get_json::<Option<Value<N>>>(&format!(
+            "{endpoint}/{network}/program/{credits}/mapping/{account_mapping}/{address}"
+        ));
 
         // Deserialize the balance.
-        let balance: Result<Option<Value<N>>> = match response {
-            Ok(response) => response.into_json().map_err(|err| err.into()),
-            Err(err) => match err {
-                ureq::Error::Status(_status, response) => {
-                    bail!(response.into_string().unwrap_or("Response too large!".to_owned()))
-                }
-                err => bail!(err),
-            },
-        };
+        let result = result.map_err(|(err, msg)| match err {
+            ureq::Error::StatusCode(_status) => {
+                anyhow!(msg.unwrap_or("Response too large!".to_string()))
+            }
+            _ => err.into(),
+        });
 
         // Return the balance in microcredits.
-        match balance {
+        match result {
             Ok(Some(Value::Plaintext(Plaintext::Literal(Literal::<N>::U64(amount), _)))) => Ok(*amount),
             Ok(None) => Ok(0),
             Ok(Some(..)) => bail!("Failed to deserialize balance for {address}"),
-            Err(err) => bail!("Failed to fetch balance for {address}: {err}"),
+            Err(err) => bail!("Failed to fetch balance for {address}: {err:?}"),
         }
     }
 
@@ -229,10 +222,12 @@ impl Developer {
         // Determine if the transaction should be broadcast to the network.
         if let Some(endpoint) = broadcast {
             // Send the deployment request to the local development node.
-            match ureq::post(endpoint).send_json(&transaction) {
-                Ok(id) => {
+            let result = ureq::post(endpoint).config().http_status_as_error(false).build().send_json(&transaction);
+
+            match handle_ureq_result(result) {
+                Ok(mut body) => {
                     // Remove the quotes from the response.
-                    let response_string = id.into_string()?.trim_matches('\"').to_string();
+                    let response_string = body.read_to_string()?.trim_matches('\"').to_string();
                     ensure!(
                         response_string == transaction_id.to_string(),
                         "The response does not match the transaction id. ({response_string} != {transaction_id})"
@@ -258,12 +253,16 @@ impl Developer {
                         }
                     }
                 }
-                Err(error) => {
+                Err((error, message)) => {
                     let error_message = match error {
-                        ureq::Error::Status(code, response) => {
-                            format!("(status code {code}: {:?})", response.into_string()?)
+                        ureq::Error::StatusCode(code) => {
+                            if let Some(message) = message {
+                                format!("(status code {code}: {message})")
+                            } else {
+                                format!("(status code {code})")
+                            }
                         }
-                        ureq::Error::Transport(err) => format!("({err})"),
+                        _ => format!("({error})"),
                     };
 
                     match transaction {
