@@ -28,7 +28,7 @@ pub use scan::*;
 mod transfer_private;
 pub use transfer_private::*;
 
-use crate::helpers::{handle_ureq_result, http_get_json};
+use crate::helpers::{http_get_json, http_post_json};
 
 use snarkvm::{
     console::network::Network,
@@ -222,12 +222,11 @@ impl Developer {
         // Determine if the transaction should be broadcast to the network.
         if let Some(endpoint) = broadcast {
             // Send the deployment request to the local development node.
-            let result = ureq::post(endpoint).config().http_status_as_error(false).build().send_json(&transaction);
+            // (deserializing the returned string as json removes the quotes)
+            let result: Result<String, _> = http_post_json(endpoint, &transaction);
 
-            match handle_ureq_result(result) {
-                Ok(mut body) => {
-                    // Remove the quotes from the response.
-                    let response_string = body.read_to_string()?.trim_matches('\"').to_string();
+            match result {
+                Ok(response_string) => {
                     ensure!(
                         response_string == transaction_id.to_string(),
                         "The response does not match the transaction id. ({response_string} != {transaction_id})"

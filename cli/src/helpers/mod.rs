@@ -22,6 +22,8 @@ use log_writer::*;
 mod dynamic_format;
 use dynamic_format::*;
 
+pub(crate) mod args;
+
 pub mod ureq;
 pub(crate) use self::ureq::*;
 

@@ -59,7 +59,7 @@ features = [ "codec" ]
 workspace = true
 
 [dependencies.thiserror]
-version = "2"
+workspace = true
 
 [dev-dependencies.tokio]
 workspace = true

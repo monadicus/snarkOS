@@ -13,12 +13,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use serde::de::DeserializeOwned;
+use serde::{Serialize, de::DeserializeOwned};
 use ureq::{Body, Error, http::Response};
 
 /// Used to return the response body on Error (which was removed by default).
 /// See [here](https://github.com/algesten/ureq/issues/997#issuecomment-2658534447) for more details.
-pub(crate) fn handle_ureq_result(result: Result<Response<Body>, Error>) -> Result<Body, (Error, Option<String>)> {
+fn handle_ureq_result(result: Result<Response<Body>, Error>) -> Result<Body, (Error, Option<String>)> {
     match result {
         Ok(response) => {
             let status = response.status();
@@ -45,6 +45,14 @@ pub(crate) fn http_get(path: &str) -> Result<Body, (Error, Option<String>)> {
 }
 
 /// Issue a HTTP request, parse the response, and return it as JSON.
-pub(crate) fn http_get_json<T: DeserializeOwned>(path: &str) -> Result<T, (Error, Option<String>)> {
+pub(crate) fn http_get_json<O: DeserializeOwned>(path: &str) -> Result<O, (Error, Option<String>)> {
     http_get(path)?.read_json().map_err(|err| (err, None))
+}
+
+pub(crate) fn http_post_json<I: Serialize, O: DeserializeOwned>(
+    path: &str,
+    arg: &I,
+) -> Result<O, (Error, Option<String>)> {
+    let result = ureq::post(path).config().http_status_as_error(false).build().send_json(arg);
+    handle_ureq_result(result)?.read_json().map_err(|err| (err, None))
 }

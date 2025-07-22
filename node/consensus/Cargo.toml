@@ -38,7 +38,7 @@ workspace = true
 workspace = true
 
 [dependencies.colored]
-version = "2"
+workspace = true
 
 [dependencies.indexmap]
 workspace = true

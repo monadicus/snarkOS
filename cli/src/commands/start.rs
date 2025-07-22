@@ -13,6 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::helpers::args;
+
 use snarkos_account::Account;
 use snarkos_display::Display;
 use snarkos_node::{
@@ -102,7 +104,7 @@ impl FromStr for BondedBalances {
 pub struct Start {
     /// Specify the network ID of this node
     /// [options: 0 = mainnet, 1 = testnet, 2 = canary]
-    #[clap(long, default_value_t=MainnetV0::ID, long, value_parser = clap::value_parser!(u16).range((MainnetV0::ID as i64)..=(CanaryV0::ID as i64)))]
+    #[clap(long, default_value_t=MainnetV0::ID, long, value_parser = args::network_id_parser())]
     pub network: u16,
 
     /// Start the node as a prover.

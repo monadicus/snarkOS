@@ -14,7 +14,8 @@
 // limitations under the License.
 
 use super::Developer;
-use crate::commands::StoreFormat;
+use crate::{commands::StoreFormat, helpers::args};
+
 use snarkvm::{
     circuit::{Aleo, AleoCanaryV0, AleoTestnetV0, AleoV0},
     console::{
@@ -34,27 +35,37 @@ use snarkvm::{
 };
 
 use aleo_std::StorageMode;
-use anyhow::{Result, bail};
+use anyhow::{Result, anyhow, bail};
 use clap::Parser;
 use colored::Colorize;
 use snarkvm::prelude::{Address, ConsensusVersion};
 use std::{path::PathBuf, str::FromStr};
 use zeroize::Zeroize;
 
+use anyhow::Context;
+
 /// Deploys an Aleo program.
 #[derive(Debug, Parser)]
+#[command(
+    group(clap::ArgGroup::new("mode").required(true).multiple(false)),
+    group(clap::ArgGroup::new("key").required(true).multiple(false))
+)]
 pub struct Deploy {
     /// The name of the program to deploy.
     program_id: String,
     /// Specify the network to create a deployment for.
-    #[clap(default_value = "0", long = "network")]
-    pub network: u16,
+    /// [options: 0 = mainnet, 1 = testnet, 2 = canary]
+    #[clap(long, default_value_t=MainnetV0::ID, long, value_parser = args::network_id_parser())]
+    network: u16,
     /// A path to a directory containing a manifest file. Defaults to the current working directory.
     #[clap(long)]
     path: Option<String>,
     /// The private key used to generate the deployment.
-    #[clap(short, long)]
-    private_key: String,
+    #[clap(short = 'p', long, group = "key")]
+    private_key: Option<String>,
+    /// Specify the path to a file containing the account private key of the node
+    #[clap(long, group = "key")]
+    private_key_file: Option<String>,
     /// The endpoint to query node state from.
     #[clap(short, long)]
     query: String,
@@ -65,17 +76,17 @@ pub struct Deploy {
     #[clap(short, long)]
     record: Option<String>,
     /// The endpoint used to broadcast the generated transaction.
-    #[clap(short, long, conflicts_with = "dry_run")]
+    #[clap(short, long, group = "mode")]
     broadcast: Option<String>,
     /// Performs a dry-run of transaction generation.
-    #[clap(short, long, conflicts_with = "broadcast")]
+    #[clap(short, long, group = "mode")]
     dry_run: bool,
     /// Store generated deployment transaction to a local file.
-    #[clap(long)]
+    #[clap(long, group = "mode")]
     store: Option<String>,
     /// If --store is specified, the format in which the transaction should be stored : string or
     /// bytes, by default : bytes.
-    #[clap(long, value_enum, default_value_t = StoreFormat::Bytes)]
+    #[clap(long, value_enum, default_value_t = StoreFormat::Bytes, requires="store")]
     store_format: StoreFormat,
     /// Specify the path to a directory containing the ledger. Overrides the default path (also for
     /// dev).
@@ -93,11 +104,6 @@ impl Drop for Deploy {
 impl Deploy {
     /// Deploys an Aleo program.
     pub fn parse(self) -> Result<String> {
-        // Ensure that the user has specified an action.
-        if !self.dry_run && self.broadcast.is_none() && self.store.is_none() {
-            bail!("❌ Please specify one of the following actions: --broadcast, --dry-run, --store");
-        }
-
         // Construct the deployment for the specified network.
         match self.network {
             MainnetV0::ID => self.construct_deployment::<MainnetV0, AleoV0>(),
@@ -105,6 +111,7 @@ impl Deploy {
             CanaryV0::ID => self.construct_deployment::<CanaryV0, AleoCanaryV0>(),
             unknown_id => bail!("Unknown network ID ({unknown_id})"),
         }
+        .with_context(|| "Deployment failed")
     }
 
     /// Construct and process the deployment transaction.
@@ -113,10 +120,20 @@ impl Deploy {
         let query = Query::<N, BlockMemory<N>>::from(&self.query);
 
         // Retrieve the private key.
-        let private_key = PrivateKey::from_str(&self.private_key)?;
+        let key_str = if let Some(private_key) = self.private_key.clone() {
+            private_key
+        } else if let Some(private_key_file) = self.private_key_file.clone() {
+            let path = private_key_file.parse::<PathBuf>().map_err(|e| anyhow!("Invalid path - {e}"))?;
+            std::fs::read_to_string(path).with_context(|| "Failed to read private key from disk")?.trim().to_string()
+        } else {
+            unreachable!();
+        };
+
+        // Retrieve the private key.
+        let private_key = PrivateKey::from_str(&key_str).with_context(|| "Failed to parse private key")?;
 
         // Retrieve the program ID.
-        let program_id = ProgramID::from_str(&self.program_id)?;
+        let program_id = ProgramID::from_str(&self.program_id).with_context(|| "Failed to parse program ID")?;
 
         // Fetch the package from the directory.
         let package = Developer::parse_package(program_id, &self.path)?;
@@ -163,7 +180,8 @@ impl Deploy {
             // Prepare the fees.
             let fee = match &self.record {
                 Some(record) => {
-                    let fee_record = Developer::parse_record(&private_key, record)?;
+                    let fee_record =
+                        Developer::parse_record(&private_key, record).with_context(|| "Failed to parse record")?;
                     let fee_authorization = vm.authorize_fee_private(
                         &private_key,
                         fee_record,
@@ -172,7 +190,8 @@ impl Deploy {
                         deployment_id,
                         rng,
                     )?;
-                    vm.execute_fee_authorization(fee_authorization, Some(&query), rng)?
+                    vm.execute_fee_authorization(fee_authorization, Some(&query), rng)
+                        .with_context(|| "Failed to execute fee authorization")?
                 }
                 None => {
                     let fee_authorization = vm.authorize_fee_public(
@@ -182,14 +201,15 @@ impl Deploy {
                         deployment_id,
                         rng,
                     )?;
-                    vm.execute_fee_authorization(fee_authorization, Some(&query), rng)?
+                    vm.execute_fee_authorization(fee_authorization, Some(&query), rng)
+                        .with_context(|| "Failed to execute fee authorization")?
                 }
             };
             // Construct the owner.
             let owner = ProgramOwner::new(&private_key, deployment_id, rng)?;
 
             // Create a new transaction.
-            Transaction::from_deployment(owner, deployment, fee)?
+            Transaction::from_deployment(owner, deployment, fee).with_context(|| "Failed to crate transaction")?
         };
         println!("✅ Created deployment transaction for '{}'", program_id.to_string().bold());
 
@@ -211,32 +231,54 @@ mod tests {
     use crate::commands::{CLI, Command};
 
     #[test]
-    fn clap_snarkos_deploy() {
-        let arg_vec = vec![
+    fn clap_snarkos_deploy_missing_mode() {
+        let arg_vec = &[
             "snarkos",
             "developer",
             "deploy",
-            "--private-key",
-            "PRIVATE_KEY",
-            "--query",
-            "QUERY",
-            "--priority-fee",
-            "77",
-            "--record",
-            "RECORD",
+            "--private-key=PRIVATE_KEY",
+            "--query=QUERY",
+            "--priority-fee=77",
+            "--record=RECORD",
             "hello.aleo",
         ];
-        let cli = CLI::parse_from(arg_vec);
+
+        // Should fail because no mode is specified.
+        let err = CLI::try_parse_from(arg_vec).unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+    }
+
+    #[test]
+    fn clap_snarkos_deploy() -> Result<()> {
+        let arg_vec = &[
+            "snarkos",
+            "developer",
+            "deploy",
+            "--private-key=PRIVATE_KEY",
+            "--query=QUERY",
+            "--priority-fee=77",
+            "--dry-run",
+            "--record=RECORD",
+            "hello.aleo",
+        ];
+        // Use try parse here, as parse calls `exit()`.
+        let cli = CLI::try_parse_from(arg_vec)?;
 
         if let Command::Developer(Developer::Deploy(deploy)) = cli.command {
             assert_eq!(deploy.network, 0);
             assert_eq!(deploy.program_id, "hello.aleo");
-            assert_eq!(deploy.private_key, "PRIVATE_KEY");
+            assert_eq!(deploy.private_key, Some("PRIVATE_KEY".to_string()));
+            assert_eq!(deploy.private_key_file, None);
             assert_eq!(deploy.query, "QUERY");
+            assert!(deploy.dry_run);
+            assert_eq!(deploy.broadcast, None);
+            assert_eq!(deploy.store, None);
             assert_eq!(deploy.priority_fee, 77);
             assert_eq!(deploy.record, Some("RECORD".to_string()));
         } else {
-            panic!("Unexpected result of clap parsing!");
+            bail!("Unexpected result of clap parsing!");
         }
+
+        Ok(())
     }
 }

@@ -14,7 +14,8 @@
 // limitations under the License.
 
 use super::Developer;
-use crate::commands::StoreFormat;
+use crate::{commands::StoreFormat, helpers::args};
+
 use snarkvm::{
     console::network::{CanaryV0, MainnetV0, Network, TestnetV0},
     ledger::store::helpers::memory::BlockMemory,
@@ -33,7 +34,7 @@ use snarkvm::{
 };
 
 use aleo_std::StorageMode;
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use clap::Parser;
 use colored::Colorize;
 use std::{path::PathBuf, str::FromStr};
@@ -41,6 +42,10 @@ use zeroize::Zeroize;
 
 /// Executes an Aleo program function.
 #[derive(Debug, Parser)]
+#[command(
+    group(clap::ArgGroup::new("mode").required(true).multiple(false)),
+    group(clap::ArgGroup::new("key").required(true).multiple(false))
+)]
 pub struct Execute {
     /// The program identifier.
     program_id: String,
@@ -49,13 +54,14 @@ pub struct Execute {
     /// The function inputs.
     inputs: Vec<String>,
     /// Specify the network to create an execution for.
-    #[clap(default_value = "0", long = "network")]
-    pub network: u16,
+    /// [options: 0 = mainnet, 1 = testnet, 2 = canary]
+    #[clap(long, default_value_t=MainnetV0::ID, long, value_parser = args::network_id_parser())]
+    network: u16,
     /// The private key used to generate the execution.
-    #[clap(short, long)]
+    #[clap(short = 'p', long, group = "key")]
     private_key: Option<String>,
     /// Specify the path to a file containing the account private key of the node
-    #[clap(long)]
+    #[clap(long, group = "key")]
     private_key_file: Option<String>,
     /// The endpoint to query node state from.
     #[clap(short, long)]
@@ -67,17 +73,17 @@ pub struct Execute {
     #[clap(short, long)]
     record: Option<String>,
     /// The endpoint used to broadcast the generated transaction.
-    #[clap(short, long, conflicts_with = "dry_run")]
+    #[clap(short, long, group = "mode")]
     broadcast: Option<String>,
     /// Performs a dry-run of transaction generation.
-    #[clap(short, long, conflicts_with = "broadcast")]
+    #[clap(short, long, group = "mode")]
     dry_run: bool,
     /// Store generated deployment transaction to a local file.
-    #[clap(long)]
+    #[clap(long, group = "mode")]
     store: Option<String>,
     /// If --store is specified, the format in which the transaction should be stored : string or
     /// bytes, by default : bytes.
-    #[clap(long, value_enum, default_value_t = StoreFormat::Bytes)]
+    #[clap(long, value_enum, default_value_t = StoreFormat::Bytes, requires="store")]
     store_format: StoreFormat,
     /// Specify the path to a directory containing the ledger. Overrides the default path (also for
     /// dev).
@@ -98,11 +104,6 @@ impl Execute {
     /// Executes an Aleo program function with the provided inputs.
     #[allow(clippy::format_in_format_args)]
     pub fn parse(self) -> Result<String> {
-        // Ensure that the user has specified an action.
-        if !self.dry_run && self.broadcast.is_none() && self.store.is_none() {
-            bail!("❌ Please specify one of the following actions: --broadcast, --dry-run, --store");
-        }
-
         // Construct the execution for the specified network.
         match self.network {
             MainnetV0::ID => self.construct_execution::<MainnetV0>(),
@@ -119,24 +120,22 @@ impl Execute {
         let is_static_query = matches!(query, Query::STATIC(_));
 
         // Retrieve the private key.
-        let key_str = match (self.private_key.as_ref(), self.private_key_file.as_ref()) {
-            (Some(private_key), None) => private_key.to_owned(),
-            (None, Some(private_key_file)) => {
-                let path = private_key_file.parse::<PathBuf>().map_err(|e| anyhow!("Invalid path - {e}"))?;
-                std::fs::read_to_string(path)?.trim().to_string()
-            }
-            (None, None) => bail!("Missing the '--private-key' or '--private-key-file' argument"),
-            (Some(_), Some(_)) => {
-                bail!("Cannot specify both the '--private-key' and '--private-key-file' flags")
-            }
+        let key_str = if let Some(private_key) = self.private_key.clone() {
+            private_key
+        } else if let Some(private_key_file) = self.private_key_file.clone() {
+            let path = private_key_file.parse::<PathBuf>().map_err(|e| anyhow!("Invalid path - {e}"))?;
+            std::fs::read_to_string(path).with_context(|| "Failed to read private key from disk")?.trim().to_string()
+        } else {
+            unreachable!();
         };
-        let private_key = PrivateKey::from_str(&key_str)?;
+
+        let private_key = PrivateKey::from_str(&key_str).with_context(|| "Failed to parse private key")?;
 
         // Retrieve the program ID.
-        let program_id = ProgramID::from_str(&self.program_id)?;
+        let program_id = ProgramID::from_str(&self.program_id).with_context(|| "Failed to parse program ID")?;
 
         // Retrieve the function.
-        let function = Identifier::from_str(&self.function)?;
+        let function = Identifier::from_str(&self.function).with_context(|| "Failed to parse function ID")?;
 
         // Retrieve the inputs.
         let inputs = self.inputs.iter().map(|input| Value::from_str(input)).collect::<Result<Vec<Value<N>>>>()?;
@@ -192,7 +191,7 @@ impl Execute {
             // Check if the public balance is sufficient.
             let storage_cost = transaction
                 .execution()
-                .ok_or_else(|| anyhow!("The transaction does not contain an execution"))?
+                .with_context(|| "The transaction does not contain an execution")?
                 .size_in_bytes()?;
 
             // Calculate the base fee.
@@ -239,13 +238,14 @@ fn load_program<N: Network>(endpoint: &str, process: &mut Process<N>, program_id
         // Add the imports to the process if does not exist yet.
         if !process.contains_program(import_program_id) {
             // Recursively load the program and its imports.
-            load_program(endpoint, process, import_program_id)?;
+            load_program(endpoint, process, import_program_id)
+                .with_context(|| format!("Failed to load program {import_program_id}"))?;
         }
     }
 
     // Add the program to the process if it does not already exist.
     if !process.contains_program(program.id()) {
-        process.add_program(&program)?;
+        process.add_program(&program).with_context(|| format!("Failed to add program {}", program.id()))?;
     }
 
     Ok(())
@@ -257,8 +257,8 @@ mod tests {
     use crate::commands::{CLI, Command};
 
     #[test]
-    fn clap_snarkos_execute() {
-        let arg_vec = vec![
+    fn clap_snarkos_execute() -> Result<()> {
+        let arg_vec = &[
             "snarkos",
             "developer",
             "execute",
@@ -270,12 +270,13 @@ mod tests {
             "77",
             "--record",
             "RECORD",
+            "--dry-run",
             "hello.aleo",
             "hello",
             "1u32",
             "2u32",
         ];
-        let cli = CLI::parse_from(arg_vec);
+        let cli = CLI::try_parse_from(arg_vec)?;
 
         if let Command::Developer(Developer::Execute(execute)) = cli.command {
             assert_eq!(execute.network, 0);
@@ -287,13 +288,15 @@ mod tests {
             assert_eq!(execute.function, "hello".to_string());
             assert_eq!(execute.inputs, vec!["1u32".to_string(), "2u32".to_string()]);
         } else {
-            panic!("Unexpected result of clap parsing!");
+            bail!("Unexpected result of clap parsing!");
         }
+
+        Ok(())
     }
 
     #[test]
-    fn clap_snarkos_execute_pk_file() {
-        let arg_vec = vec![
+    fn clap_snarkos_execute_pk_file() -> Result<()> {
+        let arg_vec = &[
             "snarkos",
             "developer",
             "execute",
@@ -305,12 +308,13 @@ mod tests {
             "77",
             "--record",
             "RECORD",
+            "--dry-run",
             "hello.aleo",
             "hello",
             "1u32",
             "2u32",
         ];
-        let cli = CLI::parse_from(arg_vec);
+        let cli = CLI::try_parse_from(arg_vec)?;
 
         if let Command::Developer(Developer::Execute(execute)) = cli.command {
             assert_eq!(execute.network, 0);
@@ -322,7 +326,59 @@ mod tests {
             assert_eq!(execute.function, "hello".to_string());
             assert_eq!(execute.inputs, vec!["1u32".to_string(), "2u32".to_string()]);
         } else {
-            panic!("Unexpected result of clap parsing!");
+            bail!("Unexpected result of clap parsing!");
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn clap_snarkos_execute_two_private_keys() {
+        let arg_vec = &[
+            "snarkos",
+            "developer",
+            "execute",
+            "--private-key",
+            "PRIVATE_KEY",
+            "--private-key-file",
+            "PRIVATE_KEY_FILE",
+            "--query",
+            "QUERY",
+            "--priority-fee",
+            "77",
+            "--record",
+            "RECORD",
+            "--dry-run",
+            "hello.aleo",
+            "hello",
+            "1u32",
+            "2u32",
+        ];
+
+        let err = CLI::try_parse_from(arg_vec).unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn clap_snarkos_execute_no_private_keys() {
+        let arg_vec = &[
+            "snarkos",
+            "developer",
+            "execute",
+            "--query",
+            "QUERY",
+            "--priority-fee",
+            "77",
+            "--record",
+            "RECORD",
+            "--dry-run",
+            "hello.aleo",
+            "hello",
+            "1u32",
+            "2u32",
+        ];
+
+        let err = CLI::try_parse_from(arg_vec).unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
     }
 }

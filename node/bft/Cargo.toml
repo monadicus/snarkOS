@@ -62,7 +62,7 @@ workspace = true
 workspace = true
 
 [dependencies.colored]
-version = "2"
+workspace = true
 
 [dependencies.futures]
 workspace = true
