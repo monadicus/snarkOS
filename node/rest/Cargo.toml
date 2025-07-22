@@ -113,3 +113,6 @@ workspace = true
 
 [dev-dependencies.base64]
 workspace = true
+
+[build-dependencies.built]
+workspace = true
