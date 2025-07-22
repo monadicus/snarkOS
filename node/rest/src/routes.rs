@@ -21,11 +21,13 @@ use snarkvm::{
 };
 
 use indexmap::IndexMap;
-use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use serde_with::skip_serializing_none;
 use std::collections::HashMap;
+
+#[cfg(not(feature = "serial"))]
+use rayon::prelude::*;
 
 /// The `get_blocks` query object.
 #[derive(Deserialize, Serialize)]
@@ -34,6 +36,11 @@ pub(crate) struct BlockRange {
     start: u32,
     /// The ending block height (exclusive).
     end: u32,
+}
+
+#[derive(Deserialize, Serialize)]
+pub(crate) struct BackupPath {
+    path: std::path::PathBuf,
 }
 
 /// The query object for `get_mapping_value` and `get_mapping_values`.
@@ -129,7 +136,7 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
 
         // Prepare a closure for the blocking work.
         let get_json_blocks = move || -> Result<ErasedJson, RestError> {
-            let blocks = cfg_into_iter!((start_height..end_height))
+            let blocks = cfg_into_iter!(start_height..end_height)
                 .map(|height| rest.ledger.get_block(height))
                 .collect::<Result<Vec<_>, _>>()?;
 
@@ -601,6 +608,16 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
         rest.routing.propagate(message, &[]);
 
         Ok(ErasedJson::pretty(solution_id))
+    }
+
+    // POST /{network}/db_backup?path=new_fs_path
+    pub(crate) async fn db_backup(
+        State(rest): State<Self>,
+        backup_path: Query<BackupPath>,
+    ) -> Result<ErasedJson, RestError> {
+        rest.ledger.backup_database(&backup_path.path).map_err(RestError::from)?;
+
+        Ok(ErasedJson::pretty(()))
     }
 
     // GET /{network}/block/{blockHeight}/history/{mapping}

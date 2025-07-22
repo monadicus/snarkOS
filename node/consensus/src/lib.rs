@@ -123,6 +123,7 @@ pub struct Consensus<N: Network> {
 
 impl<N: Network> Consensus<N> {
     /// Initializes a new instance of consensus and spawn its background tasks.
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         account: Account<N>,
         ledger: Arc<dyn LedgerService<N>>,
@@ -131,6 +132,7 @@ impl<N: Network> Consensus<N> {
         trusted_validators: &[SocketAddr],
         storage_mode: StorageMode,
         ping: Arc<Ping<N>>,
+        dev: Option<u16>,
     ) -> Result<Self> {
         // Initialize the primary channels.
         let (primary_sender, primary_receiver) = init_primary_channels::<N>();
@@ -139,7 +141,8 @@ impl<N: Network> Consensus<N> {
         // Initialize the Narwhal storage.
         let storage = NarwhalStorage::new(ledger.clone(), transmissions, BatchHeader::<N>::MAX_GC_ROUNDS as u64);
         // Initialize the BFT.
-        let bft = BFT::new(account, storage, ledger.clone(), block_sync.clone(), ip, trusted_validators, storage_mode)?;
+        let bft =
+            BFT::new(account, storage, ledger.clone(), block_sync.clone(), ip, trusted_validators, storage_mode, dev)?;
         // Create a new instance of Consensus.
         let mut _self = Self {
             ledger,

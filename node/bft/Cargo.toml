@@ -14,7 +14,7 @@ keywords = [
 ]
 categories = [ "cryptography", "cryptography::cryptocurrencies", "os" ]
 license = "Apache-2.0"
-edition = "2021"
+edition = "2024"
 
 [features]
 default = [ ]
@@ -44,6 +44,7 @@ test = [
   "snarkos-node-bft-ledger-service/test",
   "snarkos-node-bft-storage-service/test"
 ]
+serial = [ "snarkos-node-bft-ledger-service/serial" ]
 
 [dependencies.aleo-std]
 workspace = true
