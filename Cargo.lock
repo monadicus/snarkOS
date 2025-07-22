@@ -2255,6 +2255,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "lru"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "86ea4e65087ff52f3862caff188d489f1fab49a0cb09e01b2e3f1a617b10aaed"
+dependencies = [
+ "hashbrown 0.15.4",
+]
+
+[[package]]
 name = "lru-slab"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3052,7 +3061,7 @@ dependencies = [
  "indoc",
  "instability",
  "itertools 0.13.0",
- "lru",
+ "lru 0.12.5",
  "paste",
  "strum",
  "unicode-segmentation",
@@ -3812,7 +3821,7 @@ dependencies = [
  "futures-util",
  "indexmap 2.10.0",
  "locktick",
- "lru",
+ "lru 0.16.0",
  "num_cpus",
  "once_cell",
  "parking_lot",
@@ -3855,7 +3864,7 @@ dependencies = [
  "indexmap 2.10.0",
  "itertools 0.12.1",
  "locktick",
- "lru",
+ "lru 0.16.0",
  "mockall",
  "open",
  "parking_lot",
@@ -3929,7 +3938,7 @@ dependencies = [
  "anyhow",
  "indexmap 2.10.0",
  "locktick",
- "lru",
+ "lru 0.16.0",
  "parking_lot",
  "snarkvm",
  "tracing",
@@ -3965,7 +3974,7 @@ dependencies = [
  "indexmap 2.10.0",
  "itertools 0.14.0",
  "locktick",
- "lru",
+ "lru 0.16.0",
  "once_cell",
  "parking_lot",
  "snarkos-account",
@@ -4613,7 +4622,7 @@ dependencies = [
  "anyhow",
  "indexmap 2.10.0",
  "locktick",
- "lru",
+ "lru 0.12.5",
  "parking_lot",
  "rand 0.8.5",
  "rayon",
@@ -4779,7 +4788,7 @@ dependencies = [
  "bincode",
  "indexmap 2.10.0",
  "locktick",
- "lru",
+ "lru 0.12.5",
  "parking_lot",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
@@ -4799,7 +4808,7 @@ dependencies = [
  "colored 2.2.0",
  "indexmap 2.10.0",
  "locktick",
- "lru",
+ "lru 0.12.5",
  "parking_lot",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
@@ -4909,7 +4918,7 @@ dependencies = [
  "indexmap 2.10.0",
  "itertools 0.11.0",
  "locktick",
- "lru",
+ "lru 0.12.5",
  "parking_lot",
  "rand 0.8.5",
  "rayon",
