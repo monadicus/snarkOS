@@ -15,7 +15,6 @@
 
 use crate::{
     ConnectedPeer,
-    NodeType,
     Outbound,
     Router,
     messages::{DisconnectReason, Message, PeerRequest},
@@ -130,7 +129,7 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
         // Note, that this gives equal priority to clients and provers, which
         // we might want to change in the future.
         let mut peers = self.router().get_connected_peers();
-        peers.sort_by_key(|peer| (peer.node_type == NodeType::Validator, peer.last_seen));
+        peers.sort_by_key(|peer| (peer.node_type.is_validator(), peer.last_seen));
 
         // Determine which of the peers can be removed.
         peers
@@ -220,7 +219,7 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
             let peers_to_disconnect = self
                 .get_removable_peers()
                 .into_iter()
-                .filter(|peer| peer.node_type != NodeType::Prover) // remove provers as those are handled separately
+                .filter(|peer| !peer.node_type.is_prover()) // remove provers as those are handled separately
                 .map(|peer| peer.listener_addr)
                 .take(num_surplus_clients_validators);
 
@@ -229,7 +228,7 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
                 // TODO (howardwu): Remove this after specializing this function.
                 if self.router().node_type().is_prover() {
                     if let Some(peer) = self.router().get_connected_peer(&peer_ip) {
-                        if peer.node_type == NodeType::Validator {
+                        if peer.node_type.is_validator() {
                             continue;
                         }
                     }
@@ -316,7 +315,7 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
             .trusted_peers()
             .iter()
             .filter_map(|peer_ip| {
-                // If the peer is not connected, attempt to connect to it.
+                // If the peer is not already connecting or connected, attempt to connect to it.
                 if self.router().is_connecting(peer_ip) || self.router().is_connected(peer_ip) {
                     None
                 } else {

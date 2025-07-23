@@ -20,18 +20,22 @@ use std::{net::SocketAddr, time::Instant};
 
 /// A peer of any connection status.
 pub enum Peer<N: Network> {
-    // A candidate peer that's currently not connected to.
+    /// A candidate peer that's currently not connected to.
     Candidate(CandidatePeer),
-    // A peer that's currently being connected to (the handshake is in progress).
+    /// A peer that's currently being connected to (the handshake is in progress).
     Connecting,
-    // A fully connected (post-handshake) peer.
+    /// A fully connected (post-handshake) peer.
     Connected(ConnectedPeer<N>),
 }
 
 /// A candidate peer.
 #[derive(Clone)]
 pub struct CandidatePeer {
+    /// The listening address of a candidate peer.
     pub listener_addr: SocketAddr,
+    /// A restricted peer is one that has recently exceeded the `MAXIMUM_CONNECTION_FAILURES`,
+    /// and is ineligible for connection attempts for `RADIO_SILENCE_IN_SECS`.
+    // TODO: consider removing in favor of the ban feature for simplicity.
     pub restricted: Option<Instant>,
 }
 

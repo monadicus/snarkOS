@@ -321,33 +321,33 @@ impl<N: Network> Router<N> {
 
     /// Returns `true` if the node is connecting to the given peer IP.
     pub fn is_connecting(&self, ip: &SocketAddr) -> bool {
-        self.peer_pool.read().get(ip).map(|peer| peer.is_connecting()).unwrap_or(false)
+        self.peer_pool.read().get(ip).is_some_and(|peer| peer.is_connecting())
     }
 
     /// Returns `true` if the node is connected to the given peer IP.
     pub fn is_connected(&self, ip: &SocketAddr) -> bool {
-        self.peer_pool.read().get(ip).map(|peer| peer.is_connected()).unwrap_or(false)
+        self.peer_pool.read().get(ip).is_some_and(|peer| peer.is_connected())
     }
 
     /// Returns `true` if the given peer IP is a connected validator.
     pub fn is_connected_validator(&self, peer_ip: &SocketAddr) -> bool {
-        self.peer_pool.read().get(peer_ip).map(|peer| peer.node_type() == Some(NodeType::Validator)).unwrap_or(false)
+        self.peer_pool.read().get(peer_ip).is_some_and(|peer| peer.node_type() == Some(NodeType::Validator))
     }
 
     /// Returns `true` if the given peer IP is a connected prover.
     pub fn is_connected_prover(&self, peer_ip: &SocketAddr) -> bool {
-        self.peer_pool.read().get(peer_ip).map(|peer| peer.node_type() == Some(NodeType::Prover)).unwrap_or(false)
+        self.peer_pool.read().get(peer_ip).is_some_and(|peer| peer.node_type() == Some(NodeType::Prover))
     }
 
     /// Returns `true` if the given peer IP is a connected client.
     pub fn is_connected_client(&self, peer_ip: &SocketAddr) -> bool {
-        self.peer_pool.read().get(peer_ip).map(|peer| peer.node_type() == Some(NodeType::Client)).unwrap_or(false)
+        self.peer_pool.read().get(peer_ip).is_some_and(|peer| peer.node_type() == Some(NodeType::Client))
     }
 
     /// Returns `true` if the given IP is restricted.
     pub fn is_restricted(&self, ip: &SocketAddr) -> bool {
         if let Some(Peer::Candidate(peer)) = self.peer_pool.read().get(ip) {
-            peer.restricted.map(|ts| ts.elapsed().as_secs() < Self::RADIO_SILENCE_IN_SECS).unwrap_or(false)
+            peer.restricted.is_some_and(|ts| ts.elapsed().as_secs() < Self::RADIO_SILENCE_IN_SECS)
         } else {
             false
         }
@@ -425,7 +425,7 @@ impl<N: Network> Router<N> {
             .collect()
     }
 
-    /// Returns the list of connected provers.
+    /// Returns the list of the listening addresses of connected provers.
     pub fn connected_provers(&self) -> Vec<SocketAddr> {
         self.peer_pool
             .read()
