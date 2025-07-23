@@ -24,7 +24,6 @@ use snarkvm::{
     },
     ledger::store::helpers::memory::BlockMemory,
     prelude::{
-        PrivateKey,
         ProgramID,
         VM,
         block::Transaction,
@@ -35,7 +34,7 @@ use snarkvm::{
 };
 
 use aleo_std::StorageMode;
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Result, bail};
 use clap::Parser;
 use colored::Colorize;
 use snarkvm::prelude::{Address, ConsensusVersion};
@@ -66,18 +65,18 @@ pub struct Deploy {
     /// Specify the path to a file containing the account private key of the node
     #[clap(long, group = "key")]
     private_key_file: Option<String>,
-    /// The endpoint to query node state from.
+    /// The endpoint to query node state from and broadcast to (if set to broadcast).
     #[clap(short, long)]
-    query: String,
+    endpoint: String,
     /// The priority fee in microcredits.
-    #[clap(long)]
+    #[clap(long, default_value_t = 0)]
     priority_fee: u64,
     /// The record to spend the fee from.
     #[clap(short, long)]
     record: Option<String>,
-    /// The endpoint used to broadcast the generated transaction.
+    /// Set the transaction to be broadcasted to the given endpoint.
     #[clap(short, long, group = "mode")]
-    broadcast: Option<String>,
+    broadcast: bool,
     /// Performs a dry-run of transaction generation.
     #[clap(short, long, group = "mode")]
     dry_run: bool,
@@ -88,8 +87,7 @@ pub struct Deploy {
     /// bytes, by default : bytes.
     #[clap(long, value_enum, default_value_t = StoreFormat::Bytes, requires="store")]
     store_format: StoreFormat,
-    /// Specify the path to a directory containing the ledger. Overrides the default path (also for
-    /// dev).
+    /// Specify the path to a directory containing the ledger. Overrides the default path.
     #[clap(long = "storage_path")]
     storage_path: Option<PathBuf>,
 }
@@ -117,31 +115,22 @@ impl Deploy {
     /// Construct and process the deployment transaction.
     fn construct_deployment<N: Network, A: Aleo<Network = N, BaseField = N::Field>>(&self) -> Result<String> {
         // Specify the query
-        let query = Query::<N, BlockMemory<N>>::from(&self.query);
+        let query = Query::<N, BlockMemory<N>>::from(&self.endpoint);
 
         // Retrieve the private key.
-        let key_str = if let Some(private_key) = self.private_key.clone() {
-            private_key
-        } else if let Some(private_key_file) = self.private_key_file.clone() {
-            let path = private_key_file.parse::<PathBuf>().map_err(|e| anyhow!("Invalid path - {e}"))?;
-            std::fs::read_to_string(path).with_context(|| "Failed to read private key from disk")?.trim().to_string()
-        } else {
-            unreachable!();
-        };
-
-        // Retrieve the private key.
-        let private_key = PrivateKey::from_str(&key_str).with_context(|| "Failed to parse private key")?;
+        let private_key = args::parse_private_key(self.private_key.clone(), self.private_key_file.clone())?;
 
         // Retrieve the program ID.
         let program_id = ProgramID::from_str(&self.program_id).with_context(|| "Failed to parse program ID")?;
 
         // Fetch the package from the directory.
-        let package = Developer::parse_package(program_id, &self.path)?;
+        let package =
+            Developer::parse_package(program_id, &self.path).with_context(|| "Failed to parse program package")?;
 
         println!("📦 Creating deployment transaction for '{}'...\n", &program_id.to_string().bold());
 
         // Generate the deployment
-        let mut deployment = package.deploy::<A>(None)?;
+        let mut deployment = package.deploy::<A>(None).with_context(|| "Failed to generate the deployment")?;
 
         // Get the consensus version.
         let consensus_version = N::CONSENSUS_VERSION(query.current_block_height()?)?;
@@ -172,7 +161,7 @@ impl Deploy {
             let store = ConsensusStore::<N, ConsensusMemory<N>>::open(storage_mode)?;
 
             // Initialize the VM.
-            let vm = VM::from(store)?;
+            let vm = VM::from(store).with_context(|| "Failed to initialize the virtual machine")?;
 
             // Compute the minimum deployment cost.
             let (minimum_deployment_cost, (_, _, _, _)) = deployment_cost(&vm.process().read(), &deployment)?;
@@ -206,7 +195,8 @@ impl Deploy {
                 }
             };
             // Construct the owner.
-            let owner = ProgramOwner::new(&private_key, deployment_id, rng)?;
+            let owner = ProgramOwner::new(&private_key, deployment_id, rng)
+                .with_context(|| "Failed to construct program owner")?;
 
             // Create a new transaction.
             Transaction::from_deployment(owner, deployment, fee).with_context(|| "Failed to crate transaction")?
@@ -215,7 +205,9 @@ impl Deploy {
 
         // Determine if the transaction should be broadcast, stored, or displayed to the user.
         Developer::handle_transaction(
-            &self.broadcast,
+            &self.endpoint,
+            self.network,
+            self.broadcast,
             self.dry_run,
             &self.store,
             self.store_format,
@@ -237,7 +229,7 @@ mod tests {
             "developer",
             "deploy",
             "--private-key=PRIVATE_KEY",
-            "--query=QUERY",
+            "--endpoint=ENDPOINT",
             "--priority-fee=77",
             "--record=RECORD",
             "hello.aleo",
@@ -255,7 +247,7 @@ mod tests {
             "developer",
             "deploy",
             "--private-key=PRIVATE_KEY",
-            "--query=QUERY",
+            "--endpoint=ENDPOINT",
             "--priority-fee=77",
             "--dry-run",
             "--record=RECORD",
@@ -269,9 +261,9 @@ mod tests {
             assert_eq!(deploy.program_id, "hello.aleo");
             assert_eq!(deploy.private_key, Some("PRIVATE_KEY".to_string()));
             assert_eq!(deploy.private_key_file, None);
-            assert_eq!(deploy.query, "QUERY");
+            assert_eq!(deploy.endpoint, "ENDPOINT");
             assert!(deploy.dry_run);
-            assert_eq!(deploy.broadcast, None);
+            assert!(!deploy.broadcast);
             assert_eq!(deploy.store, None);
             assert_eq!(deploy.priority_fee, 77);
             assert_eq!(deploy.record, Some("RECORD".to_string()));

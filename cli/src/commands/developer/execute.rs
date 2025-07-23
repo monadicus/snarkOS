@@ -14,7 +14,10 @@
 // limitations under the License.
 
 use super::Developer;
-use crate::{commands::StoreFormat, helpers::args};
+use crate::{
+    commands::StoreFormat,
+    helpers::args::{network_id_parser, parse_private_key},
+};
 
 use snarkvm::{
     console::network::{CanaryV0, MainnetV0, Network, TestnetV0},
@@ -23,7 +26,6 @@ use snarkvm::{
         Address,
         Identifier,
         Locator,
-        PrivateKey,
         Process,
         ProgramID,
         VM,
@@ -34,7 +36,7 @@ use snarkvm::{
 };
 
 use aleo_std::StorageMode;
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, bail};
 use clap::Parser;
 use colored::Colorize;
 use std::{path::PathBuf, str::FromStr};
@@ -55,7 +57,7 @@ pub struct Execute {
     inputs: Vec<String>,
     /// Specify the network to create an execution for.
     /// [options: 0 = mainnet, 1 = testnet, 2 = canary]
-    #[clap(long, default_value_t=MainnetV0::ID, long, value_parser = args::network_id_parser())]
+    #[clap(long, default_value_t=MainnetV0::ID, long, value_parser = network_id_parser())]
     network: u16,
     /// The private key used to generate the execution.
     #[clap(short = 'p', long, group = "key")]
@@ -63,9 +65,9 @@ pub struct Execute {
     /// Specify the path to a file containing the account private key of the node
     #[clap(long, group = "key")]
     private_key_file: Option<String>,
-    /// The endpoint to query node state from.
+    /// The endpoint to query node state from and broadcast to (if set to broadcast).
     #[clap(short, long)]
-    query: String,
+    endpoint: String,
     /// The priority fee in microcredits.
     #[clap(long)]
     priority_fee: Option<u64>,
@@ -74,7 +76,7 @@ pub struct Execute {
     record: Option<String>,
     /// The endpoint used to broadcast the generated transaction.
     #[clap(short, long, group = "mode")]
-    broadcast: Option<String>,
+    broadcast: bool,
     /// Performs a dry-run of transaction generation.
     #[clap(short, long, group = "mode")]
     dry_run: bool,
@@ -85,8 +87,7 @@ pub struct Execute {
     /// bytes, by default : bytes.
     #[clap(long, value_enum, default_value_t = StoreFormat::Bytes, requires="store")]
     store_format: StoreFormat,
-    /// Specify the path to a directory containing the ledger. Overrides the default path (also for
-    /// dev).
+    /// Specify the path to a directory containing the ledger. Overrides the default path.
     #[clap(long = "storage_path")]
     pub storage_path: Option<PathBuf>,
 }
@@ -116,20 +117,11 @@ impl Execute {
     /// Construct and process the execution transaction.
     fn construct_execution<N: Network>(&self) -> Result<String> {
         // Specify the query
-        let query = Query::<N, BlockMemory<N>>::from(&self.query);
+        let query = Query::<N, BlockMemory<N>>::from(&self.endpoint);
         let is_static_query = matches!(query, Query::STATIC(_));
 
         // Retrieve the private key.
-        let key_str = if let Some(private_key) = self.private_key.clone() {
-            private_key
-        } else if let Some(private_key_file) = self.private_key_file.clone() {
-            let path = private_key_file.parse::<PathBuf>().map_err(|e| anyhow!("Invalid path - {e}"))?;
-            std::fs::read_to_string(path).with_context(|| "Failed to read private key from disk")?.trim().to_string()
-        } else {
-            unreachable!();
-        };
-
-        let private_key = PrivateKey::from_str(&key_str).with_context(|| "Failed to parse private key")?;
+        let private_key = parse_private_key(self.private_key.clone(), self.private_key_file.clone())?;
 
         // Retrieve the program ID.
         let program_id = ProgramID::from_str(&self.program_id).with_context(|| "Failed to parse program ID")?;
@@ -160,7 +152,7 @@ impl Execute {
 
             if !is_static_query {
                 // Load the program and it's imports into the process.
-                load_program(&self.query, &mut vm.process().write(), &program_id)?;
+                load_program(&self.endpoint, &mut vm.process().write(), &program_id)?;
             }
 
             // Prepare the fee.
@@ -186,7 +178,7 @@ impl Execute {
         if self.record.is_none() && !is_static_query {
             // Fetch the public balance.
             let address = Address::try_from(&private_key)?;
-            let public_balance = Developer::get_public_balance(&address, &self.query)?;
+            let public_balance = Developer::get_public_balance(&address, &self.endpoint)?;
 
             // Check if the public balance is sufficient.
             let storage_cost = transaction
@@ -213,7 +205,9 @@ impl Execute {
 
         // Determine if the transaction should be broadcast, stored, or displayed to the user.
         Developer::handle_transaction(
-            &self.broadcast,
+            &self.endpoint,
+            self.network,
+            self.broadcast,
             self.dry_run,
             &self.store,
             self.store_format,
@@ -264,8 +258,7 @@ mod tests {
             "execute",
             "--private-key",
             "PRIVATE_KEY",
-            "--query",
-            "QUERY",
+            "--endpoint=ENDPOINT",
             "--priority-fee",
             "77",
             "--record",
@@ -281,7 +274,7 @@ mod tests {
         if let Command::Developer(Developer::Execute(execute)) = cli.command {
             assert_eq!(execute.network, 0);
             assert_eq!(execute.private_key, Some("PRIVATE_KEY".to_string()));
-            assert_eq!(execute.query, "QUERY");
+            assert_eq!(execute.endpoint, "ENDPOINT");
             assert_eq!(execute.priority_fee, Some(77));
             assert_eq!(execute.record, Some("RECORD".into()));
             assert_eq!(execute.program_id, "hello.aleo".to_string());
@@ -302,8 +295,7 @@ mod tests {
             "execute",
             "--private-key-file",
             "PRIVATE_KEY_FILE",
-            "--query",
-            "QUERY",
+            "--endpoint=ENDPOINT",
             "--priority-fee",
             "77",
             "--record",
@@ -319,7 +311,7 @@ mod tests {
         if let Command::Developer(Developer::Execute(execute)) = cli.command {
             assert_eq!(execute.network, 0);
             assert_eq!(execute.private_key_file, Some("PRIVATE_KEY_FILE".to_string()));
-            assert_eq!(execute.query, "QUERY");
+            assert_eq!(execute.endpoint, "ENDPOINT");
             assert_eq!(execute.priority_fee, Some(77));
             assert_eq!(execute.record, Some("RECORD".into()));
             assert_eq!(execute.program_id, "hello.aleo".to_string());
@@ -342,8 +334,7 @@ mod tests {
             "PRIVATE_KEY",
             "--private-key-file",
             "PRIVATE_KEY_FILE",
-            "--query",
-            "QUERY",
+            "--endpoint=ENDPOINT",
             "--priority-fee",
             "77",
             "--record",
@@ -365,8 +356,7 @@ mod tests {
             "snarkos",
             "developer",
             "execute",
-            "--query",
-            "QUERY",
+            "--endpoint=ENDPOINT",
             "--priority-fee",
             "77",
             "--record",

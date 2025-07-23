@@ -14,14 +14,16 @@
 // limitations under the License.
 
 use super::Developer;
-use crate::commands::StoreFormat;
+use crate::{
+    commands::StoreFormat,
+    helpers::args::{network_id_parser, parse_private_key},
+};
 use snarkvm::{
     console::network::{CanaryV0, MainnetV0, Network, TestnetV0},
     ledger::store::helpers::memory::BlockMemory,
     prelude::{
         Address,
         Locator,
-        PrivateKey,
         VM,
         Value,
         query::Query,
@@ -37,10 +39,14 @@ use zeroize::Zeroize;
 
 /// Executes the `transfer_private` function in the `credits.aleo` program.
 #[derive(Debug, Parser)]
+#[clap(
+    group(clap::ArgGroup::new("mode").required(true).multiple(false))
+)]
 pub struct TransferPrivate {
-    /// Specify the network to create a `transfer_private` for.
-    #[clap(default_value = "0", long = "network")]
-    pub network: u16,
+    /// Specify the network to create an execution for.
+    /// [options: 0 = mainnet, 1 = testnet, 2 = canary]
+    #[clap(long, default_value_t=MainnetV0::ID, long, value_parser = network_id_parser())]
+    network: u16,
     /// The input record used to craft the transfer.
     #[clap(long)]
     input_record: String,
@@ -50,12 +56,15 @@ pub struct TransferPrivate {
     /// The number of microcredits to transfer.
     #[clap(long)]
     amount: u64,
-    /// The private key used to generate the execution.
+    /// The private key used to generate the deployment.
+    #[clap(short = 'p', long, group = "key")]
+    private_key: Option<String>,
+    /// Specify the path to a file containing the account private key of the node
+    #[clap(long, group = "key")]
+    private_key_file: Option<String>,
+    /// The endpoint to query node state from and broadcast to (if set to broadcast).
     #[clap(short, long)]
-    private_key: String,
-    /// The endpoint to query node state from.
-    #[clap(short, long)]
-    query: String,
+    endpoint: String,
     /// The priority fee in microcredits.
     #[clap(long)]
     priority_fee: u64,
@@ -63,20 +72,19 @@ pub struct TransferPrivate {
     #[clap(long)]
     fee_record: String,
     /// The endpoint used to broadcast the generated transaction.
-    #[clap(short, long, conflicts_with = "dry_run")]
-    broadcast: Option<String>,
+    #[clap(short, long, group = "mode")]
+    broadcast: bool,
     /// Performs a dry-run of transaction generation.
-    #[clap(short, long, conflicts_with = "broadcast")]
+    #[clap(short, long, group = "mode")]
     dry_run: bool,
     /// Store generated deployment transaction to a local file.
-    #[clap(long)]
+    #[clap(long, group = "mode")]
     store: Option<String>,
     /// If --store is specified, the format in which the transaction should be stored : string or
     /// bytes, by default : bytes.
-    #[clap(long, value_enum, default_value_t = StoreFormat::Bytes)]
+    #[clap(long, value_enum, default_value_t = StoreFormat::Bytes, requires="store")]
     store_format: StoreFormat,
-    /// Specify the path to a directory containing the ledger. Overrides the default path (also for
-    /// dev).
+    /// Specify the path to a directory containing the ledger. Overrides the default path.
     #[clap(long = "storage_path")]
     pub storage_path: Option<PathBuf>,
 }
@@ -92,11 +100,6 @@ impl TransferPrivate {
     /// Creates an Aleo transfer with the provided inputs.
     #[allow(clippy::format_in_format_args)]
     pub fn parse(self) -> Result<String> {
-        // Ensure that the user has specified an action.
-        if !self.dry_run && self.broadcast.is_none() && self.store.is_none() {
-            bail!("❌ Please specify one of the following actions: --broadcast, --dry-run, --store");
-        }
-
         // Construct the transfer for the specified network.
         match self.network {
             MainnetV0::ID => self.construct_transfer_private::<MainnetV0>(),
@@ -109,14 +112,13 @@ impl TransferPrivate {
     /// Construct and process the `transfer_private` transaction.
     fn construct_transfer_private<N: Network>(&self) -> Result<String> {
         // Specify the query
-        let query = Query::<N, BlockMemory<N>>::from(&self.query);
+        let query = Query::<N, BlockMemory<N>>::from(&self.endpoint);
 
         // Retrieve the recipient.
         let recipient = Address::<N>::from_str(&self.recipient)?;
 
         // Retrieve the private key.
-        let private_key = PrivateKey::from_str(&self.private_key)?;
-
+        let private_key = parse_private_key(self.private_key.clone(), self.private_key_file.clone())?;
         println!("📦 Creating private transfer of {} microcredits to {}...\n", self.amount, recipient);
 
         // Generate the transfer_private transaction.
@@ -162,7 +164,9 @@ impl TransferPrivate {
 
         // Determine if the transaction should be broadcast, stored, or displayed to the user.
         Developer::handle_transaction(
-            &self.broadcast,
+            &self.endpoint,
+            self.network,
+            self.broadcast,
             self.dry_run,
             &self.store,
             self.store_format,

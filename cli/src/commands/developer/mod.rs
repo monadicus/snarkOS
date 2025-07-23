@@ -35,14 +35,17 @@ use snarkvm::{
     package::Package,
     prelude::{
         Address,
+        CanaryV0,
         Ciphertext,
         Identifier,
         Literal,
+        MainnetV0,
         Plaintext,
         PrivateKey,
         Program,
         ProgramID,
         Record,
+        TestnetV0,
         ToBytes,
         Value,
         ViewKey,
@@ -178,8 +181,11 @@ impl Developer {
     }
 
     /// Determine if the transaction should be broadcast or displayed to user.
+    #[allow(clippy::too_many_arguments)]
     fn handle_transaction<N: Network>(
-        broadcast: &Option<String>,
+        endpoint: &str,
+        network: u16,
+        broadcast: bool,
         dry_run: bool,
         store: &Option<String>,
         store_format: StoreFormat,
@@ -220,10 +226,17 @@ impl Developer {
         };
 
         // Determine if the transaction should be broadcast to the network.
-        if let Some(endpoint) = broadcast {
-            // Send the deployment request to the local development node.
-            // (deserializing the returned string as json removes the quotes)
-            let result: Result<String, _> = http_post_json(endpoint, &transaction);
+        if broadcast {
+            let network = match network {
+                CanaryV0::ID => "canary",
+                TestnetV0::ID => "testnet",
+                MainnetV0::ID => "mainnet",
+                _ => bail!("Invalid network id: {network}"),
+            };
+
+            let endpoint = format!("{endpoint}/{network}/transaction/broadcast");
+
+            let result: Result<String, _> = http_post_json(&endpoint, &transaction);
 
             match result {
                 Ok(response_string) => {
