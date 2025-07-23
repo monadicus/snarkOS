@@ -128,6 +128,21 @@ impl Deploy {
 
         // Generate the deployment
         let mut deployment = package.deploy::<A>(None)?;
+
+        // Get the consensus version.
+        let consensus_version = N::CONSENSUS_VERSION(query.current_block_height()?)?;
+
+        // If the consensus version is less than `V9`, unset the program checksum and owner in the deployment.
+        // Otherwise, set it to the appropriate values.
+        if consensus_version < ConsensusVersion::V9 {
+            deployment.set_program_checksum_raw(None);
+            deployment.set_program_owner_raw(None);
+        } else {
+            deployment.set_program_checksum_raw(Some(package.program().to_checksum()));
+            deployment.set_program_owner_raw(Some(Address::try_from(&private_key)?));
+        };
+
+        // Compute the deployment ID.
         let deployment_id = deployment.to_deployment_id()?;
 
         // Generate the deployment transaction.
@@ -175,19 +190,6 @@ impl Deploy {
             };
             // Construct the owner.
             let owner = ProgramOwner::new(&private_key, deployment_id, rng)?;
-
-            // Get the consensus version.
-            let consensus_version = N::CONSENSUS_VERSION(query.current_block_height()?)?;
-
-            // If the consensus version is less than `V9`, unset the program checksum and owner in the deployment.
-            // Otherwise, set it to the appropriate values.
-            if consensus_version < ConsensusVersion::V9 {
-                deployment.set_program_checksum_raw(None);
-                deployment.set_program_owner_raw(None);
-            } else {
-                deployment.set_program_checksum_raw(Some(package.program().to_checksum()));
-                deployment.set_program_owner_raw(Some(Address::try_from(&private_key)?));
-            };
 
             // Create a new transaction.
             Transaction::from_deployment(owner, deployment, fee)?
