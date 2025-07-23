@@ -29,6 +29,8 @@ use std::collections::HashMap;
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
+use version::VersionInfo;
+
 /// The `get_blocks` query object.
 #[derive(Deserialize, Serialize)]
 pub(crate) struct BlockRange {
@@ -70,6 +72,11 @@ struct SyncStatus<'a> {
 }
 
 impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
+    // GET /<network>/version
+    pub(crate) async fn get_version() -> ErasedJson {
+        ErasedJson::pretty(VersionInfo::get())
+    }
+
     // Get /<network>/consensus_version
     pub(crate) async fn get_consensus_version(State(rest): State<Self>) -> Result<ErasedJson, RestError> {
         Ok(ErasedJson::pretty(N::CONSENSUS_VERSION(rest.ledger.latest_height())? as u16))
@@ -322,7 +329,7 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
                 .transaction_store()
                 .deployment_store()
                 .get_deployment(tid)?
-                .and_then(|deployment| deployment.program_owner().copied()),
+                .and_then(|deployment| deployment.program_owner()),
             None => None,
         };
         Ok(ErasedJson::pretty(json!({
