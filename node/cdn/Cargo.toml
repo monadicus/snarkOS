@@ -64,6 +64,9 @@ features = [ "preserve_order" ]
 workspace = true
 features = [ "console", "ledger" ]
 
+[dependencies.http]
+workspace = true
+
 [dependencies.tokio]
 workspace = true
 features = [ "rt" ]

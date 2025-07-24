@@ -123,6 +123,9 @@ version = "1.28"
 [workspace.dependencies.tokio-util]
 version = "0.7"
 
+[workspace.dependencies.http]
+version = "1"
+
 [workspace.dependencies.itertools]
 version = "0.14"
 

@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![allow(clippy::type_complexity)]
+use crate::helpers::args::{network_id_parser, prepare_endpoint};
 
 use snarkos_node_cdn::CDN_BASE_URL;
 use snarkvm::{
@@ -21,7 +21,7 @@ use snarkvm::{
     prelude::{Ciphertext, Field, FromBytes, Plaintext, PrivateKey, Record, ViewKey, block::Block},
 };
 
-use anyhow::{Result, bail, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use clap::Parser;
 #[cfg(feature = "locktick")]
 use locktick::parking_lot::RwLock;
@@ -32,16 +32,18 @@ use std::{
     str::FromStr,
     sync::Arc,
 };
+use ureq::http::Uri;
 use zeroize::Zeroize;
 
 const MAX_BLOCK_RANGE: u32 = 50;
 
 /// Scan the snarkOS node for records.
-#[derive(Debug, Parser, Zeroize)]
+#[derive(Debug, Parser)]
 pub struct Scan {
-    /// Specify the network to scan.
-    #[clap(default_value = "0", long = "network")]
-    pub network: u16,
+    /// Specify the network to create a deployment for.
+    /// [options: 0 = mainnet, 1 = testnet, 2 = canary]
+    #[clap(long, default_value_t=MainnetV0::ID, long, value_parser = network_id_parser())]
+    network: u16,
 
     /// An optional private key scan for unspent records.
     #[clap(short, long)]
@@ -65,11 +67,20 @@ pub struct Scan {
 
     /// The endpoint to scan blocks from.
     #[clap(long, default_value = "https://api.explorer.provable.com/v1")]
-    endpoint: String,
+    endpoint: Uri,
+}
+
+impl Drop for Scan {
+    /// Zeroize the private key when the `Execute` struct goes out of scope.
+    fn drop(&mut self) {
+        if let Some(mut pk) = self.private_key.take() {
+            pk.zeroize()
+        }
+    }
 }
 
 impl Scan {
-    pub fn parse(self) -> Result<String> {
+    pub fn execute(self) -> Result<String> {
         // Scan for records on the given network.
         match self.network {
             MainnetV0::ID => self.scan_records::<MainnetV0>(),
@@ -80,15 +91,17 @@ impl Scan {
     }
 
     /// Scan the network for records.
-    fn scan_records<N: Network>(&self) -> Result<String> {
+    fn scan_records<N: Network>(self) -> Result<String> {
+        let endpoint = prepare_endpoint(self.endpoint.clone())?;
+
         // Derive the view key and optional private key.
         let (private_key, view_key) = self.parse_account::<N>()?;
 
         // Find the start and end height to scan.
-        let (start_height, end_height) = self.parse_block_range()?;
+        let (start_height, end_height) = self.parse_block_range(&endpoint)?;
 
         // Fetch the records from the network.
-        let records = Self::fetch_records::<N>(private_key, &view_key, &self.endpoint, start_height, end_height)?;
+        let records = Self::fetch_records::<N>(private_key, &view_key, &endpoint, start_height, end_height)?;
 
         // Output the decrypted records associated with the view key.
         if records.is_empty() {
@@ -134,7 +147,7 @@ impl Scan {
     }
 
     /// Returns the `start` and `end` blocks to scan.
-    fn parse_block_range(&self) -> Result<(u32, u32)> {
+    fn parse_block_range(&self, endpoint: &Uri) -> Result<(u32, u32)> {
         // Get the network name.
         let network = match self.network {
             MainnetV0::ID => "mainnet",
@@ -151,7 +164,7 @@ impl Scan {
             }
             (Some(start), None, None) => {
                 // Request the latest block height from the endpoint.
-                let endpoint = format!("{}/{network}/block/height/latest", self.endpoint);
+                let endpoint = format!("{endpoint}/{network}/block/height/latest");
                 let latest_height = u32::from_str(&ureq::get(&endpoint).call()?.into_body().read_to_string()?)?;
 
                 // Print a warning message if the user is attempting to scan the whole chain.
@@ -164,7 +177,7 @@ impl Scan {
             (None, Some(end), None) => Ok((0, end)),
             (None, None, Some(last)) => {
                 // Request the latest block height from the endpoint.
-                let endpoint = format!("{}/{network}/block/height/latest", self.endpoint);
+                let endpoint = format!("{endpoint}/{network}/block/height/latest");
                 let latest_height = u32::from_str(&ureq::get(&endpoint).call()?.into_body().read_to_string()?)?;
 
                 Ok((latest_height.saturating_sub(last), latest_height))
@@ -175,20 +188,23 @@ impl Scan {
     }
 
     /// Returns the CDN to prefetch initial blocks from, from the given configurations.
-    fn parse_cdn<N: Network>() -> Result<String> {
-        match N::ID {
-            MainnetV0::ID => Ok(format!("{CDN_BASE_URL}/mainnet")),
-            TestnetV0::ID => Ok(format!("{CDN_BASE_URL}/testnet")),
-            CanaryV0::ID => Ok(format!("{CDN_BASE_URL}/canary")),
+    fn parse_cdn<N: Network>() -> Result<Uri> {
+        let network_name = match N::ID {
+            MainnetV0::ID => "mainnet",
+            TestnetV0::ID => "testnet",
+            CanaryV0::ID => "canary",
             _ => bail!("Unknown network ID ({})", N::ID),
-        }
+        };
+
+        // This should always succeed as the base URL is hardcoded.
+        Uri::try_from(format!("{CDN_BASE_URL}/{network_name}")).with_context(|| "Unexpected error")
     }
 
     /// Fetch owned ciphertext records from the endpoint.
     fn fetch_records<N: Network>(
         private_key: Option<PrivateKey<N>>,
         view_key: &ViewKey<N>,
-        endpoint: &str,
+        endpoint: &Uri,
         start_height: u32,
         end_height: u32,
     ) -> Result<Vec<Record<N, Plaintext<N>>>> {
@@ -234,8 +250,8 @@ impl Scan {
                 Self::scan_from_cdn(
                     start_height,
                     end_height,
-                    cdn_endpoint,
-                    endpoint.to_string(),
+                    &cdn_endpoint,
+                    endpoint,
                     private_key,
                     *view_key,
                     address_x_coordinate,
@@ -265,7 +281,8 @@ impl Scan {
 
             // Scan the blocks for owned records.
             for block in &blocks {
-                Self::scan_block(block, endpoint, private_key, view_key, &address_x_coordinate, records.clone())?;
+                Self::scan_block(block, endpoint, private_key, view_key, &address_x_coordinate, records.clone())
+                    .with_context(|| format!("Failed to parse block {}", block.hash()))?;
             }
 
             request_start = request_start.saturating_add(num_blocks_to_request);
@@ -280,12 +297,12 @@ impl Scan {
     }
 
     /// Scan the blocks from the CDN.
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
     fn scan_from_cdn<N: Network>(
         start_height: u32,
         end_height: u32,
-        cdn: String,
-        endpoint: String,
+        cdn: &Uri,
+        endpoint: &Uri,
         private_key: Option<PrivateKey<N>>,
         view_key: ViewKey<N>,
         address_x_coordinate: Field<N>,
@@ -304,14 +321,13 @@ impl Scan {
         // Create a placeholder shutdown flag.
         let _shutdown = Default::default();
 
+        // Copy endpoint for background task.
+        let endpoint = endpoint.clone();
+
         // Scan the blocks via the CDN.
         rt.block_on(async move {
-            let result = snarkos_node_cdn::load_blocks(
-                &cdn,
-                cdn_request_start,
-                Some(cdn_request_end),
-                _shutdown,
-                move |block| {
+            let result =
+                snarkos_node_cdn::load_blocks(cdn, cdn_request_start, Some(cdn_request_end), _shutdown, move |block| {
                     // Check if the block is within the requested range.
                     if block.height() < start_height || block.height() > end_height {
                         return Ok(());
@@ -334,9 +350,8 @@ impl Scan {
                     )?;
 
                     Ok(())
-                },
-            )
-            .await;
+                })
+                .await;
             if let Err(error) = result {
                 eprintln!("Error loading blocks from CDN - (height, error):{error:?}");
             }
@@ -346,9 +361,10 @@ impl Scan {
     }
 
     /// Scan a block for owned records.
+    #[allow(clippy::type_complexity)]
     fn scan_block<N: Network>(
         block: &Block<N>,
-        endpoint: &str,
+        endpoint: &Uri,
         private_key: Option<PrivateKey<N>>,
         view_key: &ViewKey<N>,
         address_x_coordinate: &Field<N>,
@@ -359,7 +375,8 @@ impl Scan {
             if ciphertext_record.is_owner_with_address_x_coordinate(view_key, address_x_coordinate) {
                 // Decrypt and optionally filter the records.
                 if let Some(record) =
-                    Self::decrypt_record(private_key, view_key, endpoint, *commitment, ciphertext_record)?
+                    Self::decrypt_record(private_key, view_key, endpoint, *commitment, ciphertext_record)
+                        .with_context(|| "Failed to decrypt record")?
                 {
                     records.write().push(record);
                 }
@@ -373,7 +390,7 @@ impl Scan {
     fn decrypt_record<N: Network>(
         private_key: Option<PrivateKey<N>>,
         view_key: &ViewKey<N>,
-        endpoint: &str,
+        endpoint: &Uri,
         commitment: Field<N>,
         ciphertext_record: &Record<N, Ciphertext<N>>,
     ) -> Result<Option<Record<N, Plaintext<N>>>> {
@@ -442,7 +459,7 @@ mod tests {
                 "--last",
                 "10",
                 "--endpoint",
-                "",
+                "localhost",
             ]
             .iter(),
         )
@@ -459,7 +476,7 @@ mod tests {
                 "--last",
                 "10",
                 "--endpoint",
-                "",
+                "localhost",
             ]
             .iter(),
         )
@@ -468,17 +485,21 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_block_range() {
-        let config =
-            Scan::try_parse_from(["snarkos", "--view-key", "", "--start", "0", "--end", "10", "--endpoint", ""].iter())
-                .unwrap();
-        assert!(config.parse_block_range().is_ok());
+    fn test_parse_block_range() -> Result<()> {
+        let config = Scan::try_parse_from(
+            ["snarkos", "--view-key", "", "--start", "0", "--end", "10", "--endpoint", "localhost"].iter(),
+        )?;
+
+        let endpoint = Uri::default();
+        config.parse_block_range(&endpoint).with_context(|| "Failed to parse block range")?;
 
         // `start` height can't be greater than `end` height.
-        let config =
-            Scan::try_parse_from(["snarkos", "--view-key", "", "--start", "10", "--end", "5", "--endpoint", ""].iter())
-                .unwrap();
-        assert!(config.parse_block_range().is_err());
+        let config = Scan::try_parse_from(
+            ["snarkos", "--view-key", "", "--start", "10", "--end", "5", "--endpoint", "localhost"].iter(),
+        )?;
+
+        let endpoint = Uri::default();
+        assert!(config.parse_block_range(&endpoint).is_err());
 
         // `last` conflicts with `start`
         assert!(
@@ -501,5 +522,7 @@ mod tests {
             )
             .is_err()
         );
+
+        Ok(())
     }
 }

@@ -14,7 +14,10 @@
 // limitations under the License.
 
 use super::Developer;
-use crate::{commands::StoreFormat, helpers::args};
+use crate::{
+    commands::StoreFormat,
+    helpers::args::{network_id_parser, parse_private_key, prepare_endpoint},
+};
 
 use snarkvm::{
     circuit::{Aleo, AleoCanaryV0, AleoTestnetV0, AleoV0},
@@ -39,6 +42,7 @@ use clap::Parser;
 use colored::Colorize;
 use snarkvm::prelude::{Address, ConsensusVersion};
 use std::{path::PathBuf, str::FromStr};
+use ureq::http::Uri;
 use zeroize::Zeroize;
 
 use anyhow::Context;
@@ -54,7 +58,7 @@ pub struct Deploy {
     program_id: String,
     /// Specify the network to create a deployment for.
     /// [options: 0 = mainnet, 1 = testnet, 2 = canary]
-    #[clap(long, default_value_t=MainnetV0::ID, long, value_parser = args::network_id_parser())]
+    #[clap(long, default_value_t=MainnetV0::ID, long, value_parser = network_id_parser())]
     network: u16,
     /// A path to a directory containing a manifest file. Defaults to the current working directory.
     #[clap(long)]
@@ -67,7 +71,7 @@ pub struct Deploy {
     private_key_file: Option<String>,
     /// The endpoint to query node state from and broadcast to (if set to broadcast).
     #[clap(short, long)]
-    endpoint: String,
+    endpoint: Uri,
     /// The priority fee in microcredits.
     #[clap(long, default_value_t = 0)]
     priority_fee: u64,
@@ -101,7 +105,7 @@ impl Drop for Deploy {
 
 impl Deploy {
     /// Deploys an Aleo program.
-    pub fn parse(self) -> Result<String> {
+    pub fn execute(self) -> Result<String> {
         // Construct the deployment for the specified network.
         match self.network {
             MainnetV0::ID => self.construct_deployment::<MainnetV0, AleoV0>(),
@@ -113,12 +117,14 @@ impl Deploy {
     }
 
     /// Construct and process the deployment transaction.
-    fn construct_deployment<N: Network, A: Aleo<Network = N, BaseField = N::Field>>(&self) -> Result<String> {
+    fn construct_deployment<N: Network, A: Aleo<Network = N, BaseField = N::Field>>(self) -> Result<String> {
+        let endpoint = prepare_endpoint(self.endpoint.clone())?;
+
         // Specify the query
-        let query = Query::<N, BlockMemory<N>>::from(&self.endpoint);
+        let query = Query::<N, BlockMemory<N>>::from(endpoint.to_string());
 
         // Retrieve the private key.
-        let private_key = args::parse_private_key(self.private_key.clone(), self.private_key_file.clone())?;
+        let private_key = parse_private_key(self.private_key.clone(), self.private_key_file.clone())?;
 
         // Retrieve the program ID.
         let program_id = ProgramID::from_str(&self.program_id).with_context(|| "Failed to parse program ID")?;
@@ -133,7 +139,8 @@ impl Deploy {
         let mut deployment = package.deploy::<A>(None).with_context(|| "Failed to generate the deployment")?;
 
         // Get the consensus version.
-        let consensus_version = N::CONSENSUS_VERSION(query.current_block_height()?)?;
+        let consensus_version =
+            N::CONSENSUS_VERSION(query.current_block_height().with_context(|| "Failed to query consensus height")?)?;
 
         // If the consensus version is less than `V9`, unset the program checksum and owner in the deployment.
         // Otherwise, set it to the appropriate values.
@@ -146,7 +153,7 @@ impl Deploy {
         };
 
         // Compute the deployment ID.
-        let deployment_id = deployment.to_deployment_id()?;
+        let deployment_id = deployment.to_deployment_id().with_context(|| "Failed to compute deployment ID")?;
 
         // Generate the deployment transaction.
         let transaction = {
@@ -205,7 +212,7 @@ impl Deploy {
 
         // Determine if the transaction should be broadcast, stored, or displayed to the user.
         Developer::handle_transaction(
-            &self.endpoint,
+            &endpoint,
             self.network,
             self.broadcast,
             self.dry_run,
@@ -256,20 +263,23 @@ mod tests {
         // Use try parse here, as parse calls `exit()`.
         let cli = CLI::try_parse_from(arg_vec)?;
 
-        if let Command::Developer(Developer::Deploy(deploy)) = cli.command {
-            assert_eq!(deploy.network, 0);
-            assert_eq!(deploy.program_id, "hello.aleo");
-            assert_eq!(deploy.private_key, Some("PRIVATE_KEY".to_string()));
-            assert_eq!(deploy.private_key_file, None);
-            assert_eq!(deploy.endpoint, "ENDPOINT");
-            assert!(deploy.dry_run);
-            assert!(!deploy.broadcast);
-            assert_eq!(deploy.store, None);
-            assert_eq!(deploy.priority_fee, 77);
-            assert_eq!(deploy.record, Some("RECORD".to_string()));
-        } else {
+        let Command::Developer(developer) = cli.command else {
             bail!("Unexpected result of clap parsing!");
-        }
+        };
+        let Developer::Deploy(deploy) = *developer else {
+            bail!("Unexpected result of clap parsing!");
+        };
+
+        assert_eq!(deploy.network, 0);
+        assert_eq!(deploy.program_id, "hello.aleo");
+        assert_eq!(deploy.private_key, Some("PRIVATE_KEY".to_string()));
+        assert_eq!(deploy.private_key_file, None);
+        assert_eq!(deploy.endpoint, "ENDPOINT");
+        assert!(deploy.dry_run);
+        assert!(!deploy.broadcast);
+        assert_eq!(deploy.store, None);
+        assert_eq!(deploy.priority_fee, 77);
+        assert_eq!(deploy.record, Some("RECORD".to_string()));
 
         Ok(())
     }

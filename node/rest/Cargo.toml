@@ -43,7 +43,7 @@ workspace = true
 features = [ "erased-json", "typed-header" ]
 
 [dependencies.http]
-version = "1.0"
+workspace = true
 
 [dependencies.indexmap]
 workspace = true

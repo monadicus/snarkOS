@@ -34,7 +34,7 @@ pub struct Update {
 
 impl Update {
     /// Update snarkOS.
-    pub fn parse(self) -> Result<String> {
+    pub fn execute(self) -> Result<String> {
         match self.list {
             true => match Updater::show_available_releases() {
                 Ok(output) => Ok(output),

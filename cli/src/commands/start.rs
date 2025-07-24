@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::helpers::args;
+use crate::helpers::{args::network_id_parser, network_id_str};
 
 use snarkos_account::Account;
 use snarkos_display::Display;
@@ -23,7 +23,6 @@ use snarkos_node::{
     rest::DEFAULT_REST_PORT,
     router::{DEFAULT_NODE_PORT, messages::NodeType},
 };
-use snarkos_node_cdn::CDN_BASE_URL;
 use snarkvm::{
     console::{
         account::{Address, PrivateKey},
@@ -56,6 +55,7 @@ use std::{
     sync::{Arc, atomic::AtomicBool},
 };
 use tokio::runtime::{self, Runtime};
+use ureq::http;
 
 /// The recommended minimum number of 'open files' limit for a validator.
 /// Validators should be able to handle at least 1000 concurrent connections, each requiring 2 sockets.
@@ -104,7 +104,7 @@ impl FromStr for BondedBalances {
 pub struct Start {
     /// Specify the network ID of this node
     /// [options: 0 = mainnet, 1 = testnet, 2 = canary]
-    #[clap(long, default_value_t=MainnetV0::ID, long, value_parser = args::network_id_parser())]
+    #[clap(long, default_value_t=MainnetV0::ID, long, value_parser = network_id_parser())]
     pub network: u16,
 
     /// Start the node as a prover.
@@ -218,7 +218,7 @@ pub struct Start {
 
     /// Enables the node to prefetch initial blocks from a CDN
     #[clap(long, conflicts_with = "nocdn")]
-    pub cdn: Option<String>,
+    pub cdn: Option<http::Uri>,
 
     /// If the flag is set, the node will not prefetch from a CDN
     #[clap(long)]
@@ -249,7 +249,7 @@ pub struct Start {
 
 impl Start {
     /// Starts the snarkOS node.
-    pub fn parse(self) -> Result<String> {
+    pub fn execute(self) -> Result<String> {
         // Prepare the shutdown flag.
         let shutdown: Arc<AtomicBool> = Default::default();
 
@@ -363,7 +363,7 @@ impl Start {
     }
 
     /// Returns the CDN to prefetch initial blocks from, from the given configurations.
-    fn parse_cdn<N: Network>(&self) -> Option<String> {
+    fn parse_cdn<N: Network>(&self) -> Result<Option<http::Uri>> {
         // Determine if the node type is not declared.
         let is_no_node_type = !(self.validator || self.prover || self.client);
 
@@ -373,24 +373,22 @@ impl Start {
         //  3. The node is a prover (no need to sync).
         //  4. The node type is not declared (defaults to client) (no need to sync).
         if self.dev.is_some() || self.nocdn || self.prover || is_no_node_type {
-            None
+            Ok(None)
         }
         // Enable the CDN otherwise.
         else {
             // Determine the CDN URL.
             match &self.cdn {
                 // Use the provided CDN URL if it is not empty.
-                Some(cdn) => match cdn.is_empty() {
-                    true => None,
-                    false => Some(cdn.clone()),
+                Some(cdn) => match cdn.to_string().is_empty() {
+                    true => Ok(None),
+                    false => Ok(Some(cdn.clone())),
                 },
                 // If no CDN URL is provided, determine the CDN URL based on the network ID.
-                None => match N::ID {
-                    MainnetV0::ID => Some(format!("{CDN_BASE_URL}/mainnet")),
-                    TestnetV0::ID => Some(format!("{CDN_BASE_URL}/testnet")),
-                    CanaryV0::ID => Some(format!("{CDN_BASE_URL}/canary")),
-                    _ => None,
-                },
+                None => {
+                    let uri = format!("{}/{}", snarkos_node_cdn::CDN_BASE_URL, network_id_str::<N>()?);
+                    Ok(Some(http::Uri::try_from(&uri).with_context(|| "Unexpected error")?))
+                }
             }
         }
     }
@@ -629,7 +627,7 @@ impl Start {
         self.parse_development(&mut trusted_peers, &mut trusted_validators);
 
         // Parse the CDN.
-        let cdn = self.parse_cdn::<N>();
+        let cdn = self.parse_cdn::<N>().with_context(|| "Failed to parse given CDN URL")?;
 
         // Parse the genesis block.
         let genesis = self.parse_genesis::<N>()?;
@@ -893,6 +891,8 @@ mod tests {
     use crate::commands::{CLI, Command};
     use snarkvm::prelude::MainnetV0;
 
+    use ureq::http;
+
     type CurrentNetwork = MainnetV0;
 
     #[test]
@@ -945,98 +945,94 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_cdn() {
+    fn test_parse_cdn() -> Result<()> {
         // Validator (Prod)
         let config = Start::try_parse_from(["snarkos", "--validator", "--private-key", "aleo1xx"].iter()).unwrap();
-        assert!(config.parse_cdn::<CurrentNetwork>().is_some());
+        assert!(config.parse_cdn::<CurrentNetwork>()?.is_some());
         let config =
             Start::try_parse_from(["snarkos", "--validator", "--private-key", "aleo1xx", "--cdn", "url"].iter())
                 .unwrap();
-        assert!(config.parse_cdn::<CurrentNetwork>().is_some());
-        let config =
-            Start::try_parse_from(["snarkos", "--validator", "--private-key", "aleo1xx", "--cdn", ""].iter()).unwrap();
-        assert!(config.parse_cdn::<CurrentNetwork>().is_none());
+        assert!(config.parse_cdn::<CurrentNetwork>()?.is_some());
+        let config = Start::try_parse_from(["snarkos", "--validator", "--private-key", "aleo1xx", "--nocdn"].iter())?;
+        assert!(config.parse_cdn::<CurrentNetwork>()?.is_none());
 
         // Validator (Dev)
         let config =
             Start::try_parse_from(["snarkos", "--dev", "0", "--validator", "--private-key", "aleo1xx"].iter()).unwrap();
-        assert!(config.parse_cdn::<CurrentNetwork>().is_none());
+        assert!(config.parse_cdn::<CurrentNetwork>()?.is_none());
         let config = Start::try_parse_from(
             ["snarkos", "--dev", "0", "--validator", "--private-key", "aleo1xx", "--cdn", "url"].iter(),
         )
         .unwrap();
-        assert!(config.parse_cdn::<CurrentNetwork>().is_none());
+        assert!(config.parse_cdn::<CurrentNetwork>()?.is_none());
         let config = Start::try_parse_from(
-            ["snarkos", "--dev", "0", "--validator", "--private-key", "aleo1xx", "--cdn", ""].iter(),
-        )
-        .unwrap();
-        assert!(config.parse_cdn::<CurrentNetwork>().is_none());
+            ["snarkos", "--dev", "0", "--validator", "--private-key", "aleo1xx", "--nocdn"].iter(),
+        )?;
+        assert!(config.parse_cdn::<CurrentNetwork>()?.is_none());
 
         // Prover (Prod)
-        let config = Start::try_parse_from(["snarkos", "--prover", "--private-key", "aleo1xx"].iter()).unwrap();
-        assert!(config.parse_cdn::<CurrentNetwork>().is_none());
-        let config =
-            Start::try_parse_from(["snarkos", "--prover", "--private-key", "aleo1xx", "--cdn", "url"].iter()).unwrap();
-        assert!(config.parse_cdn::<CurrentNetwork>().is_none());
-        let config =
-            Start::try_parse_from(["snarkos", "--prover", "--private-key", "aleo1xx", "--cdn", ""].iter()).unwrap();
-        assert!(config.parse_cdn::<CurrentNetwork>().is_none());
+        let config = Start::try_parse_from(["snarkos", "--prover", "--private-key", "aleo1xx"].iter())?;
+        assert!(config.parse_cdn::<CurrentNetwork>()?.is_none());
+        let config = Start::try_parse_from(["snarkos", "--prover", "--private-key", "aleo1xx", "--cdn", "url"].iter())?;
+        assert!(config.parse_cdn::<CurrentNetwork>()?.is_none());
+        let config = Start::try_parse_from(["snarkos", "--prover", "--private-key", "aleo1xx", "--nocdn"].iter())?;
+        assert!(config.parse_cdn::<CurrentNetwork>()?.is_none());
 
         // Prover (Dev)
         let config =
             Start::try_parse_from(["snarkos", "--dev", "0", "--prover", "--private-key", "aleo1xx"].iter()).unwrap();
-        assert!(config.parse_cdn::<CurrentNetwork>().is_none());
+        assert!(config.parse_cdn::<CurrentNetwork>()?.is_none());
         let config = Start::try_parse_from(
             ["snarkos", "--dev", "0", "--prover", "--private-key", "aleo1xx", "--cdn", "url"].iter(),
         )
         .unwrap();
-        assert!(config.parse_cdn::<CurrentNetwork>().is_none());
-        let config = Start::try_parse_from(
-            ["snarkos", "--dev", "0", "--prover", "--private-key", "aleo1xx", "--cdn", ""].iter(),
-        )
-        .unwrap();
-        assert!(config.parse_cdn::<CurrentNetwork>().is_none());
+        assert!(config.parse_cdn::<CurrentNetwork>()?.is_none());
+        let config =
+            Start::try_parse_from(["snarkos", "--dev", "0", "--prover", "--private-key", "aleo1xx", "--nocdn"].iter())
+                .unwrap();
+        assert!(config.parse_cdn::<CurrentNetwork>()?.is_none());
 
         // Client (Prod)
         let config = Start::try_parse_from(["snarkos", "--client", "--private-key", "aleo1xx"].iter()).unwrap();
-        assert!(config.parse_cdn::<CurrentNetwork>().is_some());
+        assert!(config.parse_cdn::<CurrentNetwork>()?.is_some());
         let config =
             Start::try_parse_from(["snarkos", "--client", "--private-key", "aleo1xx", "--cdn", "url"].iter()).unwrap();
-        assert!(config.parse_cdn::<CurrentNetwork>().is_some());
+        assert!(config.parse_cdn::<CurrentNetwork>()?.is_some());
         let config =
-            Start::try_parse_from(["snarkos", "--client", "--private-key", "aleo1xx", "--cdn", ""].iter()).unwrap();
-        assert!(config.parse_cdn::<CurrentNetwork>().is_none());
+            Start::try_parse_from(["snarkos", "--client", "--private-key", "aleo1xx", "--nocdn"].iter()).unwrap();
+        assert!(config.parse_cdn::<CurrentNetwork>()?.is_none());
 
         // Client (Dev)
         let config =
             Start::try_parse_from(["snarkos", "--dev", "0", "--client", "--private-key", "aleo1xx"].iter()).unwrap();
-        assert!(config.parse_cdn::<CurrentNetwork>().is_none());
+        assert!(config.parse_cdn::<CurrentNetwork>()?.is_none());
         let config = Start::try_parse_from(
             ["snarkos", "--dev", "0", "--client", "--private-key", "aleo1xx", "--cdn", "url"].iter(),
         )
         .unwrap();
-        assert!(config.parse_cdn::<CurrentNetwork>().is_none());
-        let config = Start::try_parse_from(
-            ["snarkos", "--dev", "0", "--client", "--private-key", "aleo1xx", "--cdn", ""].iter(),
-        )
-        .unwrap();
-        assert!(config.parse_cdn::<CurrentNetwork>().is_none());
+        assert!(config.parse_cdn::<CurrentNetwork>()?.is_none());
+        let config =
+            Start::try_parse_from(["snarkos", "--dev", "0", "--client", "--private-key", "aleo1xx", "--nocdn"].iter())
+                .unwrap();
+        assert!(config.parse_cdn::<CurrentNetwork>()?.is_none());
 
         // Default (Prod)
         let config = Start::try_parse_from(["snarkos"].iter()).unwrap();
-        assert!(config.parse_cdn::<CurrentNetwork>().is_none());
+        assert!(config.parse_cdn::<CurrentNetwork>()?.is_none());
         let config = Start::try_parse_from(["snarkos", "--cdn", "url"].iter()).unwrap();
-        assert!(config.parse_cdn::<CurrentNetwork>().is_none());
-        let config = Start::try_parse_from(["snarkos", "--cdn", ""].iter()).unwrap();
-        assert!(config.parse_cdn::<CurrentNetwork>().is_none());
+        assert!(config.parse_cdn::<CurrentNetwork>()?.is_none());
+        let config = Start::try_parse_from(["snarkos", "--nocdn"].iter()).unwrap();
+        assert!(config.parse_cdn::<CurrentNetwork>()?.is_none());
 
         // Default (Dev)
         let config = Start::try_parse_from(["snarkos", "--dev", "0"].iter()).unwrap();
-        assert!(config.parse_cdn::<CurrentNetwork>().is_none());
+        assert!(config.parse_cdn::<CurrentNetwork>()?.is_none());
         let config = Start::try_parse_from(["snarkos", "--dev", "0", "--cdn", "url"].iter()).unwrap();
-        assert!(config.parse_cdn::<CurrentNetwork>().is_none());
-        let config = Start::try_parse_from(["snarkos", "--dev", "0", "--cdn", ""].iter()).unwrap();
-        assert!(config.parse_cdn::<CurrentNetwork>().is_none());
+        assert!(config.parse_cdn::<CurrentNetwork>()?.is_none());
+        let config = Start::try_parse_from(["snarkos", "--dev", "0", "--nocdn"].iter()).unwrap();
+        assert!(config.parse_cdn::<CurrentNetwork>()?.is_none());
+
+        Ok(())
     }
 
     #[test]
@@ -1154,19 +1150,19 @@ mod tests {
         ];
         let cli = CLI::parse_from(arg_vec);
 
-        if let Command::Start(start) = cli.command {
-            assert!(start.nodisplay);
-            assert_eq!(start.dev, Some(2));
-            assert!(start.validator);
-            assert_eq!(start.private_key.as_deref(), Some("PRIVATE_KEY"));
-            assert_eq!(start.cdn, Some("CDN".to_string()));
-            assert_eq!(start.rest, Some("127.0.0.1:3030".parse().unwrap()));
-            assert_eq!(start.network, 0);
-            assert_eq!(start.peers, Some("IP1,IP2,IP3".to_string()));
-            assert_eq!(start.validators, Some("IP1,IP2,IP3".to_string()));
-        } else {
+        let Command::Start(start) = cli.command else {
             panic!("Unexpected result of clap parsing!");
-        }
+        };
+
+        assert!(start.nodisplay);
+        assert_eq!(start.dev, Some(2));
+        assert!(start.validator);
+        assert_eq!(start.private_key.as_deref(), Some("PRIVATE_KEY"));
+        assert_eq!(start.cdn, Some(http::Uri::try_from("CDN").unwrap()));
+        assert_eq!(start.rest, Some("127.0.0.1:3030".parse().unwrap()));
+        assert_eq!(start.network, 0);
+        assert_eq!(start.peers, Some("IP1,IP2,IP3".to_string()));
+        assert_eq!(start.validators, Some("IP1,IP2,IP3".to_string()));
     }
 
     #[test]

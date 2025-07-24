@@ -16,7 +16,7 @@
 use super::Developer;
 use crate::{
     commands::StoreFormat,
-    helpers::args::{network_id_parser, parse_private_key},
+    helpers::args::{network_id_parser, parse_private_key, prepare_endpoint},
 };
 
 use snarkvm::{
@@ -40,6 +40,7 @@ use anyhow::{Context, Result, bail};
 use clap::Parser;
 use colored::Colorize;
 use std::{path::PathBuf, str::FromStr};
+use ureq::http::Uri;
 use zeroize::Zeroize;
 
 /// Executes an Aleo program function.
@@ -67,10 +68,10 @@ pub struct Execute {
     private_key_file: Option<String>,
     /// The endpoint to query node state from and broadcast to (if set to broadcast).
     #[clap(short, long)]
-    endpoint: String,
+    endpoint: Uri,
     /// The priority fee in microcredits.
-    #[clap(long)]
-    priority_fee: Option<u64>,
+    #[clap(long, default_value_t = 0)]
+    priority_fee: u64,
     /// The record to spend the fee from.
     #[clap(short, long)]
     record: Option<String>,
@@ -103,8 +104,7 @@ impl Drop for Execute {
 
 impl Execute {
     /// Executes an Aleo program function with the provided inputs.
-    #[allow(clippy::format_in_format_args)]
-    pub fn parse(self) -> Result<String> {
+    pub fn execute(self) -> Result<String> {
         // Construct the execution for the specified network.
         match self.network {
             MainnetV0::ID => self.construct_execution::<MainnetV0>(),
@@ -115,9 +115,11 @@ impl Execute {
     }
 
     /// Construct and process the execution transaction.
-    fn construct_execution<N: Network>(&self) -> Result<String> {
+    fn construct_execution<N: Network>(self) -> Result<String> {
+        let endpoint = prepare_endpoint(self.endpoint.clone())?;
+
         // Specify the query
-        let query = Query::<N, BlockMemory<N>>::from(&self.endpoint);
+        let query = Query::<N, BlockMemory<N>>::from(endpoint.to_string());
         let is_static_query = matches!(query, Query::STATIC(_));
 
         // Retrieve the private key.
@@ -152,15 +154,16 @@ impl Execute {
 
             if !is_static_query {
                 // Load the program and it's imports into the process.
-                load_program(&self.endpoint, &mut vm.process().write(), &program_id)?;
+                load_program(&endpoint, &mut vm.process().write(), &program_id)?;
             }
 
             // Prepare the fee.
             let fee_record = match &self.record {
-                Some(record_string) => Some(Developer::parse_record(&private_key, record_string)?),
+                Some(record_string) => Some(
+                    Developer::parse_record(&private_key, record_string).with_context(|| "Failed to parse record")?,
+                ),
                 None => None,
             };
-            let priority_fee = self.priority_fee.unwrap_or(0);
 
             // Create a new transaction.
             vm.execute(
@@ -168,7 +171,7 @@ impl Execute {
                 (program_id, function),
                 inputs.iter(),
                 fee_record,
-                priority_fee,
+                self.priority_fee,
                 Some(&query),
                 rng,
             )?
@@ -178,7 +181,7 @@ impl Execute {
         if self.record.is_none() && !is_static_query {
             // Fetch the public balance.
             let address = Address::try_from(&private_key)?;
-            let public_balance = Developer::get_public_balance(&address, &self.endpoint)?;
+            let public_balance = Developer::get_public_balance(&address, &endpoint)?;
 
             // Check if the public balance is sufficient.
             let storage_cost = transaction
@@ -189,7 +192,7 @@ impl Execute {
             // Calculate the base fee.
             // This fee is the minimum fee required to pay for the transaction,
             // excluding any finalize fees that the execution may incur.
-            let base_fee = storage_cost.saturating_add(self.priority_fee.unwrap_or(0));
+            let base_fee = storage_cost.saturating_add(self.priority_fee);
 
             // If the public balance is insufficient, return an error.
             if public_balance < base_fee {
@@ -205,7 +208,7 @@ impl Execute {
 
         // Determine if the transaction should be broadcast, stored, or displayed to the user.
         Developer::handle_transaction(
-            &self.endpoint,
+            &endpoint,
             self.network,
             self.broadcast,
             self.dry_run,
@@ -218,7 +221,7 @@ impl Execute {
 }
 
 /// A helper function to recursively load the program and all of its imports into the process.
-fn load_program<N: Network>(endpoint: &str, process: &mut Process<N>, program_id: &ProgramID<N>) -> Result<()> {
+fn load_program<N: Network>(endpoint: &Uri, process: &mut Process<N>, program_id: &ProgramID<N>) -> Result<()> {
     // Fetch the program.
     let program = Developer::fetch_program(program_id, endpoint)?;
 
@@ -271,18 +274,21 @@ mod tests {
         ];
         let cli = CLI::try_parse_from(arg_vec)?;
 
-        if let Command::Developer(Developer::Execute(execute)) = cli.command {
-            assert_eq!(execute.network, 0);
-            assert_eq!(execute.private_key, Some("PRIVATE_KEY".to_string()));
-            assert_eq!(execute.endpoint, "ENDPOINT");
-            assert_eq!(execute.priority_fee, Some(77));
-            assert_eq!(execute.record, Some("RECORD".into()));
-            assert_eq!(execute.program_id, "hello.aleo".to_string());
-            assert_eq!(execute.function, "hello".to_string());
-            assert_eq!(execute.inputs, vec!["1u32".to_string(), "2u32".to_string()]);
-        } else {
+        let Command::Developer(developer) = cli.command else {
             bail!("Unexpected result of clap parsing!");
-        }
+        };
+        let Developer::Execute(execute) = *developer else {
+            bail!("Unexpected result of clap parsing!");
+        };
+
+        assert_eq!(execute.network, 0);
+        assert_eq!(execute.private_key, Some("PRIVATE_KEY".to_string()));
+        assert_eq!(execute.endpoint, "ENDPOINT");
+        assert_eq!(execute.priority_fee, 77);
+        assert_eq!(execute.record, Some("RECORD".into()));
+        assert_eq!(execute.program_id, "hello.aleo".to_string());
+        assert_eq!(execute.function, "hello".to_string());
+        assert_eq!(execute.inputs, vec!["1u32".to_string(), "2u32".to_string()]);
 
         Ok(())
     }
@@ -296,8 +302,6 @@ mod tests {
             "--private-key-file",
             "PRIVATE_KEY_FILE",
             "--endpoint=ENDPOINT",
-            "--priority-fee",
-            "77",
             "--record",
             "RECORD",
             "--dry-run",
@@ -308,18 +312,21 @@ mod tests {
         ];
         let cli = CLI::try_parse_from(arg_vec)?;
 
-        if let Command::Developer(Developer::Execute(execute)) = cli.command {
-            assert_eq!(execute.network, 0);
-            assert_eq!(execute.private_key_file, Some("PRIVATE_KEY_FILE".to_string()));
-            assert_eq!(execute.endpoint, "ENDPOINT");
-            assert_eq!(execute.priority_fee, Some(77));
-            assert_eq!(execute.record, Some("RECORD".into()));
-            assert_eq!(execute.program_id, "hello.aleo".to_string());
-            assert_eq!(execute.function, "hello".to_string());
-            assert_eq!(execute.inputs, vec!["1u32".to_string(), "2u32".to_string()]);
-        } else {
+        let Command::Developer(developer) = cli.command else {
             bail!("Unexpected result of clap parsing!");
-        }
+        };
+        let Developer::Execute(execute) = *developer else {
+            bail!("Unexpected result of clap parsing!");
+        };
+
+        assert_eq!(execute.network, 0);
+        assert_eq!(execute.private_key_file, Some("PRIVATE_KEY_FILE".to_string()));
+        assert_eq!(execute.endpoint, "ENDPOINT");
+        assert_eq!(execute.priority_fee, 0); // Default value.
+        assert_eq!(execute.record, Some("RECORD".into()));
+        assert_eq!(execute.program_id, "hello.aleo".to_string());
+        assert_eq!(execute.function, "hello".to_string());
+        assert_eq!(execute.inputs, vec!["1u32".to_string(), "2u32".to_string()]);
 
         Ok(())
     }

@@ -16,7 +16,7 @@
 use super::Developer;
 use crate::{
     commands::StoreFormat,
-    helpers::args::{network_id_parser, parse_private_key},
+    helpers::args::{network_id_parser, parse_private_key, prepare_endpoint},
 };
 use snarkvm::{
     console::network::{CanaryV0, MainnetV0, Network, TestnetV0},
@@ -35,6 +35,7 @@ use aleo_std::StorageMode;
 use anyhow::{Result, bail};
 use clap::Parser;
 use std::{path::PathBuf, str::FromStr};
+use ureq::http::Uri;
 use zeroize::Zeroize;
 
 /// Executes the `transfer_private` function in the `credits.aleo` program.
@@ -64,7 +65,7 @@ pub struct TransferPrivate {
     private_key_file: Option<String>,
     /// The endpoint to query node state from and broadcast to (if set to broadcast).
     #[clap(short, long)]
-    endpoint: String,
+    endpoint: Uri,
     /// The priority fee in microcredits.
     #[clap(long)]
     priority_fee: u64,
@@ -99,7 +100,7 @@ impl Drop for TransferPrivate {
 impl TransferPrivate {
     /// Creates an Aleo transfer with the provided inputs.
     #[allow(clippy::format_in_format_args)]
-    pub fn parse(self) -> Result<String> {
+    pub fn execute(self) -> Result<String> {
         // Construct the transfer for the specified network.
         match self.network {
             MainnetV0::ID => self.construct_transfer_private::<MainnetV0>(),
@@ -111,8 +112,10 @@ impl TransferPrivate {
 
     /// Construct and process the `transfer_private` transaction.
     fn construct_transfer_private<N: Network>(&self) -> Result<String> {
+        let endpoint = prepare_endpoint(self.endpoint.clone())?;
+
         // Specify the query
-        let query = Query::<N, BlockMemory<N>>::from(&self.endpoint);
+        let query = Query::<N, BlockMemory<N>>::from(endpoint.to_string());
 
         // Retrieve the recipient.
         let recipient = Address::<N>::from_str(&self.recipient)?;
@@ -164,7 +167,7 @@ impl TransferPrivate {
 
         // Determine if the transaction should be broadcast, stored, or displayed to the user.
         Developer::handle_transaction(
-            &self.endpoint,
+            &endpoint,
             self.network,
             self.broadcast,
             self.dry_run,

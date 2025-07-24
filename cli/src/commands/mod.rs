@@ -64,7 +64,7 @@ pub enum Command {
     #[clap(name = "clean")]
     Clean(Clean),
     #[clap(subcommand)]
-    Developer(Developer),
+    Developer(Box<Developer>),
     #[clap(name = "start")]
     Start(Box<Start>),
     #[clap(name = "update")]
@@ -72,14 +72,14 @@ pub enum Command {
 }
 
 impl Command {
-    /// Parses the command.
-    pub fn parse(self) -> Result<String> {
+    /// Runs the given command.
+    pub fn execute(self) -> Result<String> {
         match self {
-            Self::Account(command) => command.parse(),
-            Self::Clean(command) => command.parse(),
-            Self::Developer(command) => command.parse(),
-            Self::Start(command) => command.parse(),
-            Self::Update(command) => command.parse(),
+            Self::Account(command) => command.execute(),
+            Self::Clean(command) => command.execute(),
+            Self::Developer(command) => command.execute(),
+            Self::Start(command) => command.execute(),
+            Self::Update(command) => command.execute(),
         }
     }
 }

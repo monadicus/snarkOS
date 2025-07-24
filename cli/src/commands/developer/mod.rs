@@ -30,6 +30,8 @@ pub use transfer_private::*;
 
 use crate::helpers::{http_get_json, http_post_json};
 
+use ureq::http::Uri;
+
 use snarkvm::{
     console::network::Network,
     package::Package,
@@ -80,13 +82,13 @@ pub enum Developer {
 }
 
 impl Developer {
-    pub fn parse(self) -> Result<String> {
+    pub fn execute(self) -> Result<String> {
         match self {
-            Self::Decrypt(decrypt) => decrypt.parse(),
-            Self::Deploy(deploy) => deploy.parse(),
-            Self::Execute(execute) => execute.parse(),
-            Self::Scan(scan) => scan.parse(),
-            Self::TransferPrivate(transfer_private) => transfer_private.parse(),
+            Self::Decrypt(decrypt) => decrypt.execute(),
+            Self::Deploy(deploy) => deploy.execute(),
+            Self::Execute(execute) => execute.execute(),
+            Self::Scan(scan) => scan.execute(),
+            Self::TransferPrivate(transfer_private) => transfer_private.execute(),
         }
     }
 
@@ -126,7 +128,7 @@ impl Developer {
     }
 
     /// Fetch the program from the given endpoint.
-    fn fetch_program<N: Network>(program_id: &ProgramID<N>, endpoint: &str) -> Result<Program<N>> {
+    fn fetch_program<N: Network>(program_id: &ProgramID<N>, endpoint: &Uri) -> Result<Program<N>> {
         // Get the network being used.
         let network = match N::ID {
             snarkvm::console::network::MainnetV0::ID => "mainnet",
@@ -145,7 +147,7 @@ impl Developer {
     }
 
     /// Fetch the public balance in microcredits associated with the address from the given endpoint.
-    fn get_public_balance<N: Network>(address: &Address<N>, endpoint: &str) -> Result<u64> {
+    fn get_public_balance<N: Network>(address: &Address<N>, endpoint: &Uri) -> Result<u64> {
         // Initialize the program id and account identifier.
         let credits = ProgramID::<N>::from_str("credits.aleo")?;
         let account_mapping = Identifier::<N>::from_str("account")?;
@@ -183,7 +185,7 @@ impl Developer {
     /// Determine if the transaction should be broadcast or displayed to user.
     #[allow(clippy::too_many_arguments)]
     fn handle_transaction<N: Network>(
-        endpoint: &str,
+        endpoint: &Uri,
         network: u16,
         broadcast: bool,
         dry_run: bool,

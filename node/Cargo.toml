@@ -87,6 +87,9 @@ workspace = true
 [dependencies.rand]
 workspace = true
 
+[dependencies.http]
+workspace = true
+
 [dependencies.serde_json]
 workspace = true
 features = [ "preserve_order" ]

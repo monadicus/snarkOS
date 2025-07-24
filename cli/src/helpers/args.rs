@@ -21,9 +21,28 @@ use snarkvm::{
 use anyhow::{Context, Result, anyhow};
 use clap::builder::RangedU64ValueParser;
 use std::{path::PathBuf, str::FromStr};
+use ureq::http::{Uri, uri};
 
 pub(crate) fn network_id_parser() -> RangedU64ValueParser<u16> {
     RangedU64ValueParser::<u16>::new().range((MainnetV0::ID as u64)..=(CanaryV0::ID as u64))
+}
+
+/// Make sure a proper scheme (http or https) is set for the endpoint.
+pub(crate) fn prepare_endpoint(endpoint: Uri) -> Result<Uri> {
+    let mut parts = endpoint.into_parts();
+
+    if parts.scheme.is_none() {
+        println!("No scheme given for endpoint. Defaulting to HTTP.");
+        parts.scheme = Some(uri::Scheme::HTTP);
+    }
+
+    if parts.path_and_query.is_none() {
+        // An empty path is fine for the base URL.
+        parts.path_and_query = Some(uri::PathAndQuery::from_static(""));
+    }
+
+    // Given that the input URI is valid and the scheme we assign is valid, this should never fail.
+    Uri::from_parts(parts).with_context(|| "Invalid endpoint URL")
 }
 
 /// Fetch the private key, either from the commandline or from a file.
@@ -44,4 +63,16 @@ pub(crate) fn parse_private_key<N: Network>(
     let private_key = PrivateKey::from_str(&key_str).with_context(|| "Failed to parse private key")?;
 
     Ok(private_key)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_prepare_endpoint() {
+        let before = Uri::try_from("localhost:3030").unwrap();
+        let after = prepare_endpoint(before).unwrap();
+        assert_eq!(after.to_string(), "http://localhost:3030/");
+    }
 }

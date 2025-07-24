@@ -41,7 +41,7 @@ pub struct Decrypt {
 }
 
 impl Decrypt {
-    pub fn parse(self) -> Result<String> {
+    pub fn execute(self) -> Result<String> {
         // Decrypt the ciphertext for the given network.
         match self.network {
             MainnetV0::ID => Self::decrypt_ciphertext::<MainnetV0>(&self.ciphertext, &self.view_key),
@@ -143,7 +143,7 @@ mod tests {
             let expected_plaintext = ciphertext.decrypt(&view_key).unwrap();
 
             let decrypt = Decrypt { network: 0, ciphertext: ciphertext.to_string(), view_key: view_key.to_string() };
-            let plaintext = decrypt.parse().unwrap();
+            let plaintext = decrypt.execute().unwrap();
 
             // Check that the decryption is correct.
             assert_eq!(plaintext, expected_plaintext.to_string());
@@ -170,7 +170,7 @@ mod tests {
             // Enforce that the decryption fails.
             let decrypt =
                 Decrypt { network: 0, ciphertext: ciphertext.to_string(), view_key: incorrect_view_key.to_string() };
-            assert!(decrypt.parse().is_err());
+            assert!(decrypt.execute().is_err());
         }
     }
 }
