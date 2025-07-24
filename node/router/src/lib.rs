@@ -469,25 +469,6 @@ impl<N: Network> Router<N> {
         self.update_metrics();
     }
 
-    /// Updates the connected peer with the given function.
-    pub fn update_connected_peer<Fn: FnMut(&mut Peer<N>)>(
-        &self,
-        peer_ip: SocketAddr,
-        node_type: NodeType,
-        mut write_fn: Fn,
-    ) -> Result<()> {
-        // Retrieve the peer.
-        if let Some(peer) = self.peer_pool.write().get_mut(&peer_ip) {
-            // Ensure the node type has not changed.
-            if peer.node_type() != Some(node_type) {
-                bail!("Peer '{peer_ip}' has changed node types");
-            }
-            // Lastly, update the peer with the given function.
-            write_fn(peer);
-        }
-        Ok(())
-    }
-
     pub fn update_last_seen_for_connected_peer(&self, peer_ip: SocketAddr) {
         if let Some(peer) = self.peer_pool.write().get_mut(&peer_ip) {
             peer.update_last_seen();
