@@ -215,10 +215,6 @@ impl<N: Network> Router<N> {
             debug!("Dropping connection attempt to '{peer_ip}' (already connected)");
             return Ok(true);
         }
-        // Ensure the peer is not restricted.
-        if self.is_restricted(&peer_ip) {
-            bail!("Dropping connection attempt to '{peer_ip}' (restricted)");
-        }
 
         Ok(false)
     }
@@ -344,15 +340,6 @@ impl<N: Network> Router<N> {
         self.peer_pool.read().get(peer_ip).is_some_and(|peer| peer.node_type() == Some(NodeType::Client))
     }
 
-    /// Returns `true` if the given IP is restricted.
-    pub fn is_restricted(&self, ip: &SocketAddr) -> bool {
-        if let Some(Peer::Candidate(peer)) = self.peer_pool.read().get(ip) {
-            peer.restricted.is_some_and(|ts| ts.elapsed().as_secs() < Self::RADIO_SILENCE_IN_SECS)
-        } else {
-            false
-        }
-    }
-
     /// Returns `true` if the given IP is trusted.
     pub fn is_trusted(&self, ip: &SocketAddr) -> bool {
         self.trusted_peers.contains(ip)
@@ -386,15 +373,6 @@ impl<N: Network> Router<N> {
     /// Returns the number of candidate peers.
     pub fn number_of_candidate_peers(&self) -> usize {
         self.peer_pool.read().values().filter(|peer| matches!(peer, Peer::Candidate(_))).count()
-    }
-
-    /// Returns the number of restricted peers.
-    pub fn number_of_restricted_peers(&self) -> usize {
-        self.peer_pool
-            .read()
-            .values()
-            .filter(|peer| matches!(peer, Peer::Candidate(peer) if peer.restricted.is_some()))
-            .count()
     }
 
     /// Returns the connected peer given the peer IP, if it exists.
@@ -451,17 +429,6 @@ impl<N: Network> Router<N> {
             .iter()
             .filter_map(|(addr, peer)| {
                 (matches!(peer, Peer::Candidate(_)) && !banned_ips.contains(&addr.ip())).then_some(*addr)
-            })
-            .collect()
-    }
-
-    /// Returns the list of restricted peers.
-    pub fn restricted_peers(&self) -> Vec<SocketAddr> {
-        self.peer_pool
-            .read()
-            .iter()
-            .filter_map(|(addr, peer)| {
-                matches!(peer, Peer::Candidate(conn) if conn.restricted.is_some()).then_some(*addr)
             })
             .collect()
     }
@@ -528,7 +495,6 @@ impl<N: Network> Router<N> {
     fn update_metrics(&self) {
         metrics::gauge(metrics::router::CONNECTED, self.number_of_connected_peers() as f64);
         metrics::gauge(metrics::router::CANDIDATE, self.number_of_candidate_peers() as f64);
-        metrics::gauge(metrics::router::RESTRICTED, self.number_of_restricted_peers() as f64);
     }
 
     /// Inserts the given peer IPs to the set of candidate peers.
@@ -544,7 +510,7 @@ impl<N: Network> Router<N> {
             let eligible_peers = peers
                 .iter()
                 .filter(|peer_ip| {
-                    // Ensure the peer is not itself, is not already connected, and is not restricted.
+                    // Ensure the peer is not itself, and is not already known.
                     !self.is_local_ip(peer_ip) && !peer_pool.contains_key(peer_ip)
                 })
                 .take(max_candidate_peers)
@@ -586,7 +552,7 @@ impl<N: Network> Router<N> {
     /// Removes the connected peer and adds them to the candidate peers.
     pub fn remove_connected_peer(&self, peer_ip: SocketAddr) {
         if let Some(peer) = self.peer_pool.write().get_mut(&peer_ip) {
-            peer.downgrade_to_candidate(peer_ip, false);
+            peer.downgrade_to_candidate(peer_ip);
         }
         // Clear cached entries applicable to the peer.
         self.cache.clear_peer_entries(peer_ip);

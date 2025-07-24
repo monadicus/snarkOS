@@ -33,17 +33,6 @@ pub enum Peer<N: Network> {
 pub struct CandidatePeer {
     /// The listening address of a candidate peer.
     pub listener_addr: SocketAddr,
-    /// A restricted peer is one that has recently exceeded the `MAXIMUM_CONNECTION_FAILURES`,
-    /// and is ineligible for connection attempts for `RADIO_SILENCE_IN_SECS`.
-    // TODO: consider removing in favor of the ban feature for simplicity.
-    pub restricted: Option<Instant>,
-}
-
-impl CandidatePeer {
-    /// Restrict a candidate peer with the current timestamp.
-    pub fn restrict(&mut self) {
-        self.restricted = Some(Instant::now());
-    }
 }
 
 /// A fully connected peer.
@@ -70,7 +59,7 @@ pub struct ConnectedPeer<N: Network> {
 impl<N: Network> Peer<N> {
     /// Create a candidate peer.
     pub const fn new_candidate(listener_addr: SocketAddr) -> Self {
-        Self::Candidate(CandidatePeer { listener_addr, restricted: None })
+        Self::Candidate(CandidatePeer { listener_addr })
     }
 
     /// Promote a connecting peer to a fully connected one.
@@ -97,15 +86,14 @@ impl<N: Network> Peer<N> {
     }
 
     /// Demote a peer to candidate status, marking it as disconnected.
-    pub fn downgrade_to_candidate(&mut self, listener_addr: SocketAddr, restrict: bool) {
+    pub fn downgrade_to_candidate(&mut self, listener_addr: SocketAddr) {
         // Connecting peers are not in the resolver.
         if let Self::Connected(peer) = self {
             // Remove the peer from the resolver.
             peer.router.resolver.write().remove_peer(&peer.connected_addr);
         };
 
-        let restricted = if restrict { Some(Instant::now()) } else { None };
-        *self = Self::Candidate(CandidatePeer { listener_addr, restricted });
+        *self = Self::Candidate(CandidatePeer { listener_addr });
     }
 
     /// Returns the type of the node (only applicable to connected peers).

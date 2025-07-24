@@ -137,7 +137,7 @@ impl<N: Network> Router<N> {
                 self.update_metrics();
                 debug!("Completed the handshake with '{peer_addr}'");
             } else if let Some(peer) = self.peer_pool.write().get_mut(&addr) {
-                peer.downgrade_to_candidate(addr, false);
+                peer.downgrade_to_candidate(addr);
             }
         }
 
@@ -323,14 +323,6 @@ impl<N: Network> Router<N> {
                 entry.insert(Peer::Connecting);
             }
             Entry::Occupied(mut entry) => match entry.get_mut() {
-                Peer::Candidate(peer)
-                    if peer
-                        .restricted
-                        .map(|ts| ts.elapsed().as_secs() < Self::RADIO_SILENCE_IN_SECS)
-                        .unwrap_or(false) =>
-                {
-                    bail!("Dropping connection request from '{listener_addr}' (restricted)");
-                }
                 peer @ Peer::Candidate(_) => {
                     let _ = mem::replace(peer, Peer::Connecting);
                 }
