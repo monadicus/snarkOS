@@ -121,7 +121,7 @@ impl<N: Network> Router<N> {
     const MAX_CONNECTION_ATTEMPTS: usize = 10;
     /// The duration in seconds after which a connected peer is considered inactive or
     /// disconnected if no message has been received in the meantime.
-    const RADIO_SILENCE_IN_SECS: u64 = 150; // 2.5 minutes
+    const MAX_RADIO_SILENCE_SECS: u64 = 150; // 2.5 minutes
 }
 
 impl<N: Network> Router<N> {

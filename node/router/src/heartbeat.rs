@@ -100,7 +100,7 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
         for peer in self.router().get_connected_peers() {
             // Disconnect if the peer has not communicated back within the predefined time.
             let elapsed = peer.last_seen.elapsed().as_secs();
-            if elapsed > Router::<N>::RADIO_SILENCE_IN_SECS {
+            if elapsed > Router::<N>::MAX_RADIO_SILENCE_SECS {
                 warn!("Peer {} has not communicated in {elapsed} seconds", peer.listener_addr);
                 // Disconnect from this peer.
                 self.router().disconnect(peer.listener_addr);
