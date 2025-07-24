@@ -96,8 +96,6 @@ pub struct InnerRouter<N: Network> {
     cache: Cache<N>,
     /// The resolver.
     resolver: RwLock<Resolver>,
-    /// The set of trusted peers.
-    trusted_peers: HashSet<SocketAddr>,
     /// The collection of both candidate and connected peers.
     peer_pool: RwLock<HashMap<SocketAddr, Peer<N>>>,
     /// The spawned handles.
@@ -141,6 +139,12 @@ impl<N: Network> Router<N> {
         // Initialize the TCP stack.
         let tcp = Tcp::new(Config::new(node_ip, max_peers));
 
+        let trusted_peers = trusted_peers
+            .iter()
+            .copied()
+            .map(|addr| (addr, Peer::new_candidate(addr, true)))
+            .collect::<HashMap<_, _>>();
+
         // Initialize the router.
         Ok(Self(Arc::new(InnerRouter {
             tcp,
@@ -149,8 +153,7 @@ impl<N: Network> Router<N> {
             ledger,
             cache: Default::default(),
             resolver: Default::default(),
-            trusted_peers: trusted_peers.iter().copied().collect(),
-            peer_pool: Default::default(),
+            peer_pool: RwLock::new(trusted_peers),
             handles: Default::default(),
             rotate_external_peers,
             allow_external_peers,
@@ -341,8 +344,8 @@ impl<N: Network> Router<N> {
     }
 
     /// Returns `true` if the given IP is trusted.
-    pub fn is_trusted(&self, ip: &SocketAddr) -> bool {
-        self.trusted_peers.contains(ip)
+    pub fn is_trusted(&self, listener_addr: &SocketAddr) -> bool {
+        self.peer_pool.read().get(listener_addr).is_some_and(Peer::is_trusted)
     }
 
     /// Returns the maximum number of connected peers.
@@ -434,8 +437,8 @@ impl<N: Network> Router<N> {
     }
 
     /// Returns the list of trusted peers.
-    pub fn trusted_peers(&self) -> &HashSet<SocketAddr> {
-        &self.trusted_peers
+    pub fn trusted_peers(&self) -> HashSet<SocketAddr> {
+        self.peer_pool.read().iter().filter_map(|(addr, peer)| peer.is_trusted().then_some(*addr)).collect()
     }
 
     /// Returns the list of bootstrap peers.
@@ -514,7 +517,7 @@ impl<N: Network> Router<N> {
                     !self.is_local_ip(peer_ip) && !peer_pool.contains_key(peer_ip)
                 })
                 .take(max_candidate_peers)
-                .map(|addr| (*addr, Peer::new_candidate(*addr)))
+                .map(|addr| (*addr, Peer::new_candidate(*addr, false)))
                 .collect::<Vec<_>>();
 
             // Proceed to insert the eligible candidate peer IPs.

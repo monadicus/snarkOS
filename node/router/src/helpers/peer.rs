@@ -23,7 +23,7 @@ pub enum Peer<N: Network> {
     /// A candidate peer that's currently not connected to.
     Candidate(CandidatePeer),
     /// A peer that's currently being connected to (the handshake is in progress).
-    Connecting,
+    Connecting(ConnectingPeer),
     /// A fully connected (post-handshake) peer.
     Connected(ConnectedPeer<N>),
 }
@@ -33,6 +33,15 @@ pub enum Peer<N: Network> {
 pub struct CandidatePeer {
     /// The listening address of a candidate peer.
     pub listener_addr: SocketAddr,
+    /// Indicates whether the peer is considered trusted.
+    pub trusted: bool,
+}
+
+/// A connecting peer.
+#[derive(Clone)]
+pub struct ConnectingPeer {
+    /// Indicates whether the peer is considered trusted.
+    pub trusted: bool,
 }
 
 /// A fully connected peer.
@@ -42,6 +51,8 @@ pub struct ConnectedPeer<N: Network> {
     pub listener_addr: SocketAddr,
     /// The connected address of the peer.
     pub connected_addr: SocketAddr,
+    /// Indicates whether the peer is considered trusted.
+    pub trusted: bool,
     /// The Aleo address of the peer.
     pub aleo_addr: Address<N>,
     /// The node type of the peer.
@@ -58,14 +69,19 @@ pub struct ConnectedPeer<N: Network> {
 
 impl<N: Network> Peer<N> {
     /// Create a candidate peer.
-    pub const fn new_candidate(listener_addr: SocketAddr) -> Self {
-        Self::Candidate(CandidatePeer { listener_addr })
+    pub const fn new_candidate(listener_addr: SocketAddr, trusted: bool) -> Self {
+        Self::Candidate(CandidatePeer { listener_addr, trusted })
+    }
+
+    /// Create a connecting peer.
+    pub const fn new_connecting(trusted: bool) -> Self {
+        Self::Connecting(ConnectingPeer { trusted })
     }
 
     /// Promote a connecting peer to a fully connected one.
     pub fn upgrade_to_connected(&mut self, connected_addr: SocketAddr, cr: &ChallengeRequest<N>, router: Router<N>) {
         // Logic check: this can only happen during the handshake.
-        assert!(matches!(self, Self::Connecting));
+        assert!(matches!(self, Self::Connecting(_)));
 
         let timestamp = Instant::now();
         let listener_addr = SocketAddr::from((connected_addr.ip(), cr.listener_port));
@@ -78,6 +94,7 @@ impl<N: Network> Peer<N> {
             connected_addr,
             aleo_addr: cr.address,
             node_type: cr.node_type,
+            trusted: self.is_trusted(),
             version: cr.version,
             first_seen: timestamp,
             last_seen: timestamp,
@@ -93,26 +110,35 @@ impl<N: Network> Peer<N> {
             peer.router.resolver.write().remove_peer(&peer.connected_addr);
         };
 
-        *self = Self::Candidate(CandidatePeer { listener_addr });
+        *self = Self::Candidate(CandidatePeer { listener_addr, trusted: self.is_trusted() });
     }
 
     /// Returns the type of the node (only applicable to connected peers).
     pub fn node_type(&self) -> Option<NodeType> {
         match self {
             Self::Candidate(_) => None,
-            Self::Connecting => None,
+            Self::Connecting(_) => None,
             Self::Connected(peer) => Some(peer.node_type),
         }
     }
 
     /// Returns `true` if the peer is currently undergoing the network handshake.
     pub fn is_connecting(&self) -> bool {
-        matches!(self, Peer::Connecting)
+        matches!(self, Peer::Connecting(_))
     }
 
     /// Returns `true` if the peer has concluded the network handshake.
     pub fn is_connected(&self) -> bool {
         matches!(self, Peer::Connected(_))
+    }
+
+    /// Returns `true` if the peer is considered trusted.
+    pub fn is_trusted(&self) -> bool {
+        match self {
+            Self::Candidate(peer) => peer.trusted,
+            Self::Connecting(peer) => peer.trusted,
+            Self::Connected(peer) => peer.trusted,
+        }
     }
 
     /// Updates the peer's `last_seen` timestamp.
