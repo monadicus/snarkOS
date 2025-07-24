@@ -15,6 +15,7 @@
 
 use super::Developer;
 use crate::commands::StoreFormat;
+use crate::helpers::StaticQuery;
 use snarkvm::{
     circuit::{Aleo, AleoCanaryV0, AleoTestnetV0, AleoV0},
     console::{
@@ -23,12 +24,10 @@ use snarkvm::{
     },
     ledger::store::helpers::memory::BlockMemory,
     prelude::{
-        PrivateKey,
-        ProgramID,
-        VM,
+        PrivateKey, ProgramID, VM,
         block::Transaction,
         deployment_cost,
-        query::Query,
+        query::{Query, QueryTrait},
         store::{ConsensusStore, helpers::memory::ConsensusMemory},
     },
 };
@@ -109,7 +108,10 @@ impl Deploy {
     /// Construct and process the deployment transaction.
     fn construct_deployment<N: Network, A: Aleo<Network = N, BaseField = N::Field>>(&self) -> Result<String> {
         // Specify the query
-        let query = Query::<N, BlockMemory<N>>::from(&self.query);
+        let (query, _is_static_query): (Box<dyn QueryTrait<N>>, bool) = match StaticQuery::<N>::try_from(&self.query) {
+            Ok(query) => (Box::new(query), true),
+            Err(_) => (Box::new(Query::<N, BlockMemory<N>>::from(&self.query)), false),
+        };
 
         // Retrieve the private key.
         let private_key = PrivateKey::from_str(&self.private_key)?;
@@ -156,7 +158,7 @@ impl Deploy {
                         deployment_id,
                         rng,
                     )?;
-                    vm.execute_fee_authorization(fee_authorization, Some(&query), rng)?
+                    vm.execute_fee_authorization(fee_authorization, Some(&*query), rng)?
                 }
                 None => {
                     let fee_authorization = vm.authorize_fee_public(
@@ -166,7 +168,7 @@ impl Deploy {
                         deployment_id,
                         rng,
                     )?;
-                    vm.execute_fee_authorization(fee_authorization, Some(&query), rng)?
+                    vm.execute_fee_authorization(fee_authorization, Some(&*query), rng)?
                 }
             };
             // Construct the owner.
