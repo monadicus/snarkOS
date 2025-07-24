@@ -147,11 +147,4 @@ impl<N: Network> Peer<N> {
             *last_seen = Instant::now();
         }
     }
-
-    /// Updates the peer's version.
-    pub fn update_version(&mut self, new_version: u32) {
-        if let Self::Connected(ConnectedPeer { version, .. }) = self {
-            *version = new_version;
-        }
-    }
 }
