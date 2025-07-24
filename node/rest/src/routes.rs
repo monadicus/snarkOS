@@ -52,6 +52,12 @@ pub(crate) struct Metadata {
     all: Option<bool>,
 }
 
+/// The query object for `transaction_broadcast`.
+#[derive(Copy, Clone, Deserialize, Serialize)]
+pub(crate) struct CheckTransaction {
+    check_transaction: Option<bool>,
+}
+
 /// The return value for a `sync_status` query.
 #[skip_serializing_none]
 #[derive(Copy, Clone, Serialize)]
@@ -534,8 +540,10 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
     }
 
     // POST /<network>/transaction/broadcast
+    // POST /<network>/transaction/broadcast?check_transaction={true}
     pub(crate) async fn transaction_broadcast(
         State(rest): State<Self>,
+        check_transaction: Query<CheckTransaction>,
         Json(tx): Json<Transaction<N>>,
     ) -> Result<ErasedJson, RestError> {
         // Do not process the transaction if the node is too far behind.
@@ -550,6 +558,13 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
         let buffer = Vec::with_capacity(3000);
         if tx.write_le(LimitedWriter::new(buffer, N::MAX_TRANSACTION_SIZE)).is_err() {
             return Err(RestError("Transaction size exceeds the byte limit".to_string()));
+        }
+
+        if check_transaction.check_transaction.unwrap_or(false) {
+            // Check if the transaction is well-formed.
+            rest.ledger
+                .check_transaction_basic(&tx, None, &mut rand::thread_rng())
+                .map_err(|e| RestError(format!("Invalid transaction: {e}")))?;
         }
 
         // If the consensus module is enabled, add the unconfirmed transaction to the memory pool.
