@@ -328,26 +328,6 @@ impl<N: Network> Router<N> {
         self.peer_pool.read().get(ip).is_some_and(|peer| peer.is_connected())
     }
 
-    /// Returns `true` if the given peer IP is a connected validator.
-    pub fn is_connected_validator(&self, peer_ip: &SocketAddr) -> bool {
-        self.peer_pool.read().get(peer_ip).is_some_and(|peer| peer.node_type() == Some(NodeType::Validator))
-    }
-
-    /// Returns `true` if the given peer IP is a connected prover.
-    pub fn is_connected_prover(&self, peer_ip: &SocketAddr) -> bool {
-        self.peer_pool.read().get(peer_ip).is_some_and(|peer| peer.node_type() == Some(NodeType::Prover))
-    }
-
-    /// Returns `true` if the given peer IP is a connected client.
-    pub fn is_connected_client(&self, peer_ip: &SocketAddr) -> bool {
-        self.peer_pool.read().get(peer_ip).is_some_and(|peer| peer.node_type() == Some(NodeType::Client))
-    }
-
-    /// Returns `true` if the given IP is trusted.
-    pub fn is_trusted(&self, listener_addr: &SocketAddr) -> bool {
-        self.peer_pool.read().get(listener_addr).is_some_and(Peer::is_trusted)
-    }
-
     /// Returns the maximum number of connected peers.
     pub fn max_connected_peers(&self) -> usize {
         self.tcp.config().max_connections as usize
@@ -356,21 +336,6 @@ impl<N: Network> Router<N> {
     /// Returns the number of connected peers.
     pub fn number_of_connected_peers(&self) -> usize {
         self.peer_pool.read().iter().filter(|(_, peer)| peer.is_connected()).count()
-    }
-
-    /// Returns the number of connected validators.
-    pub fn number_of_connected_validators(&self) -> usize {
-        self.peer_pool.read().values().filter(|peer| peer.node_type() == Some(NodeType::Validator)).count()
-    }
-
-    /// Returns the number of connected provers.
-    pub fn number_of_connected_provers(&self) -> usize {
-        self.peer_pool.read().values().filter(|peer| peer.node_type() == Some(NodeType::Prover)).count()
-    }
-
-    /// Returns the number of connected clients.
-    pub fn number_of_connected_clients(&self) -> usize {
-        self.peer_pool.read().values().filter(|peer| peer.node_type() == Some(NodeType::Client)).count()
     }
 
     /// Returns the number of candidate peers.
@@ -385,43 +350,25 @@ impl<N: Network> Router<N> {
 
     /// Returns the connected peers.
     pub fn get_connected_peers(&self) -> Vec<ConnectedPeer<N>> {
+        self.filter_connected_peers(|_| true)
+    }
+
+    pub fn filter_connected_peers<P: FnMut(&ConnectedPeer<N>) -> bool>(
+        &self,
+        mut predicate: P,
+    ) -> Vec<ConnectedPeer<N>> {
         self.peer_pool
             .read()
             .values()
-            .filter_map(|peer| if let Peer::Connected(p) = peer { Some(p.clone()) } else { None })
+            .filter_map(|peer| if let Peer::Connected(peer) = peer { Some(peer) } else { None })
+            .filter(|peer| predicate(peer))
+            .cloned()
             .collect()
     }
 
     /// Returns the list of connected peers.
     pub fn connected_peers(&self) -> Vec<SocketAddr> {
         self.peer_pool.read().iter().filter_map(|(addr, peer)| peer.is_connected().then_some(*addr)).collect()
-    }
-
-    /// Returns the list of connected validators.
-    pub fn connected_validators(&self) -> Vec<SocketAddr> {
-        self.peer_pool
-            .read()
-            .iter()
-            .filter_map(|(addr, peer)| (peer.node_type() == Some(NodeType::Validator)).then_some(*addr))
-            .collect()
-    }
-
-    /// Returns the list of the listening addresses of connected provers.
-    pub fn connected_provers(&self) -> Vec<SocketAddr> {
-        self.peer_pool
-            .read()
-            .iter()
-            .filter_map(|(addr, peer)| (peer.node_type() == Some(NodeType::Prover)).then_some(*addr))
-            .collect()
-    }
-
-    /// Returns the list of connected clients.
-    pub fn connected_clients(&self) -> Vec<SocketAddr> {
-        self.peer_pool
-            .read()
-            .iter()
-            .filter_map(|(addr, peer)| (peer.node_type() == Some(NodeType::Client)).then_some(*addr))
-            .collect()
     }
 
     /// Returns the list of candidate peers.
@@ -434,11 +381,6 @@ impl<N: Network> Router<N> {
                 (matches!(peer, Peer::Candidate(_)) && !banned_ips.contains(&addr.ip())).then_some(*addr)
             })
             .collect()
-    }
-
-    /// Returns the list of trusted peers.
-    pub fn trusted_peers(&self) -> HashSet<SocketAddr> {
-        self.peer_pool.read().iter().filter_map(|(addr, peer)| peer.is_trusted().then_some(*addr)).collect()
     }
 
     /// Returns the list of bootstrap peers.
