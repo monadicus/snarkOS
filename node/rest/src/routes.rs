@@ -319,10 +319,24 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
         let id = program.id();
         // Get the transaction ID associated with the program and edition.
         let tx_id = self.ledger.find_transaction_id_from_program_id_and_edition(id, edition)?;
+        // Get the optional program owner associated with the program.
+        // Note: The owner is only available after `ConsensusVersion::V9`.
+        let program_owner = match &tx_id {
+            Some(tid) => self
+                .ledger
+                .vm()
+                .block_store()
+                .transaction_store()
+                .deployment_store()
+                .get_deployment(tid)?
+                .and_then(|deployment| deployment.program_owner()),
+            None => None,
+        };
         Ok(ErasedJson::pretty(json!({
             "program": program,
             "edition": edition,
             "transaction_id": tx_id,
+            "program_owner": program_owner,
         })))
     }
 
