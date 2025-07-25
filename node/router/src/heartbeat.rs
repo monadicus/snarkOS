@@ -300,14 +300,13 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
         // Ensure that the trusted nodes are connected.
         let handles: Vec<_> = self
             .router()
-            .filter_connected_peers(|peer| peer.trusted)
+            .unconnected_trusted_peers()
             .iter()
-            .filter_map(|peer| {
-                let peer_addr = peer.listener_addr;
-                debug!("Attempting to (re-)connect to trusted peer `{peer_addr}`");
-                let hdl = self.router().connect(peer_addr);
+            .filter_map(|listener_addr| {
+                debug!("Attempting to (re-)connect to trusted peer `{listener_addr}`");
+                let hdl = self.router().connect(*listener_addr);
                 if hdl.is_none() {
-                    warn!("Could not initiate connection to trusted peer at `{peer_addr}`");
+                    warn!("Could not initiate connection to trusted peer at `{listener_addr}`");
                 }
                 hdl
             })

@@ -328,6 +328,11 @@ impl<N: Network> Router<N> {
         self.peer_pool.read().get(ip).is_some_and(|peer| peer.is_connected())
     }
 
+    /// Returns `true` if the given IP is trusted.
+    pub fn is_trusted(&self, ip: &SocketAddr) -> bool {
+        self.peer_pool.read().get(ip).is_some_and(|peer| peer.is_trusted())
+    }
+
     /// Returns the maximum number of connected peers.
     pub fn max_connected_peers(&self) -> usize {
         self.tcp.config().max_connections as usize
@@ -380,6 +385,17 @@ impl<N: Network> Router<N> {
             .filter_map(|(addr, peer)| {
                 (matches!(peer, Peer::Candidate(_)) && !banned_ips.contains(&addr.ip())).then_some(*addr)
             })
+            .collect()
+    }
+
+    /// Returns the list of unconnected trusted peers.
+    pub fn unconnected_trusted_peers(&self) -> HashSet<SocketAddr> {
+        self.peer_pool
+            .read()
+            .iter()
+            .filter_map(
+                |(addr, peer)| if let Peer::Candidate(peer) = peer { peer.trusted.then_some(*addr) } else { None },
+            )
             .collect()
     }
 
