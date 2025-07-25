@@ -14,6 +14,7 @@
 // limitations under the License.
 
 use super::Developer;
+use crate::commands::StoreFormat;
 use snarkvm::{
     circuit::{Aleo, AleoCanaryV0, AleoTestnetV0, AleoV0},
     console::{
@@ -36,6 +37,10 @@ use aleo_std::StorageMode;
 use anyhow::{Result, bail};
 use clap::Parser;
 use colored::Colorize;
+use snarkvm::{
+    ledger::query::QueryTrait,
+    prelude::{Address, ConsensusVersion},
+};
 use std::{path::PathBuf, str::FromStr};
 use zeroize::Zeroize;
 
@@ -71,6 +76,10 @@ pub struct Deploy {
     /// Store generated deployment transaction to a local file.
     #[clap(long)]
     store: Option<String>,
+    /// If --store is specified, the format in which the transaction should be stored : string or
+    /// bytes, by default : bytes.
+    #[clap(long, value_enum, default_value_t = StoreFormat::Bytes)]
+    store_format: StoreFormat,
     /// Specify the path to a directory containing the ledger. Overrides the default path (also for
     /// dev).
     #[clap(long = "storage_path")]
@@ -118,7 +127,22 @@ impl Deploy {
         println!("📦 Creating deployment transaction for '{}'...\n", &program_id.to_string().bold());
 
         // Generate the deployment
-        let deployment = package.deploy::<A>(None)?;
+        let mut deployment = package.deploy::<A>(None)?;
+
+        // Get the consensus version.
+        let consensus_version = N::CONSENSUS_VERSION(query.current_block_height()?)?;
+
+        // If the consensus version is less than `V9`, unset the program checksum and owner in the deployment.
+        // Otherwise, set it to the appropriate values.
+        if consensus_version < ConsensusVersion::V9 {
+            deployment.set_program_checksum_raw(None);
+            deployment.set_program_owner_raw(None);
+        } else {
+            deployment.set_program_checksum_raw(Some(package.program().to_checksum()));
+            deployment.set_program_owner_raw(Some(Address::try_from(&private_key)?));
+        };
+
+        // Compute the deployment ID.
         let deployment_id = deployment.to_deployment_id()?;
 
         // Generate the deployment transaction.
@@ -137,7 +161,7 @@ impl Deploy {
             let vm = VM::from(store)?;
 
             // Compute the minimum deployment cost.
-            let (minimum_deployment_cost, (_, _, _)) = deployment_cost(&deployment)?;
+            let (minimum_deployment_cost, (_, _, _, _)) = deployment_cost(&vm.process().read(), &deployment)?;
 
             // Prepare the fees.
             let fee = match &self.record {
@@ -173,7 +197,14 @@ impl Deploy {
         println!("✅ Created deployment transaction for '{}'", program_id.to_string().bold());
 
         // Determine if the transaction should be broadcast, stored, or displayed to the user.
-        Developer::handle_transaction(&self.broadcast, self.dry_run, &self.store, transaction, program_id.to_string())
+        Developer::handle_transaction(
+            &self.broadcast,
+            self.dry_run,
+            &self.store,
+            self.store_format,
+            transaction,
+            program_id.to_string(),
+        )
     }
 }
 

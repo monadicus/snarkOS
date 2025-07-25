@@ -1,6 +1,6 @@
 [package]
 name = "snarkos-node-tcp"
-version = "3.8.0"
+version = "4.0.1"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A TCP stack for a decentralized operating system"
 homepage = "https://aleo.org"
@@ -14,7 +14,7 @@ keywords = [
 ]
 categories = [ "cryptography", "cryptography::cryptocurrencies", "os" ]
 license = "Apache-2.0"
-edition = "2021"
+edition = "2024"
 
 [features]
 default = [ ]
@@ -38,7 +38,7 @@ optional = true
 [dependencies.metrics]
 package = "snarkos-node-metrics"
 path = "../metrics"
-version = "=3.8.0"
+version = "=4.0.1"
 optional = true
 
 [dependencies.once_cell]
@@ -50,12 +50,14 @@ workspace = true
 features = [ "io-util", "net", "parking_lot", "rt", "sync", "time" ]
 
 [dependencies.tokio-util]
-version = "0.7"
+workspace = true
 features = [ "codec" ]
 
 [dependencies.tracing]
-version = "0.1"
-default-features = false
+workspace = true
+
+[dependencies.thiserror]
+version = "2"
 
 [dev-dependencies.tokio]
 workspace = true

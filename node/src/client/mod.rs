@@ -18,7 +18,7 @@ mod router;
 use crate::traits::NodeInterface;
 
 use snarkos_account::Account;
-use snarkos_node_bft::{events::DataBlocks, ledger_service::CoreLedgerService};
+use snarkos_node_bft::{events::DataBlocks, helpers::fmt_id, ledger_service::CoreLedgerService};
 use snarkos_node_cdn::CdnBlockSync;
 use snarkos_node_rest::Rest;
 use snarkos_node_router::{
@@ -29,7 +29,7 @@ use snarkos_node_router::{
     Routing,
     messages::{Message, NodeType, UnconfirmedSolution, UnconfirmedTransaction},
 };
-use snarkos_node_sync::{BLOCK_REQUEST_BATCH_DELAY, BlockSync, Ping};
+use snarkos_node_sync::{BLOCK_REQUEST_BATCH_DELAY, BlockSync, Ping, PrepareSyncRequest, locators::BlockLocators};
 use snarkos_node_tcp::{
     P2P,
     protocols::{Disconnect, Handshake, OnConnect, Reading},
@@ -48,6 +48,7 @@ use snarkvm::{
 use aleo_std::StorageMode;
 use anyhow::Result;
 use core::future::Future;
+use indexmap::IndexMap;
 #[cfg(feature = "locktick")]
 use locktick::parking_lot::Mutex;
 use lru::LruCache;
@@ -144,6 +145,7 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
         cdn: Option<String>,
         storage_mode: StorageMode,
         rotate_external_peers: bool,
+        dev: Option<u16>,
         shutdown: Arc<AtomicBool>,
     ) -> Result<Self> {
         // Initialize the signal handler.
@@ -167,7 +169,7 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
             Self::MAXIMUM_NUMBER_OF_PEERS as u16,
             rotate_external_peers,
             allow_external_peers,
-            matches!(storage_mode, StorageMode::Development(_)),
+            dev.is_some(),
         )
         .await?;
 
@@ -183,7 +185,7 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
             ledger: ledger.clone(),
             router,
             rest: None,
-            sync,
+            sync: sync.clone(),
             genesis,
             ping,
             puzzle: ledger.puzzle().clone(),
@@ -198,16 +200,20 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
         };
 
         // Perform sync with CDN (if enabled).
-        let cdn_sync = cdn.map(|base_url| Arc::new(CdnBlockSync::new(base_url, ledger.clone(), shutdown)));
+        let cdn_sync = cdn.map(|base_url| {
+            trace!("CDN sync is enabled");
+            Arc::new(CdnBlockSync::new(base_url, ledger.clone(), shutdown))
+        });
 
         // Initialize the REST server.
         if let Some(rest_ip) = rest_ip {
             node.rest = Some(
-                Rest::start(rest_ip, rest_rps, None, ledger.clone(), Arc::new(node.clone()), cdn_sync.clone()).await?,
+                Rest::start(rest_ip, rest_rps, None, ledger.clone(), Arc::new(node.clone()), cdn_sync.clone(), sync)
+                    .await?,
             );
         }
 
-        // Set up everythign else after CDN sync is done.
+        // Set up everything else after CDN sync is done.
         if let Some(cdn_sync) = cdn_sync {
             if let Err(error) = cdn_sync.wait().await {
                 crate::log_clean_error(&storage_mode);
@@ -248,7 +254,7 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
 impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
     const SYNC_INTERVAL: Duration = std::time::Duration::from_secs(5);
 
-    /// Initializes the sync pool.
+    /// Spawns the tasks that performs the syncing logic for this client.
     fn initialize_sync(&self) {
         // Start the sync loop.
         let _self = self.clone();
@@ -283,23 +289,19 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
         // Sleep briefly to avoid triggering spam detection.
         let _ = timeout(Self::SYNC_INTERVAL, self.sync.wait_for_update()).await;
 
-        // Do not attempt to sync if there are not blocks to sync.
-        // This prevents redudant log messages and performing unnecessary computation.
-        if !self.sync.can_block_sync() {
-            return;
+        // For sanity, check that sync height is never below ledger height.
+        // (if the ledger height is lower or equal to the current sync height, this is a noop)
+        self.sync.set_sync_height(self.ledger.latest_height());
+
+        let new_requests = self.sync.handle_block_request_timeouts(self);
+        if let Some((block_requests, sync_peers)) = new_requests {
+            self.send_block_requests(block_requests, sync_peers).await;
         }
 
-        // First see if any peers need removal.
-        let peers_to_ban = self.sync.remove_timed_out_block_requests();
-        for peer_ip in peers_to_ban {
-            trace!("Banning peer {peer_ip} for timing out on block requests");
-
-            let tcp = self.router.tcp().clone();
-            tcp.banned_peers().update_ip_ban(peer_ip.ip());
-
-            tokio::spawn(async move {
-                tcp.disconnect(peer_ip).await;
-            });
+        // Do not attempt to sync if there are not blocks to sync.
+        // This prevents redundant log messages and performing unnecessary computation.
+        if !self.sync.can_block_sync() {
+            return;
         }
 
         // Prepare the block requests, if any.
@@ -311,7 +313,13 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
         if block_requests.is_empty() && self.sync.has_pending_responses() {
             // Try to advance the ledger with the sync pool.
             trace!("No block requests to send. Will process pending responses.");
-            let has_new_blocks = self.sync.try_advancing_block_synchronization();
+            let has_new_blocks = match self.sync.try_advancing_block_synchronization().await {
+                Ok(val) => val,
+                Err(err) => {
+                    error!("{err}");
+                    return;
+                }
+            };
 
             if has_new_blocks {
                 match self.sync.get_block_locators() {
@@ -320,23 +328,38 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
                 }
             }
         } else if block_requests.is_empty() {
-            warn!(
-                "Not block synced yet, and there are no outstanding block requests or \
+            let total_requests = self.sync.num_total_block_requests();
+            let num_outstanding = self.sync.num_outstanding_block_requests();
+            if total_requests > 0 {
+                trace!(
+                    "Not block synced yet, but there are still {total_requests} in-flight requests. {num_outstanding} are still awaiting responses."
+                );
+            } else {
+                // This can happen during peer rotation and should not be a warning.
+                debug!(
+                    "Not block synced yet, and there are no outstanding block requests or \
                  new block requests to send"
-            );
-        } else {
-            trace!("Prepared {} new block requests.", block_requests.len());
-
-            // Issues the block requests in batches.
-            for requests in block_requests.chunks(DataBlocks::<N>::MAXIMUM_NUMBER_OF_BLOCKS as usize) {
-                if !self.sync.send_block_requests(self, &sync_peers, requests).await {
-                    // Stop if we fail to process a batch of requests.
-                    break;
-                }
-
-                // Sleep to avoid triggering spam detection.
-                tokio::time::sleep(BLOCK_REQUEST_BATCH_DELAY).await;
+                );
             }
+        } else {
+            self.send_block_requests(block_requests, sync_peers).await;
+        }
+    }
+
+    async fn send_block_requests(
+        &self,
+        block_requests: Vec<(u32, PrepareSyncRequest<N>)>,
+        sync_peers: IndexMap<SocketAddr, BlockLocators<N>>,
+    ) {
+        // Issues the block requests in batches.
+        for requests in block_requests.chunks(DataBlocks::<N>::MAXIMUM_NUMBER_OF_BLOCKS as usize) {
+            if !self.sync.send_block_requests(self, &sync_peers, requests).await {
+                // Stop if we fail to process a batch of requests.
+                break;
+            }
+
+            // Sleep to avoid triggering spam detection.
+            tokio::time::sleep(BLOCK_REQUEST_BATCH_DELAY).await;
         }
     }
 
@@ -373,6 +396,13 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
                     tokio::task::spawn_blocking(move || {
                         // Retrieve the latest epoch hash.
                         if let Ok(epoch_hash) = _node.ledger.latest_epoch_hash() {
+                            // Check if the prover has reached their solution limit.
+                            // While snarkVM will ultimately abort any excess solutions for safety, performing this check
+                            // here prevents the to-be aborted solutions from propagating through the network.
+                            let prover_address = solution.address();
+                            if _node.ledger.is_solution_limit_reached(&prover_address, 0) {
+                                debug!("Invalid Solution '{}' - Prover '{prover_address}' has reached their solution limit for the current epoch", fmt_id(solution.id()));
+                            }
                             // Retrieve the latest proof target.
                             let proof_target = _node.ledger.latest_block().header().proof_target();
                             // Ensure that the solution is valid for the given epoch.

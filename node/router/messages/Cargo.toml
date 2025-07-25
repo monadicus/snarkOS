@@ -1,6 +1,6 @@
 [package]
 name = "snarkos-node-router-messages"
-version = "3.8.0"
+version = "4.0.1"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Node messages for a decentralized operating system"
 homepage = "https://aleo.org"
@@ -14,7 +14,7 @@ keywords = [
 ]
 categories = [ "cryptography", "cryptography::cryptocurrencies", "os" ]
 license = "Apache-2.0"
-edition = "2021"
+edition = "2024"
 
 [features]
 default = [ ]
@@ -28,21 +28,21 @@ version = "1"
 
 [dependencies.snarkos-node-bft-events]
 path = "../../bft/events"
-version = "=3.8.0"
+version = "=4.0.1"
 
 [dependencies.snarkos-node-sync-locators]
 path = "../../sync/locators"
-version = "=3.8.0"
+version = "=4.0.1"
 
 [dependencies.snarkvm]
 workspace = true
 
 [dependencies.tokio-util]
-version = "0.7"
+workspace = true
 features = [ "codec" ]
 
 [dependencies.tracing]
-version = "0.1"
+workspace = true
 
 [dev-dependencies.snarkos-node-sync-locators]
 path = "../../sync/locators"

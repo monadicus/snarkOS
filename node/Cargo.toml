@@ -1,6 +1,6 @@
 [package]
 name = "snarkos-node"
-version = "3.8.0"
+version = "4.0.1"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A node for a decentralized operating system"
 homepage = "https://aleo.org"
@@ -14,7 +14,7 @@ keywords = [
 ]
 categories = [ "cryptography", "cryptography::cryptocurrencies", "os" ]
 license = "Apache-2.0"
-edition = "2021"
+edition = "2024"
 
 [features]
 default = [ "parallel" ]
@@ -49,6 +49,7 @@ cuda = [
   "snarkos-node-router/cuda",
   "snarkos-node-sync/cuda"
 ]
+serial = [ "snarkos-node-bft/serial" ]
 
 [dependencies.aleo-std]
 workspace = true
@@ -81,7 +82,7 @@ version = "1"
 version = "1"
 
 [dependencies.parking_lot]
-version = "0.12"
+workspace = true
 
 [dependencies.rand]
 version = "0.8"
@@ -93,35 +94,35 @@ features = [ "preserve_order" ]
 
 [dependencies.snarkos-account]
 path = "../account"
-version = "=3.8.0"
+version = "=4.0.1"
 
 [dependencies.snarkos-node-bft]
 path = "./bft"
-version = "=3.8.0"
+version = "=4.0.1"
 
 [dependencies.snarkos-node-cdn]
 path = "./cdn"
-version = "=3.8.0"
+version = "=4.0.1"
 
 [dependencies.snarkos-node-consensus]
 path = "./consensus"
-version = "=3.8.0"
+version = "=4.0.1"
 
 [dependencies.snarkos-node-rest]
 path = "./rest"
-version = "=3.8.0"
+version = "=4.0.1"
 
 [dependencies.snarkos-node-router]
 path = "./router"
-version = "=3.8.0"
+version = "=4.0.1"
 
 [dependencies.snarkos-node-sync]
 path = "./sync"
-version = "=3.8.0"
+version = "=4.0.1"
 
 [dependencies.snarkos-node-tcp]
 path = "./tcp"
-version = "=3.8.0"
+version = "=4.0.1"
 
 [dependencies.snarkvm]
 workspace = true
@@ -134,10 +135,13 @@ workspace = true
 features = [ "rt", "signal" ]
 
 [dependencies.tokio-util]
-version = "0.7"
+workspace = true
 
 [dependencies.tracing]
-version = "0.1"
+workspace = true
+
+[dependencies.indexmap]
+workspace = true
 
 [dev-dependencies.deadline]
 version = "0.2"
@@ -153,7 +157,7 @@ path = "./router"
 features = [ "test" ]
 
 [dev-dependencies.tracing-subscriber]
-version = "0.3"
+workspace = true
 features = [ "env-filter", "fmt" ]
 
 [dev-dependencies.rand_chacha]

@@ -111,6 +111,7 @@ pub struct Consensus<N: Network> {
 
 impl<N: Network> Consensus<N> {
     /// Initializes a new instance of consensus and spawn its background tasks.
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         account: Account<N>,
         ledger: Arc<dyn LedgerService<N>>,
@@ -119,6 +120,7 @@ impl<N: Network> Consensus<N> {
         trusted_validators: &[SocketAddr],
         storage_mode: StorageMode,
         ping: Arc<Ping<N>>,
+        dev: Option<u16>,
     ) -> Result<Self> {
         // Initialize the primary channels.
         let (primary_sender, primary_receiver) = init_primary_channels::<N>();
@@ -127,7 +129,8 @@ impl<N: Network> Consensus<N> {
         // Initialize the Narwhal storage.
         let storage = NarwhalStorage::new(ledger.clone(), transmissions, BatchHeader::<N>::MAX_GC_ROUNDS as u64);
         // Initialize the BFT.
-        let bft = BFT::new(account, storage, ledger.clone(), block_sync.clone(), ip, trusted_validators, storage_mode)?;
+        let bft =
+            BFT::new(account, storage, ledger.clone(), block_sync.clone(), ip, trusted_validators, storage_mode, dev)?;
         // Create a new instance of Consensus.
         let mut _self = Self {
             ledger,
@@ -388,7 +391,7 @@ impl<N: Network> Consensus<N> {
         self.process_unconfirmed_transactions().await
     }
 
-    /// Processes unconfirmed transctions in the mempool, and passes them to the BFT layer
+    /// Processes unconfirmed transactions in the mempool, and passes them to the BFT layer
     /// (if sufficient space is available).
     async fn process_unconfirmed_transactions(&self) -> Result<()> {
         // If the memory pool of this node is full, return early.
@@ -422,7 +425,13 @@ impl<N: Network> Consensus<N> {
         // Iterate over the transactions.
         for transaction in transactions.into_iter() {
             let transaction_id = transaction.id();
-            trace!("Adding unconfirmed transaction '{}' to the memory pool...", fmt_id(transaction_id));
+            // Determine the type of the transaction. The fee type is technically not possible here.
+            let tx_type_str = match transaction {
+                Transaction::Deploy(..) => "deployment",
+                Transaction::Execute(..) => "execution",
+                Transaction::Fee(..) => "fee",
+            };
+            trace!("Adding unconfirmed {tx_type_str} transaction '{}' to the memory pool...", fmt_id(transaction_id));
             // Send the unconfirmed transaction to the primary.
             if let Err(e) =
                 self.primary_sender.send_unconfirmed_transaction(transaction_id, Data::Object(transaction)).await
@@ -430,7 +439,7 @@ impl<N: Network> Consensus<N> {
                 // If the BFT is synced, then log the warning.
                 if self.bft.is_synced() {
                     warn!(
-                        "Failed to add unconfirmed transaction '{}' to the memory pool - {e}",
+                        "Failed to add unconfirmed {tx_type_str} transaction '{}' to the memory pool - {e}",
                         fmt_id(transaction_id)
                     );
                 }
@@ -499,7 +508,7 @@ impl<N: Network> Consensus<N> {
         callback.send(result).ok();
     }
 
-    /// Attempts to advance the ledger to the next block, and upadtes the metrics (if enabled) accordingly.
+    /// Attempts to advance the ledger to the next block, and updates the metrics (if enabled) accordingly.
     fn try_advance_to_next_block(
         &self,
         subdag: Subdag<N>,

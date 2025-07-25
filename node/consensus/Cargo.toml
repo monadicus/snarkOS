@@ -1,6 +1,6 @@
 [package]
 name = "snarkos-node-consensus"
-version = "3.8.0"
+version = "4.0.1"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A node consensus for a decentralized operating system"
 homepage = "https://aleo.org"
@@ -14,7 +14,7 @@ keywords = [
 ]
 categories = [ "cryptography", "cryptography::cryptocurrencies", "os" ]
 license = "Apache-2.0"
-edition = "2021"
+edition = "2024"
 
 [features]
 default = [ ]
@@ -28,6 +28,8 @@ locktick = [
 metrics = [ "dep:metrics" ]
 telemetry = [ "snarkos-node-bft/telemetry" ]
 cuda = [ "snarkvm/cuda", "snarkos-account/cuda", "snarkos-node-bft-ledger-service/cuda" ]
+serial = [ "snarkos-node-bft-ledger-service/serial" ]
+
 
 [dependencies.aleo-std]
 workspace = true
@@ -53,7 +55,7 @@ version = "0.12.1"
 [dependencies.metrics]
 package = "snarkos-node-metrics"
 path = "../metrics"
-version = "=3.8.0"
+version = "=4.0.1"
 optional = true
 
 [dependencies.parking_lot]
@@ -61,27 +63,27 @@ version = "0.12"
 
 [dependencies.snarkos-account]
 path = "../../account"
-version = "=3.8.0"
+version = "=4.0.1"
 
 [dependencies.snarkos-node-bft]
 path = "../bft"
-version = "=3.8.0"
+version = "=4.0.1"
 
 [dependencies.snarkos-node-bft-ledger-service]
 path = "../bft/ledger-service"
-version = "=3.8.0"
+version = "=4.0.1"
 default-features = false
 features = [ "ledger", "ledger-write" ]
 
 [dependencies.snarkos-node-bft-storage-service]
 path = "../bft/storage-service"
-version = "=3.8.0"
+version = "=4.0.1"
 default-features = false
 features = [ "persistent" ]
 
 [dependencies.snarkos-node-sync]
 path = "../sync"
-version = "=3.8.0"
+version = "=4.0.1"
 
 [dependencies.snarkvm]
 workspace = true
@@ -91,7 +93,7 @@ workspace = true
 features = [ "macros", "rt-multi-thread", "signal" ]
 
 [dependencies.tracing]
-version = "0.1"
+workspace = true
 
 [dev-dependencies.indexmap]
 workspace = true
@@ -107,4 +109,4 @@ version = "1.19"
  features = [ "test-helpers" ]
 
 [dev-dependencies.tracing-test]
-version = "0.2"
+workspace = true

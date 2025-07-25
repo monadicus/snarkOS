@@ -64,8 +64,6 @@ where
     async fn on_connect(&self, peer_addr: SocketAddr) {
         // Resolve the peer address to the listener address.
         let Some(peer_ip) = self.router.resolve_to_listener(&peer_addr) else { return };
-        // Promote the peer's status from "connecting" to "connected".
-        self.router().insert_connected_peer(peer_ip);
         // Send the first `Ping` message to the peer.
         self.ping.on_peer_connected(peer_ip);
     }
@@ -147,14 +145,10 @@ impl<N: Network, C: ConsensusStorage<N>> Outbound<N> for Validator<N, C> {
         self.sync.is_block_synced()
     }
 
-    /// Returns the number of blocks this node is behind the greatest peer height.
-    fn num_blocks_behind(&self) -> u32 {
+    /// Returns the number of blocks this node is behind the greatest peer height,
+    /// or `None` if not connected to peers yet.
+    fn num_blocks_behind(&self) -> Option<u32> {
         self.sync.num_blocks_behind()
-    }
-
-    /// Returns the greatest block height of any connected peer.
-    fn greatest_peer_block_height(&self) -> Option<u32> {
-        self.sync.greatest_peer_block_height()
     }
 }
 
@@ -183,17 +177,9 @@ impl<N: Network, C: ConsensusStorage<N>> Inbound<N> for Validator<N, C> {
     }
 
     /// Handles a `BlockResponse` message.
-    fn block_response(&self, peer_ip: SocketAddr, blocks: Vec<Block<N>>) -> bool {
-        match self.sync.insert_block_responses(peer_ip, blocks) {
-            Ok(()) => {
-                self.sync.try_advancing_block_synchronization();
-                true
-            }
-            Err(error) => {
-                warn!("{error}");
-                false
-            }
-        }
+    fn block_response(&self, peer_ip: SocketAddr, _blocks: Vec<Block<N>>) -> bool {
+        warn!("Received a block response through P2P, not BFT, from {peer_ip}");
+        false
     }
 
     /// Processes a ping message from a client (or prover) and sends back a `Pong` message.

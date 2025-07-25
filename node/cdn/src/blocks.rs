@@ -24,13 +24,13 @@ use snarkvm::prelude::{
     Network,
     Serialize,
     block::Block,
-    store::{ConsensusStorage, cow_to_copied},
+    store::ConsensusStorage,
 };
 
 use anyhow::{Result, anyhow, bail};
 use colored::Colorize;
 #[cfg(feature = "locktick")]
-use locktick::parking_lot::Mutex;
+use locktick::{parking_lot::Mutex, tokio::Mutex as TMutex};
 #[cfg(not(feature = "locktick"))]
 use parking_lot::Mutex;
 use reqwest::Client;
@@ -42,7 +42,9 @@ use std::{
     },
     time::{Duration, Instant},
 };
-use tokio::{sync::Mutex as TMutex, task::JoinHandle};
+#[cfg(not(feature = "locktick"))]
+use tokio::sync::Mutex as TMutex;
+use tokio::task::JoinHandle;
 
 /// The number of blocks per file.
 const BLOCKS_PER_FILE: u32 = 50;
@@ -52,6 +54,9 @@ const CONCURRENT_REQUESTS: u32 = 16;
 const MAXIMUM_PENDING_BLOCKS: u32 = BLOCKS_PER_FILE * CONCURRENT_REQUESTS * 2;
 /// Maximum number of attempts for a request to the CDN.
 const MAXIMUM_REQUEST_ATTEMPTS: u8 = 10;
+
+/// The CDN base url.
+pub const CDN_BASE_URL: &str = "https://cdn.provable.com/v0/blocks";
 
 /// Updates the metrics during CDN sync.
 #[cfg(feature = "metrics")]
@@ -89,6 +94,7 @@ impl CdnBlockSync {
             tokio::spawn(async move { Self::worker(base_url, ledger, shutdown).await })
         };
 
+        debug!("Started sync from CDN at {base_url}");
         Self { done: AtomicBool::new(false), base_url, task: Mutex::new(Some(task)) }
     }
 
@@ -134,7 +140,7 @@ impl CdnBlockSync {
                 debug!("Synced the ledger up to block {completed_height}");
 
                 // Retrieve the latest height, according to the ledger.
-                let node_height = cow_to_copied!(ledger.vm().block_store().heights().max().unwrap_or_default());
+                let node_height = *ledger.vm().block_store().heights().max().unwrap_or_default();
                 // Check the integrity of the latest height.
                 if &node_height != completed_height {
                     return Err((*completed_height, anyhow!("The ledger height does not match the last sync height")));
@@ -462,11 +468,45 @@ async fn cdn_get<T: 'static + DeserializeOwned + Send>(client: Client, url: &str
         Ok(bytes) => bytes,
         Err(error) => bail!("Failed to parse {ctx} - {error}"),
     };
+
     // Parse the objects.
     match tokio::task::spawn_blocking(move || bincode::deserialize::<T>(&bytes)).await {
         Ok(Ok(objects)) => Ok(objects),
         Ok(Err(error)) => bail!("Failed to deserialize {ctx} - {error}"),
         Err(error) => bail!("Failed to join task for {ctx} - {error}"),
+    }
+}
+
+/// Converts a duration into a string that humans can read easily.
+///
+/// # Output
+/// The output remains to be accurate but not too detailed (to reduce noise in the log).
+/// It will give at most two levels of granularity, e.g., days and hours,
+/// and only shows seconds if less than a minute remains.
+fn to_human_readable_duration(duration: Duration) -> String {
+    // TODO: simplify this once the duration_constructors feature is stable
+    // See: https://github.com/rust-lang/rust/issues/140881
+    const SECS_PER_MIN: u64 = 60;
+    const MINS_PER_HOUR: u64 = 60;
+    const SECS_PER_HOUR: u64 = SECS_PER_MIN * MINS_PER_HOUR;
+    const HOURS_PER_DAY: u64 = 24;
+    const SECS_PER_DAY: u64 = SECS_PER_HOUR * HOURS_PER_DAY;
+
+    let duration = duration.as_secs();
+
+    if duration < 1 {
+        "less than one second".to_string()
+    } else if duration < SECS_PER_MIN {
+        format!("{duration} seconds")
+    } else if duration < SECS_PER_HOUR {
+        format!("{} minutes", duration / SECS_PER_MIN)
+    } else if duration < SECS_PER_DAY {
+        let mins = duration / SECS_PER_MIN;
+        format!("{hours} hours and {remainder} minutes", hours = mins / 60, remainder = mins % 60)
+    } else {
+        let days = duration / SECS_PER_DAY;
+        let hours = (duration % SECS_PER_DAY) / SECS_PER_HOUR;
+        format!("{days} days and {hours} hours")
     }
 }
 
@@ -478,10 +518,17 @@ fn log_progress<const OBJECTS_PER_FILE: u32>(
     mut cdn_end: u32,
     object_name: &str,
 ) {
+    debug_assert!(cdn_start <= cdn_end);
+    debug_assert!(current_index <= cdn_end);
+    debug_assert!(cdn_end >= 1);
+
     // Subtract 1, as the end of the range is exclusive.
     cdn_end -= 1;
-    // Compute the percentage completed.
-    let percentage = current_index * 100 / cdn_end;
+
+    // Compute the percentage completed of this particular sync.
+    let sync_percentage =
+        (current_index.saturating_sub(cdn_start) * 100).checked_div(cdn_end.saturating_sub(cdn_start)).unwrap_or(100);
+
     // Compute the number of files processed so far.
     let num_files_done = 1 + (current_index - cdn_start) / OBJECTS_PER_FILE;
     // Compute the number of files remaining.
@@ -491,25 +538,29 @@ fn log_progress<const OBJECTS_PER_FILE: u32>(
     // Compute the heuristic slowdown factor (in millis).
     let slowdown = 100 * num_files_remaining as u128;
     // Compute the time remaining (in millis).
-    let time_remaining = num_files_remaining as u128 * millis_per_file + slowdown;
+    let time_remaining = {
+        let remaining = num_files_remaining as u128 * millis_per_file + slowdown;
+        to_human_readable_duration(Duration::from_secs((remaining / 1000) as u64))
+    };
     // Prepare the estimate message (in secs).
-    let estimate = format!("(est. {} minutes remaining)", time_remaining / (60 * 1000));
+    let estimate = format!("(started at height {cdn_start}, est. {time_remaining} remaining)");
     // Log the progress.
-    info!("Synced up to {object_name} {current_index} of {cdn_end} - {percentage}% complete {}", estimate.dimmed());
+    info!(
+        "Reached {object_name} {current_index} of {cdn_end} - Sync is {sync_percentage}% complete {}",
+        estimate.dimmed()
+    );
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{BLOCKS_PER_FILE, cdn_height, load_blocks, log_progress};
-
+    use super::{BLOCKS_PER_FILE, CDN_BASE_URL, cdn_height, log_progress};
+    use crate::load_blocks;
     use snarkvm::prelude::{MainnetV0, block::Block};
 
     use parking_lot::RwLock;
     use std::{sync::Arc, time::Instant};
 
     type CurrentNetwork = MainnetV0;
-
-    const TEST_BASE_URL: &str = "https://cdn.provable.com/v0/blocks/mainnet";
 
     fn check_load_blocks(start: u32, end: Option<u32>, expected: usize) {
         let blocks = Arc::new(RwLock::new(Vec::new()));
@@ -519,9 +570,12 @@ mod tests {
             Ok(())
         };
 
+        let testnet_cdn_url = format!("{CDN_BASE_URL}/mainnet");
+
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
-            let completed_height = load_blocks(TEST_BASE_URL, start, end, Default::default(), process).await.unwrap();
+            let completed_height =
+                load_blocks(&testnet_cdn_url, start, end, Default::default(), process).await.unwrap();
             assert_eq!(blocks.read().len(), expected);
             if expected > 0 {
                 assert_eq!(blocks.read().last().unwrap().height(), completed_height);
@@ -565,8 +619,9 @@ mod tests {
     fn test_cdn_height() {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let client = reqwest::Client::builder().use_rustls_tls().build().unwrap();
+        let testnet_cdn_url = format!("{CDN_BASE_URL}/mainnet");
         rt.block_on(async {
-            let height = cdn_height::<BLOCKS_PER_FILE>(&client, TEST_BASE_URL).await.unwrap();
+            let height = cdn_height::<BLOCKS_PER_FILE>(&client, &testnet_cdn_url).await.unwrap();
             assert!(height > 0);
         });
     }

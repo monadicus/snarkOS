@@ -61,8 +61,6 @@ where
     async fn on_connect(&self, peer_addr: SocketAddr) {
         // Resolve the peer address to the listener address.
         let Some(peer_ip) = self.router.resolve_to_listener(&peer_addr) else { return };
-        // Promote the peer's status from "connecting" to "connected".
-        self.router().insert_connected_peer(peer_ip);
         // Send the first `Ping` message to the peer.
         self.ping.on_peer_connected(peer_ip);
     }
@@ -133,14 +131,11 @@ impl<N: Network, C: ConsensusStorage<N>> Outbound<N> for Prover<N, C> {
         true
     }
 
-    /// Returns the number of blocks this node is behind the greatest peer height.
-    fn num_blocks_behind(&self) -> u32 {
-        0
-    }
-
-    /// Returns the greatest block height of any connected peer.
-    fn greatest_peer_block_height(&self) -> Option<u32> {
-        None
+    /// Returns the number of blocks this node is behind the greatest peer height,
+    /// or `None` if not connected to peers yet.
+    fn num_blocks_behind(&self) -> Option<u32> {
+        //TODO(kaimast): should this return None instead?
+        Some(0)
     }
 }
 

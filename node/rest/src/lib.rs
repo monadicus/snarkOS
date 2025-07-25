@@ -23,19 +23,22 @@ pub use helpers::*;
 
 mod routes;
 
+mod version;
+
 use snarkos_node_cdn::CdnBlockSync;
 use snarkos_node_consensus::Consensus;
 use snarkos_node_router::{
     Routing,
     messages::{Message, UnconfirmedTransaction},
 };
+use snarkos_node_sync::BlockSync;
 use snarkvm::{
     console::{program::ProgramID, types::Field},
     ledger::narwhal::Data,
     prelude::{Ledger, Network, cfg_into_iter, store::ConsensusStorage},
 };
 
-use anyhow::Result;
+use anyhow::{Context, Result, bail};
 use axum::{
     Json,
     body::Body,
@@ -75,6 +78,8 @@ pub struct Rest<N: Network, C: ConsensusStorage<N>, R: Routing<N>> {
     routing: Arc<R>,
     /// The server handles.
     handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
+    /// A reference to BlockSync,
+    block_sync: Arc<BlockSync<N>>,
 }
 
 impl<N: Network, C: 'static + ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
@@ -86,11 +91,12 @@ impl<N: Network, C: 'static + ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> 
         ledger: Ledger<N, C>,
         routing: Arc<R>,
         cdn_sync: Option<Arc<CdnBlockSync>>,
+        block_sync: Arc<BlockSync<N>>,
     ) -> Result<Self> {
         // Initialize the server.
-        let mut server = Self { consensus, ledger, routing, cdn_sync, handles: Default::default() };
+        let mut server = Self { consensus, ledger, routing, cdn_sync, block_sync, handles: Default::default() };
         // Spawn the server.
-        server.spawn_server(rest_ip, rest_rps).await;
+        server.spawn_server(rest_ip, rest_rps).await?;
         // Return the server.
         Ok(server)
     }
@@ -109,7 +115,7 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
 }
 
 impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
-    async fn spawn_server(&mut self, rest_ip: SocketAddr, rest_rps: u32) {
+    async fn spawn_server(&mut self, rest_ip: SocketAddr, rest_rps: u32) -> Result<()> {
         let cors = CorsLayer::new()
             .allow_origin(Any)
             .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
@@ -143,8 +149,7 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
             snarkvm::console::network::TestnetV0::ID => "testnet",
             snarkvm::console::network::CanaryV0::ID => "canary",
             unknown_id => {
-                eprintln!("Unknown network ID ({unknown_id})");
-                return;
+                bail!("Unknown network ID ({unknown_id})");
             }
         };
 
@@ -154,7 +159,11 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
             // All the endpoints before the call to `route_layer` are protected with JWT auth.
             .route(&format!("/{network}/node/address"), get(Self::get_node_address))
             .route(&format!("/{network}/program/{{id}}/mapping/{{name}}"), get(Self::get_mapping_values))
+            .route(&format!("/{network}/db_backup"), post(Self::db_backup))
             .route_layer(middleware::from_fn(auth_middleware))
+
+             // Get ../consensus_version
+            .route(&format!("/{network}/consensus_version"), get(Self::get_consensus_version))
 
             // GET ../block/..
             .route(&format!("/{network}/block/height/latest"), get(Self::get_block_height_latest))
@@ -179,7 +188,8 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
             // GET ../find/..
             .route(&format!("/{network}/find/blockHash/{{tx_id}}"), get(Self::find_block_hash))
             .route(&format!("/{network}/find/blockHeight/{{state_root}}"), get(Self::find_block_height_from_state_root))
-            .route(&format!("/{network}/find/transactionID/deployment/{{program_id}}"), get(Self::find_transaction_id_from_program_id))
+            .route(&format!("/{network}/find/transactionID/deployment/{{program_id}}"), get(Self::find_latest_transaction_id_from_program_id))
+            .route(&format!("/{network}/find/transactionID/deployment/{{program_id}}/{{edition}}"), get(Self::find_transaction_id_from_program_id_and_edition))
             .route(&format!("/{network}/find/transactionID/{{transition_id}}"), get(Self::find_transaction_id_from_transition_id))
             .route(&format!("/{network}/find/transitionID/{{input_or_output_id}}"), get(Self::find_transition_id))
 
@@ -190,11 +200,21 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
 
             // GET ../program/..
             .route(&format!("/{network}/program/{{id}}"), get(Self::get_program))
+            .route(&format!("/{network}/program/{{id}}/latest_edition"), get(Self::get_latest_program_edition))
+            .route(&format!("/{network}/program/{{id}}/{{edition}}"), get(Self::get_program_for_edition))
             .route(&format!("/{network}/program/{{id}}/mappings"), get(Self::get_mapping_names))
             .route(&format!("/{network}/program/{{id}}/mapping/{{name}}/{{key}}"), get(Self::get_mapping_value))
 
-            // GET misc endpoints.
+            // GET ../sync/..
+            // Note: keeping ../sync_status for compatibility
             .route(&format!("/{network}/sync_status"), get(Self::get_sync_status))
+            .route(&format!("/{network}/sync/status"), get(Self::get_sync_status))
+            .route(&format!("/{network}/sync/peers"), get(Self::get_sync_peers))
+            .route(&format!("/{network}/sync/requests"), get(Self::get_sync_requests_summary))
+            .route(&format!("/{network}/sync/requests/list"), get(Self::get_sync_requests_list))
+
+            // GET misc endpoints.
+            .route(&format!("/{network}/version"), get(Self::get_version))
             .route(&format!("/{network}/blocks"), get(Self::get_blocks))
             .route(&format!("/{network}/height/{{hash}}"), get(Self::get_height))
             .route(&format!("/{network}/memoryPool/transmissions"), get(Self::get_memory_pool_transmissions))
@@ -238,12 +258,17 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
             })
         };
 
-        let rest_listener = TcpListener::bind(rest_ip).await.unwrap();
-        self.handles.lock().push(tokio::spawn(async move {
+        let rest_listener =
+            TcpListener::bind(rest_ip).await.with_context(|| "Failed to bind TCP port for REST endpoints")?;
+
+        let handle = tokio::spawn(async move {
             axum::serve(rest_listener, router.into_make_service_with_connect_info::<SocketAddr>())
                 .await
                 .expect("couldn't start rest server");
-        }))
+        });
+
+        self.handles.lock().push(handle);
+        Ok(())
     }
 }
 

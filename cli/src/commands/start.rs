@@ -21,6 +21,7 @@ use snarkos_node::{
     rest::DEFAULT_REST_PORT,
     router::{DEFAULT_NODE_PORT, messages::NodeType},
 };
+use snarkos_node_cdn::CDN_BASE_URL;
 use snarkvm::{
     console::{
         account::{Address, PrivateKey},
@@ -65,9 +66,6 @@ const DEVELOPMENT_MODE_RNG_SEED: u64 = 1234567890u64;
 /// The development mode number of genesis committee members.
 const DEVELOPMENT_MODE_NUM_GENESIS_COMMITTEE_MEMBERS: u16 = 4;
 
-/// The CDN base url.
-pub(crate) const CDN_BASE_URL: &str = "https://cdn.provable.com";
-
 /// A mapping of `staker_address` to `(validator_address, withdrawal_address, amount)`.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct BondedBalances(IndexMap<String, (String, String, u64)>);
@@ -84,19 +82,22 @@ impl FromStr for BondedBalances {
 #[derive(Clone, Debug, Parser)]
 #[command(
     // Use kebab-case for all arguments (e.g., use the `private-key` flag for the `private_key` field).
-    // This is already the default, but specify it in case clap changes it in the future.
+    // This is already the default, but we specify it in case clap's default changes in the future.
     rename_all = "kebab-case",
 
     // Ensure at most one node type is specified.
     group(clap::ArgGroup::new("node_type").required(false).multiple(false)
 ),
 
-    // Ensure dev flags can only be set if `--dev` is set.
+    // Ensure all other dev flags can only be set if `--dev` is set.
     group(clap::ArgGroup::new("dev_flags").required(false).multiple(true).requires("dev")
 ),
     // Ensure any rest flag (including `--rest`) cannot be set
     // if `--norest` is set.
-    group(clap::ArgGroup::new("rest_flags").required(false).multiple(true).conflicts_with("norest"))
+    group(clap::ArgGroup::new("rest_flags").required(false).multiple(true).conflicts_with("norest")),
+
+    // Ensure you cannot set --verbosity and --log-filter flags at the same time.
+    group(clap::ArgGroup::new("log_flags").required(false).multiple(false)),
 )]
 pub struct Start {
     /// Specify the network ID of this node
@@ -139,7 +140,7 @@ pub struct Start {
 
     /// Specify the IP address and port of the peer(s) to connect to (as a comma-separated list).
     ///
-    /// These peers will be set as "trusted", which means the node will not  disconnect from them when performing peer rotation.
+    /// These peers will be set as "trusted", which means the node will not disconnect from them when performing peer rotation.
     ///
     /// Setting peers to "" has the same effect as not setting the flag at all, except when using `--dev`.
     #[clap(long, verbatim_doc_comment)]
@@ -149,9 +150,9 @@ pub struct Start {
     #[clap(long)]
     pub validators: Option<String>,
 
-    /// Allow untrusted peers (not listed in `--peers`) to connect (as a comma-separated list)..
+    /// Allow untrusted peers (not listed in `--peers`) to connect.
     ///
-    /// This behavior is always enabled for lient and Prover nodes ignore the flag and always allow untrusted peers to connect.
+    /// The flag will be ignored by client and prover nodes, as tis behavior is always enabled for these types of nodes.
     #[clap(long, verbatim_doc_comment)]
     pub allow_external_peers: bool,
 
@@ -187,8 +188,12 @@ pub struct Start {
 
     /// Specify the log verbosity of the node.
     /// [options: 0 (lowest log level) to 6 (highest level)]
-    #[clap(long, default_value_t = 1)]
+    #[clap(long, default_value_t = 1, group = "log_flags")]
     pub verbosity: u8,
+
+    /// Set a custom log filtering scheme, e.g., "off,snarkos_bft=trace", to show all log messages of snarkos_bft but nothing else.
+    #[clap(long, group = "log_flags")]
+    pub log_filter: Option<String>,
 
     /// Specify the path to the file where logs will be stored
     #[clap(long, default_value_os_t = std::env::temp_dir().join("snarkos.log"))]
@@ -247,8 +252,15 @@ impl Start {
         let shutdown: Arc<AtomicBool> = Default::default();
 
         // Initialize the logger.
-        let log_receiver =
-            crate::helpers::initialize_logger(self.verbosity, self.nodisplay, self.logfile.clone(), shutdown.clone());
+        let log_receiver = crate::helpers::initialize_logger(
+            self.verbosity,
+            &self.log_filter,
+            self.nodisplay,
+            self.logfile.clone(),
+            shutdown.clone(),
+        )
+        .with_context(|| "Failed to set up logger")?;
+
         // Initialize the runtime.
         Self::runtime().block_on(async move {
             // Error messages.
@@ -361,9 +373,9 @@ impl Start {
                 },
                 // If no CDN URL is provided, determine the CDN URL based on the network ID.
                 None => match N::ID {
-                    MainnetV0::ID => Some(format!("{CDN_BASE_URL}/v0/blocks/mainnet")),
-                    TestnetV0::ID => Some(format!("{CDN_BASE_URL}/v0/blocks/testnet")),
-                    CanaryV0::ID => Some(format!("{CDN_BASE_URL}/v0/blocks/canary")),
+                    MainnetV0::ID => Some(format!("{CDN_BASE_URL}/mainnet")),
+                    TestnetV0::ID => Some(format!("{CDN_BASE_URL}/testnet")),
+                    CanaryV0::ID => Some(format!("{CDN_BASE_URL}/canary")),
                     _ => None,
                 },
             }
@@ -696,9 +708,9 @@ impl Start {
 
         // Initialize the node.
         match node_type {
-            NodeType::Validator => Node::new_validator(node_ip, self.bft, rest_ip, self.rest_rps, account, &trusted_peers, &trusted_validators, genesis, cdn, storage_mode, self.allow_external_peers, dev_txs, shutdown.clone()).await,
-            NodeType::Prover => Node::new_prover(node_ip, account, &trusted_peers, genesis, storage_mode, shutdown.clone()).await,
-            NodeType::Client => Node::new_client(node_ip, rest_ip, self.rest_rps, account, &trusted_peers, genesis, cdn, storage_mode, self.rotate_external_peers, shutdown).await,
+            NodeType::Validator => Node::new_validator(node_ip, self.bft, rest_ip, self.rest_rps, account, &trusted_peers, &trusted_validators, genesis, cdn, storage_mode, self.allow_external_peers, dev_txs, self.dev, shutdown.clone()).await,
+            NodeType::Prover => Node::new_prover(node_ip, account, &trusted_peers, genesis, self.dev, shutdown.clone()).await,
+            NodeType::Client => Node::new_client(node_ip, rest_ip, self.rest_rps, account, &trusted_peers, genesis, cdn, storage_mode, self.rotate_external_peers, self.dev, shutdown).await,
         }
     }
 
@@ -901,6 +913,19 @@ mod tests {
             SocketAddr::from_str("1.2.3.4:5").unwrap(),
             SocketAddr::from_str("6.7.8.9:0").unwrap()
         ]);
+    }
+
+    #[test]
+    fn test_parse_log_filter() {
+        // Ensure we cannot set, both, log-filter and verbosity
+        let result = Start::try_parse_from(["snarkos", "--verbosity=5", "--log-filter=warn"].iter());
+        assert!(result.is_err(), "Must not be able to set log-filter and verbosity at the same time");
+
+        // Ensure the values are set correctly.
+        let config = Start::try_parse_from(["snarkos", "--verbosity=5"].iter()).unwrap();
+        assert_eq!(config.verbosity, 5);
+        let config = Start::try_parse_from(["snarkos", "--log-filter=snarkos=warn"].iter()).unwrap();
+        assert_eq!(config.log_filter, Some("snarkos=warn".to_string()));
     }
 
     #[test]

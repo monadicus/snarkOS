@@ -14,17 +14,22 @@
 // limitations under the License.
 
 use super::*;
-use snarkos_node_router::{SYNC_LENIENCY, messages::UnconfirmedSolution};
+use snarkos_node_router::messages::UnconfirmedSolution;
 use snarkvm::{
     ledger::puzzle::Solution,
-    prelude::{Address, Identifier, LimitedWriter, Plaintext, ToBytes, block::Transaction},
+    prelude::{Address, Identifier, LimitedWriter, Plaintext, Program, ToBytes, block::Transaction},
 };
 
 use indexmap::IndexMap;
-use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use serde_with::skip_serializing_none;
+use std::collections::HashMap;
+
+#[cfg(not(feature = "serial"))]
+use rayon::prelude::*;
+
+use version::VersionInfo;
 
 /// The `get_blocks` query object.
 #[derive(Deserialize, Serialize)]
@@ -33,6 +38,11 @@ pub(crate) struct BlockRange {
     start: u32,
     /// The ending block height (exclusive).
     end: u32,
+}
+
+#[derive(Deserialize, Serialize)]
+pub(crate) struct BackupPath {
+    path: std::path::PathBuf,
 }
 
 /// The query object for `get_mapping_value` and `get_mapping_values`.
@@ -57,9 +67,21 @@ struct SyncStatus<'a> {
     /// The greatest known block height of a peer.
     /// None, if no peers are connected yet.
     p2p_height: Option<u32>,
+    /// The number of outstanding p2p sync requests.
+    outstanding_block_requests: usize,
 }
 
 impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
+    // GET /<network>/version
+    pub(crate) async fn get_version() -> ErasedJson {
+        ErasedJson::pretty(VersionInfo::get())
+    }
+
+    // Get /<network>/consensus_version
+    pub(crate) async fn get_consensus_version(State(rest): State<Self>) -> Result<ErasedJson, RestError> {
+        Ok(ErasedJson::pretty(N::CONSENSUS_VERSION(rest.ledger.latest_height())? as u16))
+    }
+
     // GET /<network>/block/height/latest
     pub(crate) async fn get_block_height_latest(State(rest): State<Self>) -> ErasedJson {
         ErasedJson::pretty(rest.ledger.latest_height())
@@ -121,7 +143,7 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
 
         // Prepare a closure for the blocking work.
         let get_json_blocks = move || -> Result<ErasedJson, RestError> {
-            let blocks = cfg_into_iter!((start_height..end_height))
+            let blocks = cfg_into_iter!(start_height..end_height)
                 .map(|height| rest.ledger.get_block(height))
                 .collect::<Result<Vec<_>, _>>()?;
 
@@ -135,16 +157,17 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
         }
     }
 
-    // GET /<network>/status
+    // GET /<network>/sync/status
     pub(crate) async fn get_sync_status(State(rest): State<Self>) -> Result<ErasedJson, RestError> {
         // Get the CDN height (if we are syncing from a CDN)
         let (cdn_sync, cdn_height) = if let Some(cdn_sync) = &rest.cdn_sync {
             let done = cdn_sync.is_done();
 
-            // do not show CDN height if we are already done syncing from the CDN
+            // Do not show CDN height if we are already done syncing from the CDN.
             let cdn_height = if done { None } else { Some(cdn_sync.get_cdn_height().await?) };
 
-            (done, cdn_height)
+            // Report CDN sync until it is finished.
+            (!done, cdn_height)
         } else {
             (false, None)
         };
@@ -155,10 +178,30 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
         Ok(ErasedJson::pretty(SyncStatus {
             sync_mode,
             cdn_height,
-            is_synced: rest.routing.is_block_synced(),
+            is_synced: !cdn_sync && rest.routing.is_block_synced(),
             ledger_height: rest.ledger.latest_height(),
-            p2p_height: rest.routing.greatest_peer_block_height(),
+            p2p_height: rest.block_sync.greatest_peer_block_height(),
+            outstanding_block_requests: rest.block_sync.num_outstanding_block_requests(),
         }))
+    }
+
+    // GET /<network>/sync/peers
+    pub(crate) async fn get_sync_peers(State(rest): State<Self>) -> Result<ErasedJson, RestError> {
+        let peers: HashMap<String, u32> =
+            rest.block_sync.get_peer_heights().into_iter().map(|(addr, height)| (addr.to_string(), height)).collect();
+        Ok(ErasedJson::pretty(peers))
+    }
+
+    // GET /<network>/sync/requests
+    pub(crate) async fn get_sync_requests_summary(State(rest): State<Self>) -> Result<ErasedJson, RestError> {
+        let summary = rest.block_sync.get_block_requests_summary();
+        Ok(ErasedJson::pretty(summary))
+    }
+
+    // GET /<network>/sync/requests/list
+    pub(crate) async fn get_sync_requests_list(State(rest): State<Self>) -> Result<ErasedJson, RestError> {
+        let requests = rest.block_sync.get_block_requests_info();
+        Ok(ErasedJson::pretty(requests))
     }
 
     // GET /<network>/height/{blockHash}
@@ -236,11 +279,73 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
     }
 
     // GET /<network>/program/{programID}
+    // GET /<network>/program/{programID}?metadata={true}
     pub(crate) async fn get_program(
         State(rest): State<Self>,
         Path(id): Path<ProgramID<N>>,
+        metadata: Query<Metadata>,
     ) -> Result<ErasedJson, RestError> {
-        Ok(ErasedJson::pretty(rest.ledger.get_program(id)?))
+        // Get the program from the ledger.
+        let program = rest.ledger.get_program(id)?;
+        // Check if metadata is requested and return the program with metadata if so.
+        if metadata.metadata.unwrap_or(false) {
+            // Get the edition of the program.
+            let edition = rest.ledger.get_latest_edition_for_program(&id)?;
+            return rest.return_program_with_metadata(program, edition);
+        }
+        // Return the program without metadata.
+        Ok(ErasedJson::pretty(program))
+    }
+
+    // GET /<network>/program/{programID}/{edition}
+    // GET /<network>/program/{programID}/{edition}?metadata={true}
+    pub(crate) async fn get_program_for_edition(
+        State(rest): State<Self>,
+        Path((id, edition)): Path<(ProgramID<N>, u16)>,
+        metadata: Query<Metadata>,
+    ) -> Result<ErasedJson, RestError> {
+        // Get the program from the ledger.
+        let program = rest.ledger.get_program_for_edition(id, edition)?;
+        // Check if metadata is requested and return the program with metadata if so.
+        if metadata.metadata.unwrap_or(false) {
+            return rest.return_program_with_metadata(program, edition);
+        }
+        Ok(ErasedJson::pretty(program))
+    }
+
+    // A helper function to return the program and its metadata.
+    // This function is used in the `get_program` and `get_program_for_edition` functions.
+    fn return_program_with_metadata(&self, program: Program<N>, edition: u16) -> Result<ErasedJson, RestError> {
+        let id = program.id();
+        // Get the transaction ID associated with the program and edition.
+        let tx_id = self.ledger.find_transaction_id_from_program_id_and_edition(id, edition)?;
+        // Get the optional program owner associated with the program.
+        // Note: The owner is only available after `ConsensusVersion::V9`.
+        let program_owner = match &tx_id {
+            Some(tid) => self
+                .ledger
+                .vm()
+                .block_store()
+                .transaction_store()
+                .deployment_store()
+                .get_deployment(tid)?
+                .and_then(|deployment| deployment.program_owner()),
+            None => None,
+        };
+        Ok(ErasedJson::pretty(json!({
+            "program": program,
+            "edition": edition,
+            "transaction_id": tx_id,
+            "program_owner": program_owner,
+        })))
+    }
+
+    // GET /<network>/program/{programID}/latest_edition
+    pub(crate) async fn get_latest_program_edition(
+        State(rest): State<Self>,
+        Path(id): Path<ProgramID<N>>,
+    ) -> Result<ErasedJson, RestError> {
+        Ok(ErasedJson::pretty(rest.ledger.get_latest_edition_for_program(&id)?))
     }
 
     // GET /<network>/program/{programID}/mappings
@@ -348,7 +453,7 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
         Path(validator): Path<Address<N>>,
     ) -> Result<ErasedJson, RestError> {
         // Do not process the request if the node is too far behind to avoid sending outdated data.
-        if rest.routing.num_blocks_behind() > SYNC_LENIENCY {
+        if !rest.routing.is_within_sync_leniency() {
             return Err(RestError("Unable to  request delegators (node is syncing)".to_string()));
         }
 
@@ -397,11 +502,19 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
     }
 
     // GET /<network>/find/transactionID/deployment/{programID}
-    pub(crate) async fn find_transaction_id_from_program_id(
+    pub(crate) async fn find_latest_transaction_id_from_program_id(
         State(rest): State<Self>,
         Path(program_id): Path<ProgramID<N>>,
     ) -> Result<ErasedJson, RestError> {
-        Ok(ErasedJson::pretty(rest.ledger.find_transaction_id_from_program_id(&program_id)?))
+        Ok(ErasedJson::pretty(rest.ledger.find_latest_transaction_id_from_program_id(&program_id)?))
+    }
+
+    // GET /<network>/find/transactionID/deployment/{programID}/{edition}
+    pub(crate) async fn find_transaction_id_from_program_id_and_edition(
+        State(rest): State<Self>,
+        Path((program_id, edition)): Path<(ProgramID<N>, u16)>,
+    ) -> Result<ErasedJson, RestError> {
+        Ok(ErasedJson::pretty(rest.ledger.find_transaction_id_from_program_id_and_edition(&program_id, edition)?))
     }
 
     // GET /<network>/find/transactionID/{transitionID}
@@ -426,7 +539,7 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
         Json(tx): Json<Transaction<N>>,
     ) -> Result<ErasedJson, RestError> {
         // Do not process the transaction if the node is too far behind.
-        if rest.routing.num_blocks_behind() > SYNC_LENIENCY {
+        if !rest.routing.is_within_sync_leniency() {
             return Err(RestError(format!("Unable to broadcast transaction '{}' (node is syncing)", fmt_id(tx.id()))));
         }
 
@@ -464,7 +577,7 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
         Json(solution): Json<Solution<N>>,
     ) -> Result<ErasedJson, RestError> {
         // Do not process the solution if the node is too far behind.
-        if rest.routing.num_blocks_behind() > SYNC_LENIENCY {
+        if !rest.routing.is_within_sync_leniency() {
             return Err(RestError(format!(
                 "Unable to broadcast solution '{}' (node is syncing)",
                 fmt_id(solution.id())
@@ -484,6 +597,16 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
                 let proof_target = rest.ledger.latest_proof_target();
                 // Ensure that the solution is valid for the given epoch.
                 let puzzle = rest.ledger.puzzle().clone();
+                // Check if the prover has reached their solution limit.
+                // While snarkVM will ultimately abort any excess solutions for safety, performing this check
+                // here prevents the to-be aborted solutions from propagating through the network.
+                let prover_address = solution.address();
+                if rest.ledger.is_solution_limit_reached(&prover_address, 0) {
+                    return Err(RestError(format!(
+                        "Invalid solution '{}' - Prover '{prover_address}' has reached their solution limit for the current epoch",
+                        fmt_id(solution.id())
+                    )));
+                }
                 // Verify the solution in a blocking task.
                 match tokio::task::spawn_blocking(move || puzzle.check_solution(&solution, epoch_hash, proof_target))
                     .await
@@ -506,6 +629,16 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
         rest.routing.propagate(message, &[]);
 
         Ok(ErasedJson::pretty(solution_id))
+    }
+
+    // POST /{network}/db_backup?path=new_fs_path
+    pub(crate) async fn db_backup(
+        State(rest): State<Self>,
+        backup_path: Query<BackupPath>,
+    ) -> Result<ErasedJson, RestError> {
+        rest.ledger.backup_database(&backup_path.path).map_err(RestError::from)?;
+
+        Ok(ErasedJson::pretty(()))
     }
 
     // GET /{network}/block/{blockHeight}/history/{mapping}
