@@ -24,7 +24,7 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use serde_with::skip_serializing_none;
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::atomic::Ordering};
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
@@ -561,10 +561,39 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
         }
 
         if check_transaction.check_transaction.unwrap_or(false) {
-            // Check if the transaction is well-formed.
-            rest.ledger
+            // Determine transaction type and appropriate limits.
+            const MAX_PARALLEL_DEPLOY_VERIFICATIONS: usize = 5;
+            const MAX_PARALLEL_EXECUTE_VERIFICATIONS: usize = 1000;
+            let is_exec = tx.is_execute();
+            // Select counter and limit based on transaction type.
+            let (counter, limit, err_msg) = if is_exec {
+                (
+                    &rest.num_verifying_executions,
+                    MAX_PARALLEL_EXECUTE_VERIFICATIONS,
+                    "Too many execution verifications in progress",
+                )
+            } else {
+                (
+                    &rest.num_verifying_deploys,
+                    MAX_PARALLEL_DEPLOY_VERIFICATIONS,
+                    "Too many deploy verifications in progress",
+                )
+            };
+            // Try to acquire a slot.
+            let prev = counter.fetch_add(1, Ordering::Relaxed);
+            if prev >= limit {
+                counter.fetch_sub(1, Ordering::Relaxed);
+                return Err(RestError(err_msg.to_string()));
+            }
+            // Perform the check.
+            let res = rest
+                .ledger
                 .check_transaction_basic(&tx, None, &mut rand::thread_rng())
-                .map_err(|e| RestError(format!("Invalid transaction: {e}")))?;
+                .map_err(|e| RestError(format!("Invalid transaction: {e}")));
+            // Release the slot.
+            counter.fetch_sub(1, Ordering::Relaxed);
+            // Propagate error if any.
+            res?;
         }
 
         // If the consensus module is enabled, add the unconfirmed transaction to the memory pool.
