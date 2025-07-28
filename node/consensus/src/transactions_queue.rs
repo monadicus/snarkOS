@@ -57,7 +57,7 @@ impl<N: Network> TransactionsQueue<N> {
         }
     }
 
-    pub fn transactions(&self) -> impl Iterator<Item = (N::TransactionID, Transaction<N>)> {
+    pub fn transactions(&self) -> impl Iterator<Item = (N::TransactionID, Transaction<N>)> + use<N> {
         self.deployments
             .priority_queue
             .transactions
@@ -199,8 +199,8 @@ impl<N: Network> PriorityQueue<N> {
 mod tests {
     use super::*;
 
-    use ledger_test_helpers::{sample_deployment_transaction, sample_execution_transaction_with_fee};
     use snarkvm::prelude::{MainnetV0, TestRng};
+    use snarkvm_ledger_test_helpers::{sample_deployment_transaction, sample_execution_transaction_with_fee};
 
     type CurrentNetwork = MainnetV0;
 
@@ -211,7 +211,7 @@ mod tests {
         /* Executions */
 
         // Test low-priority execution transaction.
-        let execution_transaction = sample_execution_transaction_with_fee(false, &mut rng);
+        let execution_transaction = sample_execution_transaction_with_fee(false, &mut rng, 0);
         let execution_id = execution_transaction.id();
         let zero_fee = U64::new(0);
 
@@ -233,7 +233,7 @@ mod tests {
         /* Deployments */
 
         // Test low-priority deployment transaction.
-        let deployment_transaction = sample_deployment_transaction(false, &mut rng);
+        let deployment_transaction = sample_deployment_transaction(2, 0, false, &mut rng);
         let deployment_id = deployment_transaction.id();
 
         assert!(!transactions_queue.contains(&deployment_id));
@@ -258,7 +258,7 @@ mod tests {
         /* Executions */
 
         // Test high-priority execution transaction.
-        let execution_transaction = sample_execution_transaction_with_fee(false, &mut rng);
+        let execution_transaction = sample_execution_transaction_with_fee(false, &mut rng, 0);
         let execution_id = execution_transaction.id();
         let high_fee = U64::new(100);
 
@@ -280,7 +280,7 @@ mod tests {
         /* Deployments */
 
         // Test high-priority deployment transaction.
-        let deployment_transaction = sample_deployment_transaction(false, &mut rng);
+        let deployment_transaction = sample_deployment_transaction(2, 0, false, &mut rng);
         let deployment_id = deployment_transaction.id();
 
         assert!(!transactions_queue.contains(&deployment_id));
@@ -304,7 +304,7 @@ mod tests {
 
         let executions: Vec<_> = (0..10)
             .map(|_| {
-                let execution_transaction = sample_execution_transaction_with_fee(false, &mut rng);
+                let execution_transaction = sample_execution_transaction_with_fee(false, &mut rng, 0);
                 (execution_transaction.id(), execution_transaction)
             })
             .collect();
