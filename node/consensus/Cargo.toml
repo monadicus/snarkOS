@@ -95,5 +95,9 @@ workspace = true
 [dev-dependencies.once_cell]
 workspace = true
 
+[dev-dependencies.snarkvm]
+ workspace = true
+ features = [ "test-helpers" ]
+
 [dev-dependencies.tracing-test]
 workspace = true
