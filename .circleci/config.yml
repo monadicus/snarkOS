@@ -267,7 +267,7 @@ jobs:
 
   node-consensus:
     executor: rust-docker
-    resource_class: << pipeline.parameters.medium >>
+    resource_class: << pipeline.parameters.large >>
     steps:
       - run_serial:
           workspace_member: node/consensus
