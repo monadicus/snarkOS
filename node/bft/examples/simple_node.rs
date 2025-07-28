@@ -16,6 +16,9 @@
 #[macro_use]
 extern crate tracing;
 
+#[cfg(feature = "metrics")]
+extern crate snarkos_node_metrics as metrics;
+
 use aleo_std::StorageMode;
 use snarkos_account::Account;
 use snarkos_node_bft::{
