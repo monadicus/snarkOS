@@ -207,19 +207,11 @@ jobs:
 
   cli:
     executor: rust-docker
-    resource_class: << pipeline.parameters.xlarge >>
+    resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - run_serial:
           workspace_member: cli
           cache_key: cli
-
-  display:
-    executor: rust-docker
-    resource_class: << pipeline.parameters.medium >>
-    steps:
-      - run_serial:
-          workspace_member: display
-          cache_key: v3.3.1-rust-1.83.0-display-cache
 
   node:
     executor: rust-docker
@@ -271,7 +263,7 @@ jobs:
 
   node-consensus:
     executor: rust-docker
-    resource_class: << pipeline.parameters.medium >>
+    resource_class: << pipeline.parameters.large >>
     steps:
       - run_serial:
           workspace_member: node/consensus
@@ -340,6 +332,25 @@ jobs:
       - run_devnet:
           workspace_member: .
           cache_key: v3.3.1-rust-1.88.0-devnet-test-cache
+
+  # Check crates that do not have any tests individually
+  check-other-crates:
+    executor: rust-docker
+    resource_class: << pipeline.parameters.medium >>
+    steps:
+      - checkout
+      - setup_environment:
+          cache_key: v3.3.1-rust-1.88.0-check-other-crates-cache
+      - run:
+          name: Check snarkos-node-metrics crate
+          no_output_timeout: 10m
+          command: cargo check --package=snarkos-node-metrics --all-features
+      - run:
+          name: Check snarkos-display crate
+          no_output_timeout: 10m
+          command: cargo check --package=snarkos-node-metrics --all-features
+      - clear_environment:
+          cache_key: v3.3.1-rust-1.88.0-check-other-crates-cache
 
   check-fmt:
     executor: rust-docker
@@ -425,7 +436,6 @@ workflows:
       - snarkos
       - account
       - cli
-      - display
       - node
       - node-bft
       - node-bft-events
@@ -444,6 +454,7 @@ workflows:
       - check-clippy
       - check-unused-dependencies
       - check-cargo-audit
+      - check-other-crates
       - devnet-test
 
   windows-workflow:
@@ -457,4 +468,3 @@ workflows:
                 display,
                 node
               ]
-      
