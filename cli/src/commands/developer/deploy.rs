@@ -23,7 +23,9 @@ use snarkvm::{
     },
     ledger::store::helpers::memory::BlockMemory,
     prelude::{
-        PrivateKey, ProgramID, VM,
+        PrivateKey,
+        ProgramID,
+        VM,
         block::Transaction,
         deployment_cost,
         query::{Query, QueryTrait, StaticQuery},
