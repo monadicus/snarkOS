@@ -13,22 +13,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![forbid(unsafe_code)]
-
-#[macro_use]
-extern crate tracing;
-
-#[cfg(feature = "metrics")]
-extern crate snarkos_node_metrics as metrics;
-
-pub use snarkos_node_sync_communication_service as communication_service;
-pub use snarkos_node_sync_locators as locators;
-
-mod ping;
-pub use ping::Ping;
-
-mod block_sync;
-pub use block_sync::*;
-
-mod helpers;
-pub use helpers::*;
+fn main() {
+    built::write_built_file().expect("Failed to acquire build-time information");
+}
