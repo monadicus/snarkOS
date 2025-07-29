@@ -17,7 +17,7 @@ use super::*;
 use snarkos_node_router::messages::UnconfirmedSolution;
 use snarkvm::{
     ledger::puzzle::Solution,
-    prelude::{Address, Identifier, LimitedWriter, Plaintext, Program, ToBytes, block::Transaction},
+    prelude::{Address, Identifier, LimitedWriter, Plaintext, Program, ToBytes, VM, block::Transaction},
 };
 
 use indexmap::IndexMap;
@@ -562,20 +562,18 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
 
         if check_transaction.check_transaction.unwrap_or(false) {
             // Determine transaction type and appropriate limits.
-            const MAX_PARALLEL_DEPLOY_VERIFICATIONS: usize = 5;
-            const MAX_PARALLEL_EXECUTE_VERIFICATIONS: usize = 1000;
             let is_exec = tx.is_execute();
             // Select counter and limit based on transaction type.
             let (counter, limit, err_msg) = if is_exec {
                 (
                     &rest.num_verifying_executions,
-                    MAX_PARALLEL_EXECUTE_VERIFICATIONS,
+                    VM::<N, C>::MAX_PARALLEL_EXECUTE_VERIFICATIONS,
                     "Too many execution verifications in progress",
                 )
             } else {
                 (
                     &rest.num_verifying_deploys,
-                    MAX_PARALLEL_DEPLOY_VERIFICATIONS,
+                    VM::<N, C>::MAX_PARALLEL_DEPLOY_VERIFICATIONS,
                     "Too many deploy verifications in progress",
                 )
             };
