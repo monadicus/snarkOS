@@ -32,19 +32,8 @@ use snarkvm::{
     console::network::Network,
     package::Package,
     prelude::{
-        Address,
-        Ciphertext,
-        Identifier,
-        Literal,
-        Plaintext,
-        PrivateKey,
-        Program,
-        ProgramID,
-        Record,
-        ToBytes,
-        Value,
-        ViewKey,
-        block::Transaction,
+        Address, Ciphertext, Identifier, Literal, Plaintext, PrivateKey, Program, ProgramID, Record, ToBytes, Value,
+        ViewKey, block::Transaction,
     },
 };
 
