@@ -28,7 +28,7 @@ use snarkvm::{
         VM,
         block::Transaction,
         deployment_cost,
-        query::Query,
+        query::{Query, QueryTrait},
         store::{ConsensusStore, helpers::memory::ConsensusMemory},
     },
 };
@@ -37,10 +37,7 @@ use aleo_std::StorageMode;
 use anyhow::{Result, bail};
 use clap::Parser;
 use colored::Colorize;
-use snarkvm::{
-    ledger::query::QueryTrait,
-    prelude::{Address, ConsensusVersion},
-};
+use snarkvm::prelude::{Address, ConsensusVersion};
 use std::{path::PathBuf, str::FromStr};
 use zeroize::Zeroize;
 

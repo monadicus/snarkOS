@@ -116,6 +116,7 @@ impl Execute {
     fn construct_execution<N: Network>(&self) -> Result<String> {
         // Specify the query
         let query = Query::<N, BlockMemory<N>>::from(&self.query);
+        let is_static_query = matches!(query, Query::STATIC(_));
 
         // Retrieve the private key.
         let key_str = match (self.private_key.as_ref(), self.private_key_file.as_ref()) {
@@ -158,8 +159,10 @@ impl Execute {
             // Initialize the VM.
             let vm = VM::from(store)?;
 
-            // Load the program and it's imports into the process.
-            load_program(&self.query, &mut vm.process().write(), &program_id)?;
+            if !is_static_query {
+                // Load the program and it's imports into the process.
+                load_program(&self.query, &mut vm.process().write(), &program_id)?;
+            }
 
             // Prepare the fee.
             let fee_record = match &self.record {
@@ -181,7 +184,7 @@ impl Execute {
         };
 
         // Check if the public balance is sufficient.
-        if self.record.is_none() {
+        if self.record.is_none() && !is_static_query {
             // Fetch the public balance.
             let address = Address::try_from(&private_key)?;
             let public_balance = Developer::get_public_balance(&address, &self.query)?;
