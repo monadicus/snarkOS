@@ -48,9 +48,6 @@ version = "1"
 [dependencies.anyhow]
 workspace = true
 
-[dependencies.async-trait]
-version = "0.1"
-
 [dependencies.base64]
 workspace = true
 

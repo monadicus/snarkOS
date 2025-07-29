@@ -43,7 +43,8 @@ use snarkvm::{
         Record,
         ToBytes,
         Value,
-        ViewKey, block::Transaction,
+        ViewKey,
+        block::Transaction,
     },
 };
 
