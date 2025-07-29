@@ -27,7 +27,7 @@ use snarkvm::{
         ProgramID,
         VM,
         Value,
-        query::{Query, QueryTrait, StaticQuery},
+        query::Query,
         store::{ConsensusStore, helpers::memory::ConsensusMemory},
     },
 };
@@ -115,10 +115,8 @@ impl Execute {
     /// Construct and process the execution transaction.
     fn construct_execution<N: Network>(&self) -> Result<String> {
         // Specify the query
-        let (query, is_static_query): (Box<dyn QueryTrait<N>>, bool) = match self.query.parse::<StaticQuery<N>>() {
-            Ok(query) => (Box::new(query), true),
-            Err(_) => (Box::new(Query::<N, BlockMemory<N>>::from(&self.query)), false),
-        };
+        let query = Query::<N, BlockMemory<N>>::from(&self.query);
+        let is_static_query = matches!(query, Query::STATIC(_));
 
         // Retrieve the private key.
         let key_str = match (self.private_key.as_ref(), self.private_key_file.as_ref()) {
@@ -180,7 +178,7 @@ impl Execute {
                 inputs.iter(),
                 fee_record,
                 priority_fee,
-                Some(&*query),
+                Some(&query),
                 rng,
             )?
         };
