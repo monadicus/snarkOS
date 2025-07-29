@@ -15,21 +15,12 @@
 
 use super::Developer;
 use crate::commands::StoreFormat;
-use crate::helpers::StaticQuery;
 use snarkvm::{
     console::network::{CanaryV0, MainnetV0, Network, TestnetV0},
     ledger::store::helpers::memory::BlockMemory,
     prelude::{
-        Address,
-        Identifier,
-        Locator,
-        PrivateKey,
-        Process,
-        ProgramID,
-        VM,
-        Value,
-        query::Query,
-        query::QueryTrait,
+        Address, Identifier, Locator, PrivateKey, Process, ProgramID, VM, Value,
+        query::{Query, QueryTrait, StaticQuery},
         store::{ConsensusStore, helpers::memory::ConsensusMemory},
     },
 };
@@ -117,7 +108,7 @@ impl Execute {
     /// Construct and process the execution transaction.
     fn construct_execution<N: Network>(&self) -> Result<String> {
         // Specify the query
-        let (query, is_static_query): (Box<dyn QueryTrait<N>>, bool) = match StaticQuery::<N>::try_from(&self.query) {
+        let (query, is_static_query): (Box<dyn QueryTrait<N>>, bool) = match self.query.parse::<StaticQuery<N>>() {
             Ok(query) => (Box::new(query), true),
             Err(_) => (Box::new(Query::<N, BlockMemory<N>>::from(&self.query)), false),
         };

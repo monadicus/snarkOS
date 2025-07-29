@@ -15,7 +15,6 @@
 
 use super::Developer;
 use crate::commands::StoreFormat;
-use crate::helpers::StaticQuery;
 use snarkvm::{
     circuit::{Aleo, AleoCanaryV0, AleoTestnetV0, AleoV0},
     console::{
@@ -27,7 +26,7 @@ use snarkvm::{
         PrivateKey, ProgramID, VM,
         block::Transaction,
         deployment_cost,
-        query::{Query, QueryTrait},
+        query::{Query, QueryTrait, StaticQuery},
         store::{ConsensusStore, helpers::memory::ConsensusMemory},
     },
 };
@@ -36,9 +35,7 @@ use aleo_std::StorageMode;
 use anyhow::{Result, bail};
 use clap::Parser;
 use colored::Colorize;
-use snarkvm::{
-    prelude::{Address, ConsensusVersion},
-};
+use snarkvm::prelude::{Address, ConsensusVersion};
 use std::{path::PathBuf, str::FromStr};
 use zeroize::Zeroize;
 
@@ -111,9 +108,9 @@ impl Deploy {
     /// Construct and process the deployment transaction.
     fn construct_deployment<N: Network, A: Aleo<Network = N, BaseField = N::Field>>(&self) -> Result<String> {
         // Specify the query
-        let (query, _is_static_query): (Box<dyn QueryTrait<N>>, bool) = match StaticQuery::<N>::try_from(&self.query) {
-            Ok(query) => (Box::new(query), true),
-            Err(_) => (Box::new(Query::<N, BlockMemory<N>>::from(&self.query)), false),
+        let query: Box<dyn QueryTrait<N>> = match self.query.parse::<StaticQuery<N>>() {
+            Ok(query) => Box::new(query),
+            Err(_) => Box::new(Query::<N, BlockMemory<N>>::from(&self.query)),
         };
 
         // Retrieve the private key.
