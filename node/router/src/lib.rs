@@ -63,6 +63,7 @@ use std::{
     ops::Deref,
     str::FromStr,
     sync::Arc,
+    time::Duration,
 };
 use tokio::task::JoinHandle;
 
@@ -119,7 +120,7 @@ impl<N: Network> Router<N> {
     const MAX_CONNECTION_ATTEMPTS: usize = 10;
     /// The duration in seconds after which a connected peer is considered inactive or
     /// disconnected if no message has been received in the meantime.
-    const MAX_RADIO_SILENCE_SECS: u64 = 150; // 2.5 minutes
+    const MAX_RADIO_SILENCE_SECS: Duration = Duration::from_secs(150); // 2.5 minutes
 }
 
 impl<N: Network> Router<N> {
@@ -318,19 +319,19 @@ impl<N: Network> Router<N> {
         }
     }
 
-    /// Returns `true` if the node is connecting to the given peer IP.
-    pub fn is_connecting(&self, ip: &SocketAddr) -> bool {
-        self.peer_pool.read().get(ip).is_some_and(|peer| peer.is_connecting())
+    /// Returns `true` if the node is connecting to the given peer's listener address.
+    pub fn is_connecting(&self, listener_addr: &SocketAddr) -> bool {
+        self.peer_pool.read().get(listener_addr).is_some_and(|peer| peer.is_connecting())
     }
 
-    /// Returns `true` if the node is connected to the given peer IP.
-    pub fn is_connected(&self, ip: &SocketAddr) -> bool {
-        self.peer_pool.read().get(ip).is_some_and(|peer| peer.is_connected())
+    /// Returns `true` if the node is connected to the given peer listener address.
+    pub fn is_connected(&self, listener_addr: &SocketAddr) -> bool {
+        self.peer_pool.read().get(listener_addr).is_some_and(|peer| peer.is_connected())
     }
 
-    /// Returns `true` if the given IP is trusted.
-    pub fn is_trusted(&self, ip: &SocketAddr) -> bool {
-        self.peer_pool.read().get(ip).is_some_and(|peer| peer.is_trusted())
+    /// Returns `true` if the given listener address is trusted.
+    pub fn is_trusted(&self, listener_addr: &SocketAddr) -> bool {
+        self.peer_pool.read().get(listener_addr).is_some_and(|peer| peer.is_trusted())
     }
 
     /// Returns the maximum number of connected peers.
@@ -349,15 +350,20 @@ impl<N: Network> Router<N> {
     }
 
     /// Returns the connected peer given the peer IP, if it exists.
-    pub fn get_connected_peer(&self, ip: &SocketAddr) -> Option<ConnectedPeer<N>> {
-        if let Some(Peer::Connected(peer)) = self.peer_pool.read().get(ip) { Some(peer.clone()) } else { None }
+    pub fn get_connected_peer(&self, listener_addr: &SocketAddr) -> Option<ConnectedPeer<N>> {
+        if let Some(Peer::Connected(peer)) = self.peer_pool.read().get(listener_addr) {
+            Some(peer.clone())
+        } else {
+            None
+        }
     }
 
-    /// Returns the connected peers.
+    /// Returns all connected peers.
     pub fn get_connected_peers(&self) -> Vec<ConnectedPeer<N>> {
         self.filter_connected_peers(|_| true)
     }
 
+    /// Returns all connected peers that satisify the given predicate.
     pub fn filter_connected_peers<P: FnMut(&ConnectedPeer<N>) -> bool>(
         &self,
         mut predicate: P,
@@ -365,8 +371,15 @@ impl<N: Network> Router<N> {
         self.peer_pool
             .read()
             .values()
-            .filter_map(|peer| if let Peer::Connected(peer) = peer { Some(peer) } else { None })
-            .filter(|peer| predicate(peer))
+            .filter_map(|p| {
+                if let Peer::Connected(peer) = p
+                    && predicate(peer)
+                {
+                    Some(peer)
+                } else {
+                    None
+                }
+            })
             .cloned()
             .collect()
     }
