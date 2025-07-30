@@ -19,13 +19,21 @@ use snarkvm::prelude::{Address, Network};
 use std::{net::SocketAddr, time::Instant};
 
 /// A peer of any connection status.
+#[derive(Clone)]
 pub enum Peer<N: Network> {
     /// A candidate peer that's currently not connected to.
     Candidate(CandidatePeer),
     /// A peer that's currently being connected to (the handshake is in progress).
-    Connecting,
+    Connecting(ConnectingPeer),
     /// A fully connected (post-handshake) peer.
     Connected(ConnectedPeer<N>),
+}
+
+/// A candidate peer.
+#[derive(Clone)]
+pub struct ConnectingPeer {
+    /// The listening address of a connecting peer.
+    pub listener_addr: SocketAddr,
 }
 
 /// A candidate peer.
@@ -76,7 +84,7 @@ impl<N: Network> Peer<N> {
     /// Promote a connecting peer to a fully connected one.
     pub fn upgrade_to_connected(&mut self, connected_addr: SocketAddr, cr: &ChallengeRequest<N>, router: Router<N>) {
         // Logic check: this can only happen during the handshake.
-        assert!(matches!(self, Self::Connecting));
+        assert!(matches!(self, Self::Connecting(_)));
 
         let timestamp = Instant::now();
         let listener_addr = SocketAddr::from((connected_addr.ip(), cr.listener_port));
@@ -112,14 +120,28 @@ impl<N: Network> Peer<N> {
     pub fn node_type(&self) -> Option<NodeType> {
         match self {
             Self::Candidate(_) => None,
-            Self::Connecting => None,
+            Self::Connecting(_) => None,
             Self::Connected(peer) => Some(peer.node_type),
         }
     }
 
+    /// The listener (public) address of this peer.
+    pub fn listener_addr(&self) -> &SocketAddr {
+        match self {
+            Self::Candidate(p) => &p.listener_addr,
+            Self::Connecting(p) => &p.listener_addr,
+            Self::Connected(p) => &p.listener_addr,
+        }
+    }
+
+    /// Returns `true` if the peer is not connected or connecting.
+    pub fn is_candidate(&self) -> bool {
+        matches!(self, Peer::Candidate(_))
+    }
+
     /// Returns `true` if the peer is currently undergoing the network handshake.
     pub fn is_connecting(&self) -> bool {
-        matches!(self, Peer::Connecting)
+        matches!(self, Peer::Connecting(_))
     }
 
     /// Returns `true` if the peer has concluded the network handshake.

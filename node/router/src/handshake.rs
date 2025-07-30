@@ -14,6 +14,7 @@
 // limitations under the License.
 
 use crate::{
+    ConnectingPeer,
     NodeType,
     Peer,
     Router,
@@ -154,10 +155,10 @@ impl<N: Network> Router<N> {
     ) -> io::Result<ChallengeRequest<N>> {
         match self.peer_pool.write().entry(peer_addr) {
             Entry::Vacant(entry) => {
-                entry.insert(Peer::Connecting);
+                entry.insert(Peer::Connecting(ConnectingPeer { listener_addr: peer_addr }));
             }
             Entry::Occupied(mut entry) if matches!(entry.get(), Peer::Candidate(_)) => {
-                entry.insert(Peer::Connecting);
+                entry.insert(Peer::Connecting(ConnectingPeer { listener_addr: peer_addr }));
             }
             Entry::Occupied(_) => {
                 return Err(error(format!("Duplicate connection attempt with '{peer_addr}'")));
@@ -320,7 +321,7 @@ impl<N: Network> Router<N> {
         // Ensure the node is not already connecting to this peer.
         match self.peer_pool.write().entry(listener_addr) {
             Entry::Vacant(entry) => {
-                entry.insert(Peer::Connecting);
+                entry.insert(Peer::Connecting(ConnectingPeer { listener_addr }));
             }
             Entry::Occupied(mut entry) => match entry.get_mut() {
                 Peer::Candidate(peer)
@@ -332,9 +333,9 @@ impl<N: Network> Router<N> {
                     bail!("Dropping connection request from '{listener_addr}' (restricted)");
                 }
                 peer @ Peer::Candidate(_) => {
-                    let _ = mem::replace(peer, Peer::Connecting);
+                    let _ = mem::replace(peer, Peer::Connecting(ConnectingPeer { listener_addr }));
                 }
-                Peer::Connecting => {
+                Peer::Connecting(_) => {
                     bail!("Dropping connection request from '{listener_addr}' (already connecting)");
                 }
                 Peer::Connected(_) => {

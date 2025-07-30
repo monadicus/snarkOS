@@ -634,8 +634,6 @@ impl Start {
             false => self.rest.or_else(|| Some("0.0.0.0:3030".parse().unwrap())),
         };
 
-        // If the display is not enabled, render the welcome message.
-        if self.nodisplay {
             // Print the Aleo address.
             println!("👛 Your Aleo address is {}.\n", account.address().to_string().bold());
             // Print the node type and network.
@@ -669,7 +667,6 @@ impl Start {
                     }
                 }
             }
-        }
 
         // If the node is a validator, check if the open files limit is lower than recommended.
         #[cfg(target_family = "unix")]
@@ -710,7 +707,12 @@ impl Start {
         match node_type {
             NodeType::Validator => Node::new_validator(node_ip, self.bft, rest_ip, self.rest_rps, account, &trusted_peers, &trusted_validators, genesis, cdn, storage_mode, self.allow_external_peers, dev_txs, self.dev, shutdown.clone()).await,
             NodeType::Prover => Node::new_prover(node_ip, account, &trusted_peers, genesis, self.dev, shutdown.clone()).await,
-            NodeType::Client => Node::new_client(node_ip, rest_ip, self.rest_rps, account, &trusted_peers, genesis, cdn, storage_mode, self.rotate_external_peers, self.dev, shutdown).await,
+            NodeType::Client => {
+                if !self.nodisplay && !self.nocdn {
+                    println!("🪧 The terminal UI will not start until the client has finished syncing from the CDN. If this step takes too long, consider restarting with `--nodisplay`.");
+                }
+                Node::new_client(node_ip, rest_ip, self.rest_rps, account, &trusted_peers, genesis, cdn, storage_mode, self.rotate_external_peers, self.dev, shutdown).await
+            }
         }
     }
 

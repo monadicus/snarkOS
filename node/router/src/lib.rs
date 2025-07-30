@@ -119,7 +119,7 @@ impl<N: Network> Router<N> {
     const CONNECTION_ATTEMPTS_SINCE_SECS: i64 = 10;
     /// The maximum number of candidate peers permitted to be stored in the node.
     const MAXIMUM_CANDIDATE_PEERS: usize = 10_000;
-    /// The maximum amount of connection attempts withing a 10 second threshold
+    /// The maximum amount of connection attempts within a 10 second threshold
     #[cfg(not(test))]
     const MAX_CONNECTION_ATTEMPTS: usize = 10;
     /// The duration in seconds after which a connected peer is considered inactive or
@@ -403,6 +403,11 @@ impl<N: Network> Router<N> {
     /// Returns the connected peer given the peer IP, if it exists.
     pub fn get_connected_peer(&self, ip: &SocketAddr) -> Option<ConnectedPeer<N>> {
         if let Some(Peer::Connected(peer)) = self.peer_pool.read().get(ip) { Some(peer.clone()) } else { None }
+    }
+
+    /// Returns the list of all peers (connected, connecting, and candidate).
+    pub fn get_peers(&self) -> Vec<Peer<N>> {
+        self.peer_pool.read().values().cloned().collect()
     }
 
     /// Returns the connected peers.
