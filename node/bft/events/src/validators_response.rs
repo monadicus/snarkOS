@@ -50,9 +50,10 @@ impl<N: Network> FromBytes for ValidatorsResponse<N> {
         let num_validators = u16::read_le(&mut reader)?;
 
         // Ensure the number of validators is within bounds
-        if num_validators as usize > MAX_VALIDATORS_TO_SEND {
+        if num_validators > N::LATEST_MAX_CERTIFICATES().unwrap() {
             return Err(error(format!(
-                "Number of validators exceeds the maximum number of validators ({num_validators} > {MAX_VALIDATORS_TO_SEND})",
+                "Number of validators exceeds the maximum number of validators ({num_validators} > {})",
+                N::LATEST_MAX_CERTIFICATES().unwrap()
             )));
         }
 

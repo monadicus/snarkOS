@@ -61,7 +61,7 @@ mod validators_request;
 pub use validators_request::ValidatorsRequest;
 
 mod validators_response;
-pub use validators_response::ValidatorsResponse;
+pub use validators_response::{MAX_VALIDATORS_TO_SEND, ValidatorsResponse};
 
 mod worker_ping;
 pub use worker_ping::WorkerPing;
@@ -81,8 +81,6 @@ use indexmap::{IndexMap, IndexSet};
 use serde::{Deserialize, Serialize};
 pub use std::io::{self, Result as IoResult};
 use std::{borrow::Cow, net::SocketAddr};
-
-pub use validators_response::MAX_VALIDATORS_TO_SEND;
 
 pub trait EventTrait: ToBytes + FromBytes {
     /// Returns the event name.
