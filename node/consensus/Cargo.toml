@@ -25,7 +25,7 @@ locktick = [
   "snarkos-node-bft-storage-service/locktick",
   "snarkvm/locktick"
 ]
-metrics = [ "dep:metrics" ]
+metrics = [ "dep:snarkos-node-metrics" ]
 telemetry = [ "snarkos-node-bft/telemetry" ]
 cuda = [ "snarkvm/cuda", "snarkos-account/cuda", "snarkos-node-bft-ledger-service/cuda" ]
 serial = [ "snarkos-node-bft-ledger-service/serial" ]
@@ -45,45 +45,36 @@ workspace = true
 features = [ "serde", "rayon" ]
 
 [dependencies.locktick]
-version = "0.3"
+workspace = true
 features = [ "parking_lot" ]
 optional = true
 
 [dependencies.lru]
-version = "0.12.1"
+workspace = true
 
-[dependencies.metrics]
-package = "snarkos-node-metrics"
-path = "../metrics"
-version = "=4.0.1"
+[dependencies.snarkos-node-metrics]
+workspace = true
 optional = true
 
 [dependencies.parking_lot]
-version = "0.12"
+workspace = true
 
 [dependencies.snarkos-account]
-path = "../../account"
-version = "=4.0.1"
+workspace = true
 
 [dependencies.snarkos-node-bft]
-path = "../bft"
-version = "=4.0.1"
+workspace = true
 
 [dependencies.snarkos-node-bft-ledger-service]
-path = "../bft/ledger-service"
-version = "=4.0.1"
-default-features = false
+workspace = true
 features = [ "ledger", "ledger-write" ]
 
 [dependencies.snarkos-node-bft-storage-service]
-path = "../bft/storage-service"
-version = "=4.0.1"
-default-features = false
+workspace = true
 features = [ "persistent" ]
 
 [dependencies.snarkos-node-sync]
-path = "../sync"
-version = "=4.0.1"
+workspace = true
 
 [dependencies.snarkvm]
 workspace = true
@@ -99,10 +90,10 @@ workspace = true
 workspace = true
 
 [dev-dependencies.itertools]
-version = "0.12"
+workspace = true
 
 [dev-dependencies.once_cell]
-version = "1.19"
+workspace = true
 
 [dev-dependencies.snarkvm]
  workspace = true

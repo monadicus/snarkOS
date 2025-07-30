@@ -33,7 +33,7 @@ version = "1.0"
 version = "2"
 
 [dependencies.locktick]
-version = "0.3"
+workspace = true
 features = [ "parking_lot" ]
 optional = true
 
@@ -41,13 +41,12 @@ optional = true
 version = "0.12"
 
 [dependencies.snarkos-node-metrics]
-path = "../metrics"
-version = "=4.0.1"
+workspace = true
 optional = true
 features = [ "metrics" ]
 
 [dependencies.rayon]
-version = "1"
+workspace = true
 optional = true
 
 [dependencies.reqwest]
