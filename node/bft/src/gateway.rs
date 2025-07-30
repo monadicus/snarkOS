@@ -36,7 +36,6 @@ use snarkos_node_bft_events::{
     DisconnectReason,
     Event,
     EventTrait,
-    MAX_VALIDATORS_TO_SEND,
     TransmissionRequest,
     TransmissionResponse,
     ValidatorsRequest,
@@ -101,6 +100,8 @@ const RESTRICTED_INTERVAL: i64 = (MAX_CONNECTION_ATTEMPTS as u64 * MAX_BATCH_DEL
 
 /// The minimum number of validators to maintain a connection to.
 const MIN_CONNECTED_VALIDATORS: usize = 175;
+/// The maximum number of validators to send in a validators response event.
+const MAX_VALIDATORS_TO_SEND: usize = 200;
 
 /// The minimum permitted interval between connection attempts for an IP; anything shorter is considered malicious.
 #[cfg(not(any(test)))]

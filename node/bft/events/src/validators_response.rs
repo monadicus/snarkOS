@@ -15,9 +15,6 @@
 
 use super::*;
 
-/// The maximum number of validators to send in a validators response event.
-pub const MAX_VALIDATORS_TO_SEND: usize = 200;
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ValidatorsResponse<N: Network> {
     pub validators: IndexMap<SocketAddr, Address<N>>,

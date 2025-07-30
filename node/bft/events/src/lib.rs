@@ -61,7 +61,7 @@ mod validators_request;
 pub use validators_request::ValidatorsRequest;
 
 mod validators_response;
-pub use validators_response::{MAX_VALIDATORS_TO_SEND, ValidatorsResponse};
+pub use validators_response::ValidatorsResponse;
 
 mod worker_ping;
 pub use worker_ping::WorkerPing;
