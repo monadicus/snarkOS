@@ -118,9 +118,9 @@ impl<N: Network> Router<N> {
     /// The maximum amount of connection attempts withing a 10 second threshold
     #[cfg(not(test))]
     const MAX_CONNECTION_ATTEMPTS: usize = 10;
-    /// The duration in seconds after which a connected peer is considered inactive or
+    /// The duration after which a connected peer is considered inactive or
     /// disconnected if no message has been received in the meantime.
-    const MAX_RADIO_SILENCE_SECS: Duration = Duration::from_secs(150); // 2.5 minutes
+    const MAX_RADIO_SILENCE: Duration = Duration::from_secs(150); // 2.5 minutes
 }
 
 impl<N: Network> Router<N> {
