@@ -13,15 +13,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::{content_style, header_style};
+
 use snarkos_node::{Node, router::Peer};
 use snarkvm::prelude::Network;
 
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Style},
-    text::{Span, Text},
-    widgets::{Block, Borders, Paragraph, Row, Table, canvas::Canvas},
+    style::{Color, Modifier, Style},
+    text::Text,
+    widgets::{Block, Borders, Paragraph, Row, Table},
 };
 
 pub(crate) struct Overview;
@@ -35,7 +37,9 @@ impl Overview {
             Text::raw("N/A")
         };
 
-        let paragraph = Paragraph::new(text).block(Block::default().borders(Borders::ALL).title("Latest Block"));
+        let paragraph = Paragraph::new(text)
+            .style(content_style())
+            .block(Block::default().borders(Borders::ALL).style(header_style()).title("Latest Block"));
         f.render_widget(&paragraph, area);
     }
 
@@ -72,13 +76,14 @@ impl Overview {
                     "N/A".to_string()
                 };
 
-                Row::new([format!("{:?}", peer.listener_addr()), state, node_type, last_seen])
+                Row::new([format!("{:?}", peer.listener_addr()), state, node_type, last_seen]).style(content_style())
             })
             .collect();
 
         let peer_table = Table::new(rows, constraints)
-            .header(Row::new(header))
-            .block(Block::default().borders(Borders::ALL).title("Peers"));
+            .style(content_style())
+            .header(Row::new(header).style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)))
+            .block(Block::default().borders(Borders::ALL).style(header_style()).title("Peers"));
 
         f.render_widget(peer_table, area);
     }
@@ -93,9 +98,9 @@ impl Overview {
         self.draw_latest_block(f, chunks[0], node);
         self.draw_peer_table(f, chunks[1], node);
 
-        let canvas = Canvas::default().block(Block::default().borders(Borders::ALL).title("Help")).paint(|ctx| {
-            ctx.print(0f64, 0f64, Span::styled("Press ESC to quit", Style::default().fg(Color::White)));
-        });
-        f.render_widget(canvas, chunks[2]);
+        let help = Paragraph::new("Press ESC to quit")
+            .style(content_style())
+            .block(Block::default().borders(Borders::ALL).title("Help").style(header_style()));
+        f.render_widget(help, chunks[2]);
     }
 }
