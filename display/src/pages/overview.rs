@@ -54,14 +54,10 @@ impl Overview {
             .into_iter()
             .filter(|peer| !peer.is_candidate()) // Too many candidate peers for overview.
             .map(|peer| {
-                let state = if peer.is_candidate() {
-                    "candidate"
-                } else if peer.is_connecting() {
-                    "connecting"
-                } else if peer.is_connected() {
-                    "connected"
-                } else {
-                    unreachable!("Unknown peer state");
+                let state = match peer {
+                    Peer::Candidate(_) => "candidate",
+                    Peer::Connecting(_) => "connecting",
+                    Peer::Connected(_) => "connected",
                 }.to_string();
 
                 let node_type = if let Some(node_type ) = peer.node_type() {
