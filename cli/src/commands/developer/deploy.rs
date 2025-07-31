@@ -121,7 +121,7 @@ impl Deploy {
         let endpoint = prepare_endpoint(self.endpoint.clone())?;
 
         // Specify the query
-        let query = Query::<N, BlockMemory<N>>::from(endpoint.to_string());
+        let query = Query::<N, BlockMemory<N>>::from(endpoint.clone());
 
         // Retrieve the private key.
         let private_key = parse_private_key(self.private_key.clone(), self.private_key_file.clone())?;
@@ -213,7 +213,6 @@ impl Deploy {
         // Determine if the transaction should be broadcast, stored, or displayed to the user.
         Developer::handle_transaction(
             &endpoint,
-            self.network,
             self.broadcast,
             self.dry_run,
             &self.store,

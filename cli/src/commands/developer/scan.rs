@@ -39,6 +39,9 @@ const MAX_BLOCK_RANGE: u32 = 50;
 
 /// Scan the snarkOS node for records.
 #[derive(Debug, Parser)]
+#[clap(
+    group(clap::ArgGroup::new("key").required(true).multiple(true))
+)]
 pub struct Scan {
     /// Specify the network to create a deployment for.
     /// [options: 0 = mainnet, 1 = testnet, 2 = canary]
@@ -46,19 +49,19 @@ pub struct Scan {
     network: u16,
 
     /// An optional private key scan for unspent records.
-    #[clap(short, long)]
+    #[clap(short, long, group = "key")]
     private_key: Option<String>,
 
     /// The view key used to scan for records.
-    #[clap(short, long)]
+    #[clap(short, long, group = "key")]
     view_key: Option<String>,
 
     /// The block height to start scanning from.
-    #[clap(long, conflicts_with = "last")]
+    #[clap(long, conflicts_with = "last", requires = "end")]
     start: Option<u32>,
 
     /// The block height to stop scanning.
-    #[clap(long, conflicts_with = "last")]
+    #[clap(long, conflicts_with = "last", requires = "start")]
     end: Option<u32>,
 
     /// Scan the latest `n` blocks.
@@ -98,7 +101,7 @@ impl Scan {
         let (private_key, view_key) = self.parse_account::<N>()?;
 
         // Find the start and end height to scan.
-        let (start_height, end_height) = self.parse_block_range(&endpoint)?;
+        let (start_height, end_height) = self.parse_block_range::<N>(&endpoint)?;
 
         // Fetch the records from the network.
         let records = Self::fetch_records::<N>(private_key, &view_key, &endpoint, start_height, end_height)?;
@@ -147,15 +150,7 @@ impl Scan {
     }
 
     /// Returns the `start` and `end` blocks to scan.
-    fn parse_block_range(&self, endpoint: &Uri) -> Result<(u32, u32)> {
-        // Get the network name.
-        let network = match self.network {
-            MainnetV0::ID => "mainnet",
-            TestnetV0::ID => "testnet",
-            CanaryV0::ID => "canary",
-            unknown_id => bail!("Unknown network ID ({unknown_id})"),
-        };
-
+    fn parse_block_range<N: Network>(&self, endpoint: &Uri) -> Result<(u32, u32)> {
         match (self.start, self.end, self.last) {
             (Some(start), Some(end), None) => {
                 ensure!(end > start, "The given scan range is invalid (start = {start}, end = {end})");
@@ -164,7 +159,7 @@ impl Scan {
             }
             (Some(start), None, None) => {
                 // Request the latest block height from the endpoint.
-                let endpoint = format!("{endpoint}/{network}/block/height/latest");
+                let endpoint = format!("{endpoint}{}/block/height/latest", N::SHORT_NAME);
                 let latest_height = u32::from_str(&ureq::get(&endpoint).call()?.into_body().read_to_string()?)?;
 
                 // Print a warning message if the user is attempting to scan the whole chain.
@@ -177,7 +172,7 @@ impl Scan {
             (None, Some(end), None) => Ok((0, end)),
             (None, None, Some(last)) => {
                 // Request the latest block height from the endpoint.
-                let endpoint = format!("{endpoint}/{network}/block/height/latest");
+                let endpoint = format!("{endpoint}{}/block/height/latest", N::SHORT_NAME);
                 let latest_height = u32::from_str(&ureq::get(&endpoint).call()?.into_body().read_to_string()?)?;
 
                 Ok((latest_height.saturating_sub(last), latest_height))
@@ -189,15 +184,8 @@ impl Scan {
 
     /// Returns the CDN to prefetch initial blocks from, from the given configurations.
     fn parse_cdn<N: Network>() -> Result<Uri> {
-        let network_name = match N::ID {
-            MainnetV0::ID => "mainnet",
-            TestnetV0::ID => "testnet",
-            CanaryV0::ID => "canary",
-            _ => bail!("Unknown network ID ({})", N::ID),
-        };
-
         // This should always succeed as the base URL is hardcoded.
-        Uri::try_from(format!("{CDN_BASE_URL}/{network_name}")).with_context(|| "Unexpected error")
+        Uri::try_from(format!("{CDN_BASE_URL}/{}", N::SHORT_NAME)).with_context(|| "Unexpected error")
     }
 
     /// Fetch owned ciphertext records from the endpoint.
@@ -212,14 +200,6 @@ impl Scan {
         if start_height > end_height {
             bail!("Invalid block range");
         }
-
-        // Get the network name.
-        let network = match N::ID {
-            MainnetV0::ID => "mainnet",
-            TestnetV0::ID => "testnet",
-            CanaryV0::ID => "canary",
-            unknown_id => bail!("Unknown network ID ({unknown_id})"),
-        };
 
         // Derive the x-coordinate of the address corresponding to the given view key.
         let address_x_coordinate = view_key.to_address().to_x_coordinate();
@@ -236,7 +216,7 @@ impl Scan {
 
         // Fetch the genesis block from the endpoint.
         let genesis_block: Block<N> =
-            ureq::get(&format!("{endpoint}/{network}/block/0")).call()?.into_body().read_json()?;
+            ureq::get(&format!("{endpoint}{}/block/0", N::SHORT_NAME)).call()?.into_body().read_json()?;
         // Determine if the endpoint is on a development network.
         let is_development_network = genesis_block != Block::from_bytes_le(N::genesis_bytes())?;
 
@@ -275,7 +255,7 @@ impl Scan {
             let request_end = request_start.saturating_add(num_blocks_to_request);
 
             // Establish the endpoint.
-            let blocks_endpoint = format!("{endpoint}/{network}/blocks?start={request_start}&end={request_end}");
+            let blocks_endpoint = format!("{endpoint}{}/blocks?start={request_start}&end={request_end}", N::SHORT_NAME);
             // Fetch blocks
             let blocks: Vec<Block<N>> = ureq::get(&blocks_endpoint).call()?.into_body().read_json()?;
 
@@ -491,7 +471,7 @@ mod tests {
         )?;
 
         let endpoint = Uri::default();
-        config.parse_block_range(&endpoint).with_context(|| "Failed to parse block range")?;
+        config.parse_block_range::<CurrentNetwork>(&endpoint).with_context(|| "Failed to parse block range")?;
 
         // `start` height can't be greater than `end` height.
         let config = Scan::try_parse_from(
@@ -499,7 +479,7 @@ mod tests {
         )?;
 
         let endpoint = Uri::default();
-        assert!(config.parse_block_range(&endpoint).is_err());
+        assert!(config.parse_block_range::<CurrentNetwork>(&endpoint).is_err());
 
         // `last` conflicts with `start`
         assert!(

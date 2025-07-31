@@ -119,7 +119,7 @@ impl Execute {
         let endpoint = prepare_endpoint(self.endpoint.clone())?;
 
         // Specify the query
-        let query = Query::<N, BlockMemory<N>>::from(endpoint.to_string());
+        let query = Query::<N, BlockMemory<N>>::from(endpoint.clone());
         let is_static_query = matches!(query, Query::STATIC(_));
 
         // Retrieve the private key.
@@ -209,7 +209,6 @@ impl Execute {
         // Determine if the transaction should be broadcast, stored, or displayed to the user.
         Developer::handle_transaction(
             &endpoint,
-            self.network,
             self.broadcast,
             self.dry_run,
             &self.store,
