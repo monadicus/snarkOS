@@ -39,7 +39,7 @@ use snarkvm::{
 };
 
 use aleo_std::StorageMode;
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Context, Result, anyhow, bail, ensure};
 use base64::prelude::{BASE64_STANDARD, Engine};
 use clap::Parser;
 use colored::Colorize;
@@ -316,20 +316,27 @@ impl Start {
         match peers.is_empty() {
             // Split on an empty string returns an empty string.
             true => Ok(vec![]),
-            false => Ok(peers
+            false => peers
                 .split(',')
-                .flat_map(|ip_or_hostname| {
+                .map(|ip_or_hostname| {
                     let trimmed = ip_or_hostname.trim();
                     match trimmed.to_socket_addrs() {
                         Ok(mut ip_iter) => {
                             // A hostname might resolve to multiple IP addresses. We will use only the first one,
                             // assuming this aligns with the user's expectations.
-                            ip_iter.next()
+                            let Some(ip) = ip_iter.next() else {
+                                return Err(anyhow!(
+                                    "The hostname supplied to --peers ('{trimmed}') does not reference any ip."
+                                ));
+                            };
+                            Ok(ip)
                         }
-                        Err(e) => panic!("The hostname or IP supplied to --peers ('{trimmed}') is malformed: {e}"),
+                        Err(e) => {
+                            Err(anyhow!("The hostname or IP supplied to --peers ('{trimmed}') is malformed: {e}"))
+                        }
                     }
                 })
-                .collect()),
+                .collect(),
         }
     }
 
@@ -1200,13 +1207,14 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
     fn parse_peers_when_unknown_hostname_gracefully() {
         let arg_vec = vec!["snarkos", "start", "--peers", "banana.cake.eafafdaeefasdfasd.com"];
         let cli = CLI::parse_from(arg_vec);
 
         if let Command::Start(start) = cli.command {
-            start.parse_trusted_peers();
+            assert!(start.parse_trusted_peers().is_err());
+        } else {
+            panic!("Unexpected result of clap parsing!");
         }
     }
 }
