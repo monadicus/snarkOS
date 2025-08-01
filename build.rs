@@ -167,6 +167,14 @@ fn check_file_licenses<P: AsRef<Path>>(path: P) {
 fn check_locktick_profile() {
     let locktick_enabled = env::var("CARGO_FEATURE_LOCKTICK").is_ok();
     if locktick_enabled {
+        let release_profile_override = env::var("CARGO_PROFILE_RELEASE_DEBUG") == Ok("false".to_string());
+        if release_profile_override {
+            eprintln!(
+                "🔴 When enabling the locktick feature, you may not build with CARGO_PROFILE_RELEASE_DEBUG=false."
+            );
+            process::exit(1);
+        }
+
         let profile = env::var("PROFILE").unwrap_or_else(|_| "".to_string());
         let manifest = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap()).join("Cargo.toml");
         let contents = fs::read_to_string(&manifest).expect("failed to read Cargo.toml");
