@@ -16,7 +16,10 @@
 use super::Developer;
 use crate::{
     commands::StoreFormat,
-    helpers::args::{network_id_parser, parse_private_key, prepare_endpoint},
+    helpers::{
+        args::{network_id_parser, parse_private_key, prepare_endpoint},
+        logger::initialize_terminal_logger,
+    },
 };
 use snarkvm::{
     console::network::{CanaryV0, MainnetV0, Network, TestnetV0},
@@ -32,7 +35,7 @@ use snarkvm::{
 };
 
 use aleo_std::StorageMode;
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use clap::Parser;
 use std::{path::PathBuf, str::FromStr};
 use ureq::http::Uri;
@@ -87,7 +90,10 @@ pub struct TransferPrivate {
     store_format: StoreFormat,
     /// Specify the path to a directory containing the ledger. Overrides the default path.
     #[clap(long = "storage_path")]
-    pub storage_path: Option<PathBuf>,
+    storage_path: Option<PathBuf>,
+    /// Sets verbosity of log output. By default, no logs are shown.
+    #[clap(long)]
+    verbosity: Option<u8>,
 }
 
 impl Drop for TransferPrivate {
@@ -101,6 +107,10 @@ impl TransferPrivate {
     /// Creates an Aleo transfer with the provided inputs.
     #[allow(clippy::format_in_format_args)]
     pub fn execute(self) -> Result<String> {
+        if let Some(verbosity) = self.verbosity {
+            initialize_terminal_logger(verbosity).with_context(|| "Failed to initalize terminal logger")?
+        }
+
         // Construct the transfer for the specified network.
         match self.network {
             MainnetV0::ID => self.construct_transfer_private::<MainnetV0>(),

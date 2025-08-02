@@ -16,7 +16,10 @@
 use super::Developer;
 use crate::{
     commands::StoreFormat,
-    helpers::args::{network_id_parser, parse_private_key, prepare_endpoint},
+    helpers::{
+        args::{network_id_parser, parse_private_key, prepare_endpoint},
+        logger::initialize_terminal_logger,
+    },
 };
 
 use snarkvm::{
@@ -90,7 +93,10 @@ pub struct Execute {
     store_format: StoreFormat,
     /// Specify the path to a directory containing the ledger. Overrides the default path.
     #[clap(long = "storage_path")]
-    pub storage_path: Option<PathBuf>,
+    storage_path: Option<PathBuf>,
+    /// Sets verbosity of log output. By default, no logs are shown.
+    #[clap(long)]
+    verbosity: Option<u8>,
 }
 
 impl Drop for Execute {
@@ -105,6 +111,10 @@ impl Drop for Execute {
 impl Execute {
     /// Executes an Aleo program function with the provided inputs.
     pub fn execute(self) -> Result<String> {
+        if let Some(verbosity) = self.verbosity {
+            initialize_terminal_logger(verbosity).with_context(|| "Failed to initalize terminal logger")?
+        }
+
         // Construct the execution for the specified network.
         match self.network {
             MainnetV0::ID => self.construct_execution::<MainnetV0>(),

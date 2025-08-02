@@ -13,7 +13,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::helpers::args::{network_id_parser, prepare_endpoint};
+use crate::helpers::{
+    args::{network_id_parser, prepare_endpoint},
+    logger::initialize_terminal_logger,
+};
 
 use snarkos_node_cdn::CDN_BASE_URL;
 use snarkvm::{
@@ -71,6 +74,10 @@ pub struct Scan {
     /// The endpoint to scan blocks from.
     #[clap(long, default_value = "https://api.explorer.provable.com/v1")]
     endpoint: Uri,
+
+    /// Sets verbosity of log output. By default, no logs are shown.
+    #[clap(long)]
+    verbosity: Option<u8>,
 }
 
 impl Drop for Scan {
@@ -84,6 +91,10 @@ impl Drop for Scan {
 
 impl Scan {
     pub fn execute(self) -> Result<String> {
+        if let Some(verbosity) = self.verbosity {
+            initialize_terminal_logger(verbosity).with_context(|| "Failed to initalize terminal logger")?
+        }
+
         // Scan for records on the given network.
         match self.network {
             MainnetV0::ID => self.scan_records::<MainnetV0>(),

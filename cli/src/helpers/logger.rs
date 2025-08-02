@@ -179,6 +179,29 @@ pub fn initialize_logger<P: AsRef<Path>>(
     Ok(log_receiver)
 }
 
+/// Set up only terminal logging
+pub fn initialize_terminal_logger(verbosity: u8) -> Result<()> {
+    let stdout_filter = parse_log_verbosity(verbosity)?;
+
+    // At high verbosity or when there is a custom log filter we show the target
+    // of the log event, i.e., the file/module where the log message was created.
+    let show_target = verbosity > 2;
+
+    // Initialize tracing.
+    let _ = tracing_subscriber::registry()
+        .with(
+            // Add layer using LogWriter for stdout / terminal
+            tracing_subscriber::fmt::Layer::default()
+                .with_ansi(io::stdout().is_tty())
+                .with_target(show_target)
+                .event_format(DynamicFormatter::new(Arc::new(AtomicBool::new(false))))
+                .with_filter(stdout_filter),
+        )
+        .try_init();
+
+    Ok(())
+}
+
 /// Returns the welcome message as a string.
 pub fn welcome_message() -> String {
     use colored::Colorize;
