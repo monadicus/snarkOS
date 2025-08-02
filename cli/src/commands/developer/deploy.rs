@@ -16,10 +16,7 @@
 use super::Developer;
 use crate::{
     commands::StoreFormat,
-    helpers::{
-        args::{network_id_parser, parse_private_key, prepare_endpoint},
-        logger::initialize_terminal_logger,
-    },
+    helpers::args::{network_id_parser, parse_private_key, prepare_endpoint},
 };
 
 use snarkvm::{
@@ -97,9 +94,6 @@ pub struct Deploy {
     /// Specify the path to a directory containing the ledger. Overrides the default path.
     #[clap(long = "storage_path")]
     storage_path: Option<PathBuf>,
-    /// Sets verbosity of log output. By default, no logs are shown.
-    #[clap(long)]
-    verbosity: Option<u8>,
 }
 
 impl Drop for Deploy {
@@ -111,13 +105,9 @@ impl Drop for Deploy {
 
 impl Deploy {
     /// Deploys an Aleo program.
-    pub fn execute(self) -> Result<String> {
-        if let Some(verbosity) = self.verbosity {
-            initialize_terminal_logger(verbosity).with_context(|| "Failed to initalize terminal logger")?
-        }
-
+    pub fn parse<N: Network>(self) -> Result<String> {
         // Construct the deployment for the specified network.
-        match self.network {
+        match N::ID {
             MainnetV0::ID => self.construct_deployment::<MainnetV0, AleoV0>(),
             TestnetV0::ID => self.construct_deployment::<TestnetV0, AleoTestnetV0>(),
             CanaryV0::ID => self.construct_deployment::<CanaryV0, AleoCanaryV0>(),
@@ -236,7 +226,7 @@ impl Deploy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::{CLI, Command};
+    use crate::commands::{CLI, Command, DeveloperCommand};
 
     #[test]
     fn clap_snarkos_deploy_missing_mode() {
@@ -275,11 +265,11 @@ mod tests {
         let Command::Developer(developer) = cli.command else {
             bail!("Unexpected result of clap parsing!");
         };
-        let Developer::Deploy(deploy) = *developer else {
+        let DeveloperCommand::Deploy(deploy) = developer.command else {
             bail!("Unexpected result of clap parsing!");
         };
 
-        assert_eq!(deploy.network, 0);
+        assert_eq!(developer.network, 0);
         assert_eq!(deploy.program_id, "hello.aleo");
         assert_eq!(deploy.private_key, Some("PRIVATE_KEY".to_string()));
         assert_eq!(deploy.private_key_file, None);

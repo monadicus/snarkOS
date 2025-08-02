@@ -73,7 +73,7 @@ fn main() -> anyhow::Result<()> {
     // Run the updater.
     println!("{}", Updater::print_cli());
     // Run the CLI.
-    match cli.command.execute() {
+    match cli.command.parse() {
         Ok(output) => println!("{output}\n"),
         Err(error) => {
             // Print the top level error and then any additional context.

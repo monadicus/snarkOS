@@ -13,10 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::helpers::{
-    args::{network_id_parser, prepare_endpoint},
-    logger::initialize_terminal_logger,
-};
+use crate::helpers::args::{network_id_parser, prepare_endpoint};
 
 use snarkos_node_cdn::CDN_BASE_URL;
 use snarkvm::{
@@ -90,22 +87,8 @@ impl Drop for Scan {
 }
 
 impl Scan {
-    pub fn execute(self) -> Result<String> {
-        if let Some(verbosity) = self.verbosity {
-            initialize_terminal_logger(verbosity).with_context(|| "Failed to initalize terminal logger")?
-        }
-
-        // Scan for records on the given network.
-        match self.network {
-            MainnetV0::ID => self.scan_records::<MainnetV0>(),
-            TestnetV0::ID => self.scan_records::<TestnetV0>(),
-            CanaryV0::ID => self.scan_records::<CanaryV0>(),
-            unknown_id => bail!("Unknown network ID ({unknown_id})"),
-        }
-    }
-
     /// Scan the network for records.
-    fn scan_records<N: Network>(self) -> Result<String> {
+    pub fn parse<N: Network>(self) -> Result<String> {
         let endpoint = prepare_endpoint(self.endpoint.clone())?;
 
         // Derive the view key and optional private key.

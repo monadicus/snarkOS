@@ -13,13 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::helpers::{args::network_id_parser, logger::initialize_terminal_logger};
-
 use snarkvm::{
-    console::{
-        network::{CanaryV0, MainnetV0, Network, TestnetV0},
-        program::Ciphertext,
-    },
+    console::{network::Network, program::Ciphertext},
     prelude::{Record, ViewKey},
 };
 
@@ -31,44 +26,25 @@ use zeroize::Zeroize;
 /// Decrypts a record ciphertext.
 #[derive(Debug, Parser, Zeroize)]
 pub struct Decrypt {
-    /// Specify the network to create an execution for.
-    /// [options: 0 = mainnet, 1 = testnet, 2 = canary]
-    #[clap(long, default_value_t=MainnetV0::ID, long, value_parser = network_id_parser())]
-    network: u16,
     /// The record ciphertext to decrypt.
     #[clap(short, long)]
-    pub ciphertext: String,
+    ciphertext: String,
     /// The view key used to decrypt the record ciphertext.
     #[clap(short, long)]
-    pub view_key: String,
-
+    view_key: String,
     /// Sets verbosity of log output. By default, no logs are shown.
     #[clap(long)]
     verbosity: Option<u8>,
 }
 
 impl Decrypt {
-    pub fn execute(self) -> Result<String> {
-        if let Some(verbosity) = self.verbosity {
-            initialize_terminal_logger(verbosity).with_context(|| "Failed to initalize terminal logger")?
-        }
-
-        // Decrypt the ciphertext for the given network.
-        match self.network {
-            MainnetV0::ID => Self::decrypt_ciphertext::<MainnetV0>(&self.ciphertext, &self.view_key),
-            TestnetV0::ID => Self::decrypt_ciphertext::<TestnetV0>(&self.ciphertext, &self.view_key),
-            CanaryV0::ID => Self::decrypt_ciphertext::<CanaryV0>(&self.ciphertext, &self.view_key),
-            unknown_id => bail!("Unknown network ID ({unknown_id})"),
-        }
-    }
-
-    /// Decrypts the ciphertext record with provided the view key.
-    fn decrypt_ciphertext<N: Network>(ciphertext: &str, view_key: &str) -> Result<String> {
+    pub fn parse<N: Network>(self) -> Result<String> {
         // Parse the ciphertext record.
-        let ciphertext_record = Record::<N, Ciphertext<N>>::from_str(ciphertext)?;
+        let ciphertext_record = Record::<N, Ciphertext<N>>::from_str(&self.ciphertext)
+            .with_context(|| "Failed to parse ciphertext record")?;
 
         // Parse the account view key.
-        let view_key = ViewKey::<N>::from_str(view_key)?;
+        let view_key = ViewKey::<N>::from_str(&self.view_key).with_context(|| "Faield to parse view key")?;
 
         match ciphertext_record.decrypt(&view_key) {
             Ok(plaintext_record) => Ok(plaintext_record.to_string()),
@@ -86,6 +62,7 @@ mod tests {
         Field,
         Identifier,
         Literal,
+        MainnetV0,
         Network,
         One,
         Owner,
@@ -153,13 +130,9 @@ mod tests {
             // Decrypt the ciphertext.
             let expected_plaintext = ciphertext.decrypt(&view_key).unwrap();
 
-            let decrypt = Decrypt {
-                network: 0,
-                ciphertext: ciphertext.to_string(),
-                view_key: view_key.to_string(),
-                verbosity: None,
-            };
-            let plaintext = decrypt.execute().unwrap();
+            let decrypt =
+                Decrypt { ciphertext: ciphertext.to_string(), view_key: view_key.to_string(), verbosity: None };
+            let plaintext = decrypt.parse::<CurrentNetwork>().unwrap();
 
             // Check that the decryption is correct.
             assert_eq!(plaintext, expected_plaintext.to_string());
@@ -185,12 +158,11 @@ mod tests {
 
             // Enforce that the decryption fails.
             let decrypt = Decrypt {
-                network: 0,
                 ciphertext: ciphertext.to_string(),
                 view_key: incorrect_view_key.to_string(),
                 verbosity: None,
             };
-            assert!(decrypt.execute().is_err());
+            assert!(decrypt.parse::<CurrentNetwork>().is_err());
         }
     }
 }

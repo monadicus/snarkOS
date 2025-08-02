@@ -95,7 +95,8 @@ fn aleo_literal_to_fields<N: Network>(input: &str) -> Result<Vec<Field<N>>> {
 }
 
 impl Account {
-    pub fn execute(self) -> Result<String> {
+    /// Run a account command
+    pub fn parse(self) -> Result<String> {
         match self {
             Self::New { network, seed, vanity, discreet, save_to_file } => {
                 // Ensure only the seed or the vanity string is specified.
@@ -316,7 +317,7 @@ mod tests {
     fn test_new() -> Result<()> {
         for _ in 0..3 {
             let account = Account::New { network: 0, seed: None, vanity: None, discreet: false, save_to_file: None };
-            account.execute().with_context(|| "Account creation failed")?;
+            account.parse().with_context(|| "Account creation failed")?;
         }
 
         Ok(())
@@ -344,7 +345,7 @@ mod tests {
 
         let vanity = None;
         let account = Account::New { network: 0, seed, vanity, discreet: false, save_to_file: None };
-        let actual = account.execute().with_context(|| "Command execution failed")?;
+        let actual = account.parse().with_context(|| "Command execution failed")?;
         assert_eq!(expected, actual);
 
         Ok(())
@@ -373,7 +374,7 @@ mod tests {
         let vanity = None;
         let account = Account::New { network: 0, seed, vanity, discreet: false, save_to_file: None };
 
-        let actual = account.execute().with_context(|| "Command execution failed")?;
+        let actual = account.parse().with_context(|| "Command execution failed")?;
         assert_eq!(expected, actual);
 
         Ok(())
@@ -398,7 +399,7 @@ mod tests {
         let save_to_file = Some(file.clone());
         let account = Account::New { network: 0, seed, vanity, discreet, save_to_file };
 
-        let actual = account.execute().with_context(|| "Command execution failed")?;
+        let actual = account.parse().with_context(|| "Command execution failed")?;
 
         let expected = "APrivateKey1zkp2n22c19hNdGF8wuEoQcuiyuWbquY6up4CtG5DYKqPX2X";
         assert!(actual.contains(expected));
@@ -433,7 +434,7 @@ mod tests {
         let save_to_file = Some(file);
         let account = Account::New { network: 0, seed, vanity, discreet, save_to_file };
 
-        let res = account.execute();
+        let res = account.parse();
         assert!(res.is_err());
     }
 
@@ -452,7 +453,7 @@ mod tests {
         let save_to_file = Some(file);
         let account = Account::New { network: 0, seed, vanity, discreet, save_to_file };
 
-        let res = account.execute();
+        let res = account.parse();
         assert!(res.is_err());
     }
 
@@ -467,7 +468,7 @@ mod tests {
         let path = file.path().display().to_string();
         let account = Account::New { network: 0, seed, vanity, discreet, save_to_file: Some(path) };
 
-        let res = account.execute();
+        let res = account.parse();
         assert!(res.is_err());
 
         let expected = "don't overwrite me";
@@ -483,7 +484,7 @@ mod tests {
         let save_to_file = Some("/tmp/not-important".to_string());
         let account = Account::New { network: 0, seed, vanity, discreet, save_to_file };
 
-        let res = account.execute();
+        let res = account.parse();
         assert!(res.is_err());
     }
 
@@ -495,7 +496,7 @@ mod tests {
         let save_to_file = Some("/tmp/not-important".to_string());
         let account = Account::New { network: 0, seed, vanity, discreet, save_to_file };
 
-        let res = account.execute();
+        let res = account.parse();
         assert!(res.is_err());
     }
 
@@ -506,7 +507,7 @@ mod tests {
         let account =
             Account::Sign(Sign { network: 0, private_key: Some(key), private_key_file: None, message, raw: true });
 
-        account.execute().with_context(|| "Command execution failed")?;
+        account.parse().with_context(|| "Command execution failed")?;
         Ok(())
     }
 
@@ -522,7 +523,7 @@ mod tests {
         let account =
             Account::Sign(Sign { network: 0, private_key: None, private_key_file: Some(path), message, raw: true });
 
-        account.execute().with_context(|| "Command execution failed")?;
+        account.parse().with_context(|| "Command execution failed")?;
         Ok(())
     }
 
@@ -545,12 +546,12 @@ mod tests {
         let vanity = None;
         let discreet = false;
         let account = Account::New { network: 0, seed, vanity, discreet, save_to_file: Some(file.clone()) };
-        account.execute().with_context(|| "Command execution failed")?;
+        account.parse().with_context(|| "Command execution failed")?;
 
         let account =
             Account::Sign(Sign { network: 0, private_key: None, private_key_file: Some(file), message, raw: true });
 
-        account.execute().with_context(|| "Command execution failed")?;
+        account.parse().with_context(|| "Command execution failed")?;
         Ok(())
     }
 
@@ -561,7 +562,7 @@ mod tests {
         let account =
             Account::Sign(Sign { network: 0, private_key: Some(key), private_key_file: None, message, raw: false });
 
-        account.execute().with_context(|| "Command execution failed")?;
+        account.parse().with_context(|| "Command execution failed")?;
         Ok(())
     }
 
@@ -571,7 +572,7 @@ mod tests {
         let message = "not a literal value".to_string();
         let account =
             Account::Sign(Sign { network: 0, private_key: Some(key), private_key_file: None, message, raw: false });
-        assert!(account.execute().is_err());
+        assert!(account.parse().is_err());
     }
 
     #[test]
@@ -582,13 +583,13 @@ mod tests {
         let message = "Hello, world!".to_string();
         let account = Account::Verify { network: 0, address: address.to_string(), signature, message, raw: true };
 
-        account.execute().with_context(|| "Command execution failed")?;
+        account.parse().with_context(|| "Command execution failed")?;
 
         // test signature of "Hello, world!" against the message "Different Message"
         let signature = "sign1nnvrjlksrkxdpwsrw8kztjukzhmuhe5zf3srk38h7g32u4kqtqpxn3j5a6k8zrqcfx580a96956nsjvluzt64cqf54pdka9mgksfqp8esm5elrqqunzqzmac7kzutl6zk7mqht3c0m9kg4hklv7h2js0qmxavwnpuwyl4lzldl6prs4qeqy9wxyp8y44nnydg3h8sg6ue99qkwsnaqq".to_string();
         let message = "Different Message".to_string();
         let account = Account::Verify { network: 0, address: address.to_string(), signature, message, raw: true };
-        let actual = account.execute();
+        let actual = account.parse();
         assert!(actual.is_err());
 
         // test signature of "Hello, world!" against the wrong address
@@ -596,14 +597,14 @@ mod tests {
         let message = "Hello, world!".to_string();
         let wrong_address = "aleo1uxl69laseuv3876ksh8k0nd7tvpgjt6ccrgccedpjk9qwyfensxst9ftg5".to_string();
         let account = Account::Verify { network: 0, address: wrong_address, signature, message, raw: true };
-        let actual = account.execute();
+        let actual = account.parse();
         assert!(actual.is_err());
 
         // test a valid signature of "Different Message"
         let signature = "sign1424ztyt9hcm77nq450gvdszrvtg9kvhc4qadg4nzy9y0ah7wdqq7t36cxal42p9jj8e8pjpmc06lfev9nvffcpqv0cxwyr0a2j2tjqlesm5elrqqunzqzmac7kzutl6zk7mqht3c0m9kg4hklv7h2js0qmxavwnpuwyl4lzldl6prs4qeqy9wxyp8y44nnydg3h8sg6ue99qk3yrr50".to_string();
         let message = "Different Message".to_string();
         let account = Account::Verify { network: 0, address: address.to_string(), signature, message, raw: true };
-        account.execute().with_context(|| "Command execution failed")?;
+        account.parse().with_context(|| "Command execution failed")?;
 
         Ok(())
     }
@@ -615,13 +616,13 @@ mod tests {
         let signature = "sign1j7swjfnyujt2vme3ulu88wdyh2ddj85arh64qh6c6khvrx8wvsp8z9wtzde0sahqj2qwz8rgzt803c0ceega53l4hks2mf5sfsv36qhesm5elrqqunzqzmac7kzutl6zk7mqht3c0m9kg4hklv7h2js0qmxavwnpuwyl4lzldl6prs4qeqy9wxyp8y44nnydg3h8sg6ue99qkdetews".to_string();
         let message = "5field".to_string();
         let account = Account::Verify { network: 0, address: address.to_string(), signature, message, raw: false };
-        account.execute().with_context(|| "Command execution failed")?;
+        account.parse().with_context(|| "Command execution failed")?;
 
         // test signature of 5u8 against the message 10u8
         let signature = "sign1j7swjfnyujt2vme3ulu88wdyh2ddj85arh64qh6c6khvrx8wvsp8z9wtzde0sahqj2qwz8rgzt803c0ceega53l4hks2mf5sfsv36qhesm5elrqqunzqzmac7kzutl6zk7mqht3c0m9kg4hklv7h2js0qmxavwnpuwyl4lzldl6prs4qeqy9wxyp8y44nnydg3h8sg6ue99qkdetews".to_string();
         let message = "10field".to_string();
         let account = Account::Verify { network: 0, address: address.to_string(), signature, message, raw: false };
-        let actual = account.execute();
+        let actual = account.parse();
         assert!(actual.is_err());
 
         // test signature of 5u8 against the wrong address
@@ -629,7 +630,7 @@ mod tests {
         let message = "5field".to_string();
         let wrong_address = "aleo1uxl69laseuv3876ksh8k0nd7tvpgjt6ccrgccedpjk9qwyfensxst9ftg5".to_string();
         let account = Account::Verify { network: 0, address: wrong_address, signature, message, raw: false };
-        let actual = account.execute();
+        let actual = account.parse();
         assert!(actual.is_err());
 
         // test a valid signature of 10u8
@@ -637,7 +638,7 @@ mod tests {
         let message = "10field".to_string();
         let account = Account::Verify { network: 0, address: address.to_string(), signature, message, raw: false };
 
-        account.execute().with_context(|| "Command execution failed")?;
+        account.parse().with_context(|| "Command execution failed")?;
 
         Ok(())
     }

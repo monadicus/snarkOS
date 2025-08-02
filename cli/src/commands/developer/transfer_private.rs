@@ -16,13 +16,10 @@
 use super::Developer;
 use crate::{
     commands::StoreFormat,
-    helpers::{
-        args::{network_id_parser, parse_private_key, prepare_endpoint},
-        logger::initialize_terminal_logger,
-    },
+    helpers::args::{network_id_parser, parse_private_key, prepare_endpoint},
 };
 use snarkvm::{
-    console::network::{CanaryV0, MainnetV0, Network, TestnetV0},
+    console::network::{MainnetV0, Network},
     ledger::store::helpers::memory::BlockMemory,
     prelude::{
         Address,
@@ -35,7 +32,7 @@ use snarkvm::{
 };
 
 use aleo_std::StorageMode;
-use anyhow::{Context, Result, bail};
+use anyhow::Result;
 use clap::Parser;
 use std::{path::PathBuf, str::FromStr};
 use ureq::http::Uri;
@@ -91,9 +88,6 @@ pub struct TransferPrivate {
     /// Specify the path to a directory containing the ledger. Overrides the default path.
     #[clap(long = "storage_path")]
     storage_path: Option<PathBuf>,
-    /// Sets verbosity of log output. By default, no logs are shown.
-    #[clap(long)]
-    verbosity: Option<u8>,
 }
 
 impl Drop for TransferPrivate {
@@ -105,23 +99,7 @@ impl Drop for TransferPrivate {
 
 impl TransferPrivate {
     /// Creates an Aleo transfer with the provided inputs.
-    #[allow(clippy::format_in_format_args)]
-    pub fn execute(self) -> Result<String> {
-        if let Some(verbosity) = self.verbosity {
-            initialize_terminal_logger(verbosity).with_context(|| "Failed to initalize terminal logger")?
-        }
-
-        // Construct the transfer for the specified network.
-        match self.network {
-            MainnetV0::ID => self.construct_transfer_private::<MainnetV0>(),
-            TestnetV0::ID => self.construct_transfer_private::<TestnetV0>(),
-            CanaryV0::ID => self.construct_transfer_private::<CanaryV0>(),
-            unknown_id => bail!("Unknown network ID ({unknown_id})"),
-        }
-    }
-
-    /// Construct and process the `transfer_private` transaction.
-    fn construct_transfer_private<N: Network>(&self) -> Result<String> {
+    pub fn parse<N: Network>(self) -> Result<String> {
         let endpoint = prepare_endpoint(self.endpoint.clone())?;
 
         // Specify the query

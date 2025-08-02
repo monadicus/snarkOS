@@ -39,7 +39,7 @@ pub struct Clean {
 
 impl Clean {
     /// Cleans the snarkOS node storage.
-    pub fn execute(self) -> Result<String> {
+    pub fn parse(self) -> Result<String> {
         // Initialize the storage mode.
         let storage_mode = match self.path {
             Some(path) => StorageMode::Custom(path),

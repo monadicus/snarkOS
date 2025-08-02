@@ -25,10 +25,13 @@ pub use execute::*;
 mod scan;
 pub use scan::*;
 
+mod query;
+pub use query::*;
+
 mod transfer_private;
 pub use transfer_private::*;
 
-use crate::helpers::{http_get_json, http_post_json};
+use crate::helpers::{args::network_id_parser, http_get_json, http_post_json, logger::initialize_terminal_logger};
 
 use ureq::http::Uri;
 
@@ -37,14 +40,17 @@ use snarkvm::{
     package::Package,
     prelude::{
         Address,
+        CanaryV0,
         Ciphertext,
         Identifier,
         Literal,
+        MainnetV0,
         Plaintext,
         PrivateKey,
         Program,
         ProgramID,
         Record,
+        TestnetV0,
         ToBytes,
         Value,
         ViewKey,
@@ -52,7 +58,7 @@ use snarkvm::{
     },
 };
 
-use anyhow::{Result, anyhow, bail, ensure};
+use anyhow::{Context, Result, anyhow, bail, ensure};
 use clap::{Parser, ValueEnum};
 use colored::Colorize;
 use std::{path::PathBuf, str::FromStr};
@@ -65,7 +71,7 @@ pub enum StoreFormat {
 
 /// Commands to deploy and execute transactions
 #[derive(Debug, Parser)]
-pub enum Developer {
+pub enum DeveloperCommand {
     /// Decrypt a ciphertext.
     Decrypt(Decrypt),
     /// Deploy a program.
@@ -76,16 +82,47 @@ pub enum Developer {
     Scan(Scan),
     /// Execute the `credits.aleo/transfer_private` function.
     TransferPrivate(TransferPrivate),
+    /// Get information about something on the Aleo chain.
+    Query(Query),
+}
+
+#[derive(Debug, Parser)]
+pub struct Developer {
+    /// The specific developer command to run.
+    #[clap(subcommand)]
+    command: DeveloperCommand,
+    /// Specify the network to create an execution for.
+    /// [options: 0 = mainnet, 1 = testnet, 2 = canary]
+    #[clap(long, default_value_t=MainnetV0::ID, long, global=true, value_parser = network_id_parser())]
+    network: u16,
+    /// Sets verbosity of log output. By default, no logs are shown.
+    #[clap(long, global = true)]
+    verbosity: Option<u8>,
 }
 
 impl Developer {
-    pub fn execute(self) -> Result<String> {
-        match self {
-            Self::Decrypt(decrypt) => decrypt.execute(),
-            Self::Deploy(deploy) => deploy.execute(),
-            Self::Execute(execute) => execute.execute(),
-            Self::Scan(scan) => scan.execute(),
-            Self::TransferPrivate(transfer_private) => transfer_private.execute(),
+    pub fn parse(self) -> Result<String> {
+        if let Some(verbosity) = self.verbosity {
+            initialize_terminal_logger(verbosity).with_context(|| "Failed to initalize terminal logger")?
+        }
+
+        match self.network {
+            MainnetV0::ID => self.parse_inner::<MainnetV0>(),
+            TestnetV0::ID => self.parse_inner::<TestnetV0>(),
+            CanaryV0::ID => self.parse_inner::<CanaryV0>(),
+            unknown_id => bail!("Unknown network ID ({unknown_id})"),
+        }
+    }
+
+    fn parse_inner<N: Network>(self) -> Result<String> {
+        use DeveloperCommand::*;
+        match self.command {
+            Decrypt(decrypt) => decrypt.parse::<N>(),
+            Deploy(deploy) => deploy.parse::<N>(),
+            Execute(execute) => execute.parse::<N>(),
+            Scan(scan) => scan.parse::<N>(),
+            TransferPrivate(transfer_private) => transfer_private.parse::<N>(),
+            Query(query) => query.parse::<N>(),
         }
     }
 

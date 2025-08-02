@@ -16,14 +16,11 @@
 use super::Developer;
 use crate::{
     commands::StoreFormat,
-    helpers::{
-        args::{network_id_parser, parse_private_key, prepare_endpoint},
-        logger::initialize_terminal_logger,
-    },
+    helpers::args::{parse_private_key, prepare_endpoint},
 };
 
 use snarkvm::{
-    console::network::{CanaryV0, MainnetV0, Network, TestnetV0},
+    console::network::Network,
     ledger::store::helpers::memory::BlockMemory,
     prelude::{
         Address,
@@ -59,10 +56,6 @@ pub struct Execute {
     function: String,
     /// The function inputs.
     inputs: Vec<String>,
-    /// Specify the network to create an execution for.
-    /// [options: 0 = mainnet, 1 = testnet, 2 = canary]
-    #[clap(long, default_value_t=MainnetV0::ID, long, value_parser = network_id_parser())]
-    network: u16,
     /// The private key used to generate the execution.
     #[clap(short = 'p', long, group = "key")]
     private_key: Option<String>,
@@ -94,9 +87,6 @@ pub struct Execute {
     /// Specify the path to a directory containing the ledger. Overrides the default path.
     #[clap(long = "storage_path")]
     storage_path: Option<PathBuf>,
-    /// Sets verbosity of log output. By default, no logs are shown.
-    #[clap(long)]
-    verbosity: Option<u8>,
 }
 
 impl Drop for Execute {
@@ -110,22 +100,7 @@ impl Drop for Execute {
 
 impl Execute {
     /// Executes an Aleo program function with the provided inputs.
-    pub fn execute(self) -> Result<String> {
-        if let Some(verbosity) = self.verbosity {
-            initialize_terminal_logger(verbosity).with_context(|| "Failed to initalize terminal logger")?
-        }
-
-        // Construct the execution for the specified network.
-        match self.network {
-            MainnetV0::ID => self.construct_execution::<MainnetV0>(),
-            TestnetV0::ID => self.construct_execution::<TestnetV0>(),
-            CanaryV0::ID => self.construct_execution::<CanaryV0>(),
-            unknown_id => bail!("Unknown network ID ({unknown_id})"),
-        }
-    }
-
-    /// Construct and process the execution transaction.
-    fn construct_execution<N: Network>(self) -> Result<String> {
+    pub fn parse<N: Network>(self) -> Result<String> {
         let endpoint = prepare_endpoint(self.endpoint.clone())?;
 
         // Specify the query
@@ -260,7 +235,7 @@ fn load_program<N: Network>(endpoint: &Uri, process: &mut Process<N>, program_id
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::{CLI, Command};
+    use crate::commands::{CLI, Command, DeveloperCommand};
 
     #[test]
     fn clap_snarkos_execute() -> Result<()> {
@@ -286,11 +261,11 @@ mod tests {
         let Command::Developer(developer) = cli.command else {
             bail!("Unexpected result of clap parsing!");
         };
-        let Developer::Execute(execute) = *developer else {
+        let DeveloperCommand::Execute(execute) = developer.command else {
             bail!("Unexpected result of clap parsing!");
         };
 
-        assert_eq!(execute.network, 0);
+        assert_eq!(developer.network, 0);
         assert_eq!(execute.private_key, Some("PRIVATE_KEY".to_string()));
         assert_eq!(execute.endpoint, "ENDPOINT");
         assert_eq!(execute.priority_fee, 77);
@@ -324,11 +299,11 @@ mod tests {
         let Command::Developer(developer) = cli.command else {
             bail!("Unexpected result of clap parsing!");
         };
-        let Developer::Execute(execute) = *developer else {
+        let DeveloperCommand::Execute(execute) = developer.command else {
             bail!("Unexpected result of clap parsing!");
         };
 
-        assert_eq!(execute.network, 0);
+        assert_eq!(developer.network, 0);
         assert_eq!(execute.private_key_file, Some("PRIVATE_KEY_FILE".to_string()));
         assert_eq!(execute.endpoint, "ENDPOINT");
         assert_eq!(execute.priority_fee, 0); // Default value.

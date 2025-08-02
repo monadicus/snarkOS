@@ -249,7 +249,7 @@ pub struct Start {
 
 impl Start {
     /// Starts the snarkOS node.
-    pub fn execute(self) -> Result<String> {
+    pub fn parse(self) -> Result<String> {
         // Prepare the shutdown flag.
         let shutdown: Arc<AtomicBool> = Default::default();
 
