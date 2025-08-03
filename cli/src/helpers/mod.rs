@@ -35,9 +35,7 @@ pub use updater::*;
 
 use snarkos_node::router::messages::NodeType;
 
-use snarkvm::prelude::{CanaryV0, MainnetV0, Network, TestnetV0};
-
-use anyhow::{Result, bail};
+use anyhow::Result;
 use colored::*;
 #[cfg(target_family = "unix")]
 use nix::sys::resource::{Resource, getrlimit};
@@ -114,15 +112,4 @@ pub(crate) fn check_validator_machine(node_type: NodeType) {
             }
         }
     }
-}
-
-pub(crate) fn network_id_str<N: Network>() -> Result<&'static str> {
-    let name = match N::ID {
-        MainnetV0::ID => "mainnet",
-        TestnetV0::ID => "testnet",
-        CanaryV0::ID => "canary",
-        _ => bail!("Unexpected network id: {}", N::ID),
-    };
-
-    Ok(name)
 }

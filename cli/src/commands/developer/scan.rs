@@ -17,7 +17,7 @@ use crate::helpers::args::{network_id_parser, prepare_endpoint};
 
 use snarkos_node_cdn::CDN_BASE_URL;
 use snarkvm::{
-    console::network::{CanaryV0, MainnetV0, Network, TestnetV0},
+    console::network::{MainnetV0, Network},
     prelude::{Ciphertext, Field, FromBytes, Plaintext, PrivateKey, Record, ViewKey, block::Block},
 };
 
@@ -373,16 +373,8 @@ impl Scan {
             // Compute the serial number.
             let serial_number = Record::<N, Plaintext<N>>::serial_number(private_key, commitment)?;
 
-            // Get the network name.
-            let network = match N::ID {
-                MainnetV0::ID => "mainnet",
-                TestnetV0::ID => "testnet",
-                CanaryV0::ID => "canary",
-                unknown_id => bail!("Unknown network ID ({unknown_id})"),
-            };
-
             // Establish the endpoint.
-            let endpoint = format!("{endpoint}/{network}/find/transitionID/{serial_number}");
+            let endpoint = format!("{endpoint}{}/find/transitionID/{serial_number}", N::SHORT_NAME);
 
             // Check if the record is spent.
             match ureq::get(&endpoint).call() {

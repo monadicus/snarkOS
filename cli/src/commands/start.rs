@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::helpers::{args::network_id_parser, network_id_str};
+use crate::helpers::args::network_id_parser;
 
 use snarkos_account::Account;
 use snarkos_display::Display;
@@ -386,7 +386,7 @@ impl Start {
                 },
                 // If no CDN URL is provided, determine the CDN URL based on the network ID.
                 None => {
-                    let uri = format!("{}/{}", snarkos_node_cdn::CDN_BASE_URL, network_id_str::<N>()?);
+                    let uri = format!("{}/{}", snarkos_node_cdn::CDN_BASE_URL, N::SHORT_NAME);
                     Ok(Some(http::Uri::try_from(&uri).with_context(|| "Unexpected error")?))
                 }
             }

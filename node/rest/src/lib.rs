@@ -38,7 +38,7 @@ use snarkvm::{
     prelude::{Ledger, Network, cfg_into_iter, store::ConsensusStorage},
 };
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use axum::{
     Json,
     body::Body,
@@ -159,17 +159,8 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
                 .expect("Couldn't set up rate limiting for the REST server!"),
         );
 
-        // Get the network being used.
-        let network = match N::ID {
-            snarkvm::console::network::MainnetV0::ID => "mainnet",
-            snarkvm::console::network::TestnetV0::ID => "testnet",
-            snarkvm::console::network::CanaryV0::ID => "canary",
-            unknown_id => {
-                bail!("Unknown network ID ({unknown_id})");
-            }
-        };
-
         let router = {
+            let network = N::SHORT_NAME;
             let routes = axum::Router::new()
 
             // All the endpoints before the call to `route_layer` are protected with JWT auth.

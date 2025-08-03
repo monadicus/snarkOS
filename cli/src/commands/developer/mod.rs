@@ -163,16 +163,7 @@ impl Developer {
 
     /// Fetch the program from the given endpoint.
     fn fetch_program<N: Network>(program_id: &ProgramID<N>, endpoint: &Uri) -> Result<Program<N>> {
-        // Get the network being used.
-        let network = match N::ID {
-            snarkvm::console::network::MainnetV0::ID => "mainnet",
-            snarkvm::console::network::TestnetV0::ID => "testnet",
-            snarkvm::console::network::CanaryV0::ID => "canary",
-            unknown_id => bail!("Unknown network ID ({unknown_id})"),
-        };
-
-        // Send a request to the query node.
-        http_get_json(&format!("{endpoint}/{network}/program/{program_id}")).map_err(|(err, message)| {
+        http_get_json(&format!("{endpoint}{}/program/{program_id}", N::SHORT_NAME)).map_err(|(err, message)| {
             let err_msg = message.unwrap_or(err.to_string());
 
             // Debug formatting displays more useful info, especially if the response body is empty.
@@ -186,17 +177,10 @@ impl Developer {
         let credits = ProgramID::<N>::from_str("credits.aleo")?;
         let account_mapping = Identifier::<N>::from_str("account")?;
 
-        // Get the network being used.
-        let network = match N::ID {
-            snarkvm::console::network::MainnetV0::ID => "mainnet",
-            snarkvm::console::network::TestnetV0::ID => "testnet",
-            snarkvm::console::network::CanaryV0::ID => "canary",
-            unknown_id => bail!("Unknown network ID ({unknown_id})"),
-        };
-
         // Send a request to the query node.
         let result = http_get_json::<Option<Value<N>>>(&format!(
-            "{endpoint}/{network}/program/{credits}/mapping/{account_mapping}/{address}"
+            "{endpoint}/{}/program/{credits}/mapping/{account_mapping}/{address}",
+            N::SHORT_NAME,
         ));
 
         // Deserialize the balance.
