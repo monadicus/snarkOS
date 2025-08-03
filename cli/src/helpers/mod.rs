@@ -30,6 +30,8 @@ pub(crate) use self::ureq::*;
 pub mod logger;
 pub use logger::*;
 
+pub mod dev;
+
 pub mod updater;
 pub use updater::*;
 

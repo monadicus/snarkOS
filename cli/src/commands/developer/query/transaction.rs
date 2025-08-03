@@ -40,10 +40,7 @@ impl QueryTransaction {
 
         match http_get(&endpoint) {
             Ok(mut body) => Ok(body.read_to_string()?),
-            Err((err, message)) => {
-                let err_msg = message.unwrap_or(err.to_string());
-                Err(anyhow!("{err_msg}").context(format!("Failed to fetch transaction {}", self.transaction_id)))
-            }
+            Err(err) => Err(anyhow!("Failed to fetch transaction {}", self.transaction_id).context(err)),
         }
     }
 }

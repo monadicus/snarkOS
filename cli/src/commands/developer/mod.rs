@@ -58,7 +58,7 @@ use snarkvm::{
     },
 };
 
-use anyhow::{Context, Result, anyhow, bail, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use clap::{Parser, ValueEnum};
 use colored::Colorize;
 use std::{path::PathBuf, str::FromStr};
@@ -163,12 +163,8 @@ impl Developer {
 
     /// Fetch the program from the given endpoint.
     fn fetch_program<N: Network>(program_id: &ProgramID<N>, endpoint: &Uri) -> Result<Program<N>> {
-        http_get_json(&format!("{endpoint}{}/program/{program_id}", N::SHORT_NAME)).map_err(|(err, message)| {
-            let err_msg = message.unwrap_or(err.to_string());
-
-            // Debug formatting displays more useful info, especially if the response body is empty.
-            anyhow!("Failed to fetch program {program_id}: {err_msg}")
-        })
+        http_get_json(&format!("{endpoint}{}/program/{program_id}", N::SHORT_NAME))
+            .with_context(|| format!("Failed to fetch program {program_id}"))
     }
 
     /// Fetch the public balance in microcredits associated with the address from the given endpoint.
@@ -183,20 +179,12 @@ impl Developer {
             N::SHORT_NAME,
         ));
 
-        // Deserialize the balance.
-        let result = result.map_err(|(err, msg)| match err {
-            ureq::Error::StatusCode(_status) => {
-                anyhow!(msg.unwrap_or("Response too large!".to_string()))
-            }
-            _ => err.into(),
-        });
-
         // Return the balance in microcredits.
         match result {
             Ok(Some(Value::Plaintext(Plaintext::Literal(Literal::<N>::U64(amount), _)))) => Ok(*amount),
             Ok(None) => Ok(0),
             Ok(Some(..)) => bail!("Failed to deserialize balance for {address}"),
-            Err(err) => bail!("Failed to fetch balance for {address}: {err:?}"),
+            Err(err) => Err(err.context(format!("Failed to fetch balance for {address}"))),
         }
     }
 
@@ -276,40 +264,17 @@ impl Developer {
                         }
                     }
                 }
-                Err((error, message)) => {
-                    let error_message = match error {
-                        ureq::Error::StatusCode(code) => {
-                            if let Some(message) = message {
-                                format!("(status code {code}: {message})")
-                            } else {
-                                format!("(status code {code})")
-                            }
-                        }
-                        _ => format!("({error})"),
-                    };
-
-                    match transaction {
-                        Transaction::Deploy(..) => {
-                            bail!("❌ Failed to deploy '{}' to {}: {}", operation.bold(), &endpoint, error_message)
-                        }
-                        Transaction::Execute(..) => {
-                            bail!(
-                                "❌ Failed to broadcast execution '{}' to {}: {}",
-                                operation.bold(),
-                                &endpoint,
-                                error_message
-                            )
-                        }
-                        Transaction::Fee(..) => {
-                            bail!(
-                                "❌ Failed to broadcast fee '{}' to {}: {}",
-                                operation.bold(),
-                                &endpoint,
-                                error_message
-                            )
-                        }
+                Err(error) => match transaction {
+                    Transaction::Deploy(..) => {
+                        bail!("❌ Failed to deploy '{}' to {}: {}", operation.bold(), &endpoint, error)
                     }
-                }
+                    Transaction::Execute(..) => {
+                        bail!("❌ Failed to broadcast execution '{}' to {}: {}", operation.bold(), &endpoint, error)
+                    }
+                    Transaction::Fee(..) => {
+                        bail!("❌ Failed to broadcast fee '{}' to {}: {}", operation.bold(), &endpoint, error)
+                    }
+                },
             };
 
             // Output the transaction id.

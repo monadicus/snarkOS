@@ -66,6 +66,9 @@ pub struct Deploy {
     /// The private key used to generate the deployment.
     #[clap(short = 'p', long, group = "key")]
     private_key: Option<String>,
+    /// Use a developer validator key tok generate the deployment.
+    #[clap(long, group = "key")]
+    dev_key: Option<u16>,
     /// Specify the path to a file containing the account private key of the node
     #[clap(long, group = "key")]
     private_key_file: Option<String>,
@@ -124,7 +127,7 @@ impl Deploy {
         let query = Query::<N, BlockMemory<N>>::from(endpoint.clone());
 
         // Retrieve the private key.
-        let private_key = parse_private_key(self.private_key.clone(), self.private_key_file.clone())?;
+        let private_key = parse_private_key(self.private_key.clone(), self.private_key_file.clone(), self.dev_key)?;
 
         // Retrieve the program ID.
         let program_id = ProgramID::from_str(&self.program_id).with_context(|| "Failed to parse program ID")?;

@@ -63,6 +63,9 @@ pub struct TransferPrivate {
     /// Specify the path to a file containing the account private key of the node
     #[clap(long, group = "key")]
     private_key_file: Option<String>,
+    /// Use a developer validator key tok generate the deployment.
+    #[clap(long, group = "key")]
+    dev_key: Option<u16>,
     /// The endpoint to query node state from and broadcast to (if set to broadcast).
     #[clap(short, long)]
     endpoint: Uri,
@@ -109,7 +112,7 @@ impl TransferPrivate {
         let recipient = Address::<N>::from_str(&self.recipient)?;
 
         // Retrieve the private key.
-        let private_key = parse_private_key(self.private_key.clone(), self.private_key_file.clone())?;
+        let private_key = parse_private_key(self.private_key.clone(), self.private_key_file.clone(), self.dev_key)?;
         println!("📦 Creating private transfer of {} microcredits to {}...\n", self.amount, recipient);
 
         // Generate the transfer_private transaction.

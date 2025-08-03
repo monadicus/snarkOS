@@ -13,12 +13,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use anyhow::{Error, Result, anyhow};
 use serde::{Serialize, de::DeserializeOwned};
-use ureq::{Body, Error, http::Response};
+use ureq::{Body, http::Response};
 
 /// Used to return the response body on Error (which was removed by default).
 /// See [here](https://github.com/algesten/ureq/issues/997#issuecomment-2658534447) for more details.
-fn handle_ureq_result(result: Result<Response<Body>, Error>) -> Result<Body, (Error, Option<String>)> {
+fn handle_ureq_result(result: Result<Response<Body>, ureq::Error>) -> Result<Body> {
     match result {
         Ok(response) => {
             let status = response.status();
@@ -28,31 +29,36 @@ fn handle_ureq_result(result: Result<Response<Body>, Error>) -> Result<Body, (Er
                 Ok(body)
             } else {
                 let message = match body.read_to_string() {
-                    Ok(msg) => msg,
-                    Err(err) => err.to_string(),
+                    Ok(msg) => Some(msg),
+                    Err(err) => {
+                        let msg = err.to_string();
+                        if msg.is_empty() { None } else { Some(msg) }
+                    }
                 };
 
-                Err((ureq::Error::StatusCode(status.as_u16()), Some(message)))
+                if let Some(message) = message {
+                    Err(Error::from(ureq::Error::StatusCode(status.as_u16())).context(message))
+                } else {
+                    Err(ureq::Error::StatusCode(status.as_u16()).into())
+                }
             }
         }
-        Err(err) => Err((err, None)),
+        Err(err) => Err(err.into()),
     }
 }
 
 /// Issue a HTTP request and parse the response.
-pub(crate) fn http_get(path: &str) -> Result<Body, (Error, Option<String>)> {
+pub(crate) fn http_get(path: &str) -> Result<Body> {
     handle_ureq_result(ureq::get(path).config().http_status_as_error(false).build().call())
 }
 
 /// Issue a HTTP request, parse the response, and return it as JSON.
-pub(crate) fn http_get_json<O: DeserializeOwned>(path: &str) -> Result<O, (Error, Option<String>)> {
-    http_get(path)?.read_json().map_err(|err| (err, None))
+pub(crate) fn http_get_json<O: DeserializeOwned>(path: &str) -> Result<O> {
+    http_get(path)?.read_json().map_err(|err| anyhow!("Failed to parse JSON response").context(err))
 }
 
-pub(crate) fn http_post_json<I: Serialize, O: DeserializeOwned>(
-    path: &str,
-    arg: &I,
-) -> Result<O, (Error, Option<String>)> {
+pub(crate) fn http_post_json<I: Serialize, O: DeserializeOwned>(path: &str, arg: &I) -> Result<O> {
     let result = ureq::post(path).config().http_status_as_error(false).build().send_json(arg);
-    handle_ureq_result(result)?.read_json().map_err(|err| (err, None))
+
+    handle_ureq_result(result)?.read_json().map_err(|err| anyhow!("Failed to parse JSON response").context(err))
 }

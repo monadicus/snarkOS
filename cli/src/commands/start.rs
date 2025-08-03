@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::helpers::args::network_id_parser;
+use crate::helpers::{args::network_id_parser, dev::*};
 
 use snarkos_account::Account;
 use snarkos_display::Display;
@@ -61,12 +61,6 @@ use ureq::http;
 /// Validators should be able to handle at least 1000 concurrent connections, each requiring 2 sockets.
 #[cfg(target_family = "unix")]
 const RECOMMENDED_MIN_NOFILES_LIMIT: u64 = 2048;
-
-/// The development mode RNG seed.
-const DEVELOPMENT_MODE_RNG_SEED: u64 = 1234567890u64;
-
-/// The development mode number of genesis committee members.
-const DEVELOPMENT_MODE_NUM_GENESIS_COMMITTEE_MEMBERS: u16 = 4;
 
 /// A mapping of `staker_address` to `(validator_address, withdrawal_address, amount)`.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
@@ -415,19 +409,10 @@ impl Start {
                     bail!("Cannot use '--private-key' and '--private-key-file' simultaneously, please use only one")
                 }
             },
-            Some(dev) => {
-                // Sample the private key of this node.
-                Account::try_from({
-                    // Initialize the (fixed) RNG.
-                    let mut rng = ChaChaRng::seed_from_u64(DEVELOPMENT_MODE_RNG_SEED);
-                    // Iterate through 'dev' address instances to match the account.
-                    for _ in 0..dev {
-                        let _ = PrivateKey::<N>::new(&mut rng)?;
-                    }
-                    let private_key = PrivateKey::<N>::new(&mut rng)?;
-                    println!("🔑 Your development private key for node {dev} is {}.\n", private_key.to_string().bold());
-                    private_key
-                })
+            Some(index) => {
+                let private_key = get_development_key(index)?;
+                println!("🔑 Your development private key for node {index} is {}.\n", private_key.to_string().bold());
+                Account::try_from(private_key)
             }
         }
     }

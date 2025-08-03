@@ -21,15 +21,23 @@ pub struct Sign {
     /// [options: 0 = mainnet, 1 = testnet, 2 = canary]
     #[clap(long, default_value_t=MainnetV0::ID, long, value_parser = network_id_parser())]
     pub(super) network: u16,
+
     /// Specify the account private key of the node
     #[clap(long)]
     pub(super) private_key: Option<String>,
+
     /// Specify the path to a file containing the account private key of the node
     #[clap(long, conflicts_with = "private_key")]
     pub(super) private_key_file: Option<String>,
+
+    /// Use a developer validator key tok generate the deployment.
+    #[clap(long, group = "key")]
+    pub(super) dev_key: Option<u16>,
+
     /// Message (Aleo value) to sign
     #[clap(short = 'm', long)]
     pub(super) message: String,
+
     /// When enabled, parses the message as bytes instead of Aleo literals
     #[clap(short = 'r', long)]
     pub(super) raw: bool,
@@ -52,7 +60,7 @@ impl Sign {
         let mut rng = ChaChaRng::from_entropy();
 
         // Parse the private key
-        let private_key = parse_private_key(self.private_key.clone(), self.private_key_file.clone())?;
+        let private_key = parse_private_key(self.private_key.clone(), self.private_key_file.clone(), self.dev_key)?;
 
         // Sign the message
         let signature = if self.raw {

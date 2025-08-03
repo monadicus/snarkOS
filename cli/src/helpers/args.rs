@@ -23,6 +23,8 @@ use clap::builder::RangedU64ValueParser;
 use std::{path::PathBuf, str::FromStr};
 use ureq::http::{Uri, uri};
 
+use crate::helpers::dev::get_development_key;
+
 pub(crate) fn network_id_parser() -> RangedU64ValueParser<u16> {
     RangedU64ValueParser::<u16>::new().range((MainnetV0::ID as u64)..=(CanaryV0::ID as u64))
 }
@@ -49,7 +51,14 @@ pub(crate) fn prepare_endpoint(endpoint: Uri) -> Result<Uri> {
 pub(crate) fn parse_private_key<N: Network>(
     cmdline: Option<String>,
     file_name: Option<String>,
+    dev_key: Option<u16>,
 ) -> Result<PrivateKey<N>> {
+    if let Some(index) = dev_key {
+        let private_key = get_development_key(index)?;
+        println!("🔑 Using development private key for node {index} ({private_key}\n");
+        return Ok(private_key);
+    }
+
     let key_str = if let Some(keystr) = cmdline {
         keystr
     } else if let Some(file_name) = file_name {

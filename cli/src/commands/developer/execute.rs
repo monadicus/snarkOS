@@ -62,6 +62,9 @@ pub struct Execute {
     /// Specify the path to a file containing the account private key of the node
     #[clap(long, group = "key")]
     private_key_file: Option<String>,
+    /// Use a developer validator key tok generate the deployment.
+    #[clap(long, group = "key")]
+    dev_key: Option<u16>,
     /// The endpoint to query node state from and broadcast to (if set to broadcast).
     #[clap(short, long)]
     endpoint: Uri,
@@ -108,7 +111,7 @@ impl Execute {
         let is_static_query = matches!(query, Query::STATIC(_));
 
         // Retrieve the private key.
-        let private_key = parse_private_key(self.private_key.clone(), self.private_key_file.clone())?;
+        let private_key = parse_private_key(self.private_key.clone(), self.private_key_file.clone(), self.dev_key)?;
 
         // Retrieve the program ID.
         let program_id = ProgramID::from_str(&self.program_id).with_context(|| "Failed to parse program ID")?;
@@ -159,19 +162,21 @@ impl Execute {
                 self.priority_fee,
                 Some(&query),
                 rng,
-            )?
+            )
+            .with_context(|| "VM failed to execute transaction locally")?
         };
 
         // Check if the public balance is sufficient.
         if self.record.is_none() && !is_static_query {
             // Fetch the public balance.
             let address = Address::try_from(&private_key)?;
-            let public_balance = Developer::get_public_balance(&address, &endpoint)?;
+            let public_balance = Developer::get_public_balance(&address, &endpoint)
+                .with_context(|| "Failed to check for sufficient funds to send transaction")?;
 
             // Check if the public balance is sufficient.
             let storage_cost = transaction
                 .execution()
-                .with_context(|| "The transaction does not contain an execution")?
+                .with_context(|| "Failed to get execution cost of transaction")?
                 .size_in_bytes()?;
 
             // Calculate the base fee.

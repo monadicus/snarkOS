@@ -504,8 +504,14 @@ mod tests {
     fn test_signature_raw() -> Result<()> {
         let key = "APrivateKey1zkp61PAYmrYEKLtRWeWhUoDpFnGLNuHrCciSqN49T86dw3p".to_string();
         let message = "Hello, world!".to_string();
-        let account =
-            Account::Sign(Sign { network: 0, private_key: Some(key), private_key_file: None, message, raw: true });
+        let account = Account::Sign(Sign {
+            network: 0,
+            private_key: Some(key),
+            private_key_file: None,
+            message,
+            raw: true,
+            dev_key: None,
+        });
 
         account.parse().with_context(|| "Command execution failed")?;
         Ok(())
@@ -520,8 +526,14 @@ mod tests {
         writeln!(file, "{key}").expect("Failed to write key to temp file");
 
         let path = file.path().display().to_string();
-        let account =
-            Account::Sign(Sign { network: 0, private_key: None, private_key_file: Some(path), message, raw: true });
+        let account = Account::Sign(Sign {
+            network: 0,
+            private_key: None,
+            private_key_file: Some(path),
+            message,
+            raw: true,
+            dev_key: None,
+        });
 
         account.parse().with_context(|| "Command execution failed")?;
         Ok(())
@@ -548,8 +560,14 @@ mod tests {
         let account = Account::New { network: 0, seed, vanity, discreet, save_to_file: Some(file.clone()) };
         account.parse().with_context(|| "Command execution failed")?;
 
-        let account =
-            Account::Sign(Sign { network: 0, private_key: None, private_key_file: Some(file), message, raw: true });
+        let account = Account::Sign(Sign {
+            network: 0,
+            private_key: None,
+            private_key_file: Some(file),
+            message,
+            raw: true,
+            dev_key: None,
+        });
 
         account.parse().with_context(|| "Command execution failed")?;
         Ok(())
@@ -559,8 +577,14 @@ mod tests {
     fn test_signature() -> Result<()> {
         let key = "APrivateKey1zkp61PAYmrYEKLtRWeWhUoDpFnGLNuHrCciSqN49T86dw3p".to_string();
         let message = "5field".to_string();
-        let account =
-            Account::Sign(Sign { network: 0, private_key: Some(key), private_key_file: None, message, raw: false });
+        let account = Account::Sign(Sign {
+            network: 0,
+            private_key: Some(key),
+            private_key_file: None,
+            message,
+            raw: false,
+            dev_key: None,
+        });
 
         account.parse().with_context(|| "Command execution failed")?;
         Ok(())
@@ -570,8 +594,14 @@ mod tests {
     fn test_signature_fail() {
         let key = "APrivateKey1zkp61PAYmrYEKLtRWeWhUoDpFnGLNuHrCciSqN49T86dw3p".to_string();
         let message = "not a literal value".to_string();
-        let account =
-            Account::Sign(Sign { network: 0, private_key: Some(key), private_key_file: None, message, raw: false });
+        let account = Account::Sign(Sign {
+            network: 0,
+            private_key: Some(key),
+            private_key_file: None,
+            message,
+            raw: false,
+            dev_key: None,
+        });
         assert!(account.parse().is_err());
     }
 
