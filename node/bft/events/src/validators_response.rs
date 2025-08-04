@@ -46,11 +46,13 @@ impl<N: Network> FromBytes for ValidatorsResponse<N> {
         // Read the number of validators.
         let num_validators = u16::read_le(&mut reader)?;
 
+        let max_certificates = N::LATEST_MAX_CERTIFICATES()
+            .map_err(|e| error(format!("Failed to extract the maximum number of certificates: {e}")))?;
+
         // Ensure the number of validators is within bounds
-        if num_validators > N::LATEST_MAX_CERTIFICATES().unwrap() {
+        if num_validators > max_certificates {
             return Err(error(format!(
-                "Number of validators exceeds the maximum number of validators ({num_validators} > {})",
-                N::LATEST_MAX_CERTIFICATES().unwrap()
+                "Number of validators exceeds the maximum number of validators ({num_validators} > {max_certificates})",
             )));
         }
 

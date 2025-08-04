@@ -61,12 +61,14 @@ impl<N: Network> FromBytes for SignedProposals<N> {
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
         // Read the number of signed proposals.
         let num_signed_proposals = u32::read_le(&mut reader)?;
+
+        let max_certificates = N::LATEST_MAX_CERTIFICATES()
+            .map_err(|e| error(format!("Failed to extract the maximum number of certificates: {e}")))?;
+        
         // Ensure the number of signed proposals is within bounds
-        if num_signed_proposals as usize > N::LATEST_MAX_CERTIFICATES().unwrap() as usize * NUM_RECENT_BLOCKS {
+        if num_signed_proposals as usize > max_certificates as usize * NUM_RECENT_BLOCKS {
             return Err(error(format!(
-                "Number of signed proposals ({num_signed_proposals}) is greater than the maximum ({} * {})",
-                N::LATEST_MAX_CERTIFICATES().unwrap(),
-                NUM_RECENT_BLOCKS
+                "Number of signed proposals ({num_signed_proposals}) is greater than the maximum ({max_certificates} * {NUM_RECENT_BLOCKS})",
             )));
         }
         // Deserialize the signed proposals.
