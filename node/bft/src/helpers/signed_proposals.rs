@@ -64,7 +64,6 @@ impl<N: Network> FromBytes for SignedProposals<N> {
 
         let max_certificates = N::LATEST_MAX_CERTIFICATES()
             .map_err(|e| error(format!("Failed to extract the maximum number of certificates: {e}")))?;
-        
         // Ensure the number of signed proposals is within bounds
         if num_signed_proposals as usize > max_certificates as usize * NUM_RECENT_BLOCKS {
             return Err(error(format!(
