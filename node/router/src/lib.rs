@@ -20,6 +20,9 @@ extern crate async_trait;
 #[macro_use]
 extern crate tracing;
 
+#[cfg(feature = "metrics")]
+extern crate snarkos_node_metrics as metrics;
+
 pub use snarkos_node_router_messages as messages;
 
 mod handshake;
