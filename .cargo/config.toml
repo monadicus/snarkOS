@@ -6,4 +6,4 @@ rustflags = [
 ]
 
 [env]
-CXXFLAGS = "-include cstdint" #TODO: remove once RocksDB 0.24 is r
+CXXFLAGS = "-include cstdint" #TODO: remove once RocksDB 0.24 is released
