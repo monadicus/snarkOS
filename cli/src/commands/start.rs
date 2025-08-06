@@ -39,7 +39,7 @@ use snarkvm::{
 };
 
 use aleo_std::StorageMode;
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Context, Result, anyhow, bail, ensure};
 use base64::prelude::{BASE64_STANDARD, Engine};
 use clap::Parser;
 use colored::Colorize;
@@ -49,7 +49,7 @@ use rand::{Rng, SeedableRng};
 use rand_chacha::ChaChaRng;
 use serde::{Deserialize, Serialize};
 use std::{
-    net::{Ipv4Addr, SocketAddr, SocketAddrV4},
+    net::{Ipv4Addr, SocketAddr, SocketAddrV4, ToSocketAddrs},
     path::PathBuf,
     sync::{Arc, atomic::AtomicBool},
 };
@@ -313,20 +313,31 @@ impl Start {
     fn parse_trusted_peers(&self) -> Result<Vec<SocketAddr>> {
         let Some(peers) = &self.peers else { return Ok(vec![]) };
 
-        // Split on an empty string returns an empty string.
-        if peers.is_empty() {
-            return Ok(vec![]);
+        match peers.is_empty() {
+            // Split on an empty string returns an empty string.
+            true => Ok(vec![]),
+            false => peers
+                .split(',')
+                .map(|ip_or_hostname| {
+                    let trimmed = ip_or_hostname.trim();
+                    match trimmed.to_socket_addrs() {
+                        Ok(mut ip_iter) => {
+                            // A hostname might resolve to multiple IP addresses. We will use only the first one,
+                            // assuming this aligns with the user's expectations.
+                            let Some(ip) = ip_iter.next() else {
+                                return Err(anyhow!(
+                                    "The hostname supplied to --peers ('{trimmed}') does not reference any ip."
+                                ));
+                            };
+                            Ok(ip)
+                        }
+                        Err(e) => {
+                            Err(anyhow!("The hostname or IP supplied to --peers ('{trimmed}') is malformed: {e}"))
+                        }
+                    }
+                })
+                .collect(),
         }
-
-        let mut result = vec![];
-        for ip in peers.split(',') {
-            match ip.parse::<SocketAddr>() {
-                Ok(ip) => result.push(ip),
-                Err(err) => bail!("An address supplied to --peers ('{ip}') is malformed: {err}"),
-            }
-        }
-
-        Ok(result)
     }
 
     /// Returns the initial validator(s) to connect to, from the given configurations.
@@ -1148,6 +1159,60 @@ mod tests {
             assert_eq!(start.network, 0);
             assert_eq!(start.peers, Some("IP1,IP2,IP3".to_string()));
             assert_eq!(start.validators, Some("IP1,IP2,IP3".to_string()));
+        } else {
+            panic!("Unexpected result of clap parsing!");
+        }
+    }
+
+    #[test]
+    fn parse_peers_when_ips() {
+        let arg_vec = vec!["snarkos", "start", "--peers", "127.0.0.1:3030,127.0.0.2:3030"];
+        let cli = CLI::parse_from(arg_vec);
+
+        if let Command::Start(start) = cli.command {
+            let peers = start.parse_trusted_peers();
+            assert!(peers.is_ok());
+            assert_eq!(peers.unwrap().len(), 2, "Expected two peers");
+        } else {
+            panic!("Unexpected result of clap parsing!");
+        }
+    }
+
+    #[test]
+    fn parse_peers_when_hostnames() {
+        let arg_vec = vec!["snarkos", "start", "--peers", "www.example.com:4130,www.google.com:4130"];
+        let cli = CLI::parse_from(arg_vec);
+
+        if let Command::Start(start) = cli.command {
+            let peers = start.parse_trusted_peers();
+            assert!(peers.is_ok());
+            assert_eq!(peers.unwrap().len(), 2, "Expected two peers");
+        } else {
+            panic!("Unexpected result of clap parsing!");
+        }
+    }
+
+    #[test]
+    fn parse_peers_when_mixed_and_with_whitespaces() {
+        let arg_vec = vec!["snarkos", "start", "--peers", "  127.0.0.1:3030,  www.google.com:4130 "];
+        let cli = CLI::parse_from(arg_vec);
+
+        if let Command::Start(start) = cli.command {
+            let peers = start.parse_trusted_peers();
+            assert!(peers.is_ok());
+            assert_eq!(peers.unwrap().len(), 2, "Expected two peers");
+        } else {
+            panic!("Unexpected result of clap parsing!");
+        }
+    }
+
+    #[test]
+    fn parse_peers_when_unknown_hostname_gracefully() {
+        let arg_vec = vec!["snarkos", "start", "--peers", "banana.cake.eafafdaeefasdfasd.com"];
+        let cli = CLI::parse_from(arg_vec);
+
+        if let Command::Start(start) = cli.command {
+            assert!(start.parse_trusted_peers().is_err());
         } else {
             panic!("Unexpected result of clap parsing!");
         }
