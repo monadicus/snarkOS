@@ -19,6 +19,7 @@ use snarkvm::prelude::{Address, Network};
 use std::{net::SocketAddr, time::Instant};
 
 /// A peer of any connection status.
+#[derive(Clone)]
 pub enum Peer<N: Network> {
     /// A candidate peer that's currently not connected to.
     Candidate(CandidatePeer),
@@ -30,16 +31,18 @@ pub enum Peer<N: Network> {
 
 /// A candidate peer.
 #[derive(Clone)]
-pub struct CandidatePeer {
-    /// The listening address of a candidate peer.
+pub struct ConnectingPeer {
+    /// The listening address of a connecting peer.
     pub listener_addr: SocketAddr,
     /// Indicates whether the peer is considered trusted.
     pub trusted: bool,
 }
 
-/// A connecting peer.
+/// A candidate peer.
 #[derive(Clone)]
-pub struct ConnectingPeer {
+pub struct CandidatePeer {
+    /// The listening address of a candidate peer.
+    pub listener_addr: SocketAddr,
     /// Indicates whether the peer is considered trusted.
     pub trusted: bool,
 }
@@ -74,8 +77,8 @@ impl<N: Network> Peer<N> {
     }
 
     /// Create a connecting peer.
-    pub const fn new_connecting(trusted: bool) -> Self {
-        Self::Connecting(ConnectingPeer { trusted })
+    pub const fn new_connecting(trusted: bool, listener_addr: SocketAddr) -> Self {
+        Self::Connecting(ConnectingPeer { trusted, listener_addr })
     }
 
     /// Promote a connecting peer to a fully connected one.
@@ -120,6 +123,20 @@ impl<N: Network> Peer<N> {
             Self::Connecting(_) => None,
             Self::Connected(peer) => Some(peer.node_type),
         }
+    }
+
+    /// The listener (public) address of this peer.
+    pub fn listener_addr(&self) -> &SocketAddr {
+        match self {
+            Self::Candidate(p) => &p.listener_addr,
+            Self::Connecting(p) => &p.listener_addr,
+            Self::Connected(p) => &p.listener_addr,
+        }
+    }
+
+    /// Returns `true` if the peer is not connected or connecting.
+    pub fn is_candidate(&self) -> bool {
+        matches!(self, Peer::Candidate(_))
     }
 
     /// Returns `true` if the peer is currently undergoing the network handshake.

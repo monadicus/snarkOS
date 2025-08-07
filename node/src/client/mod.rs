@@ -243,8 +243,14 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
     pub fn rest(&self) -> &Option<Rest<N, C, Self>> {
         &self.rest
     }
+
+    /// Returns the router.
+    pub fn router(&self) -> &Router<N> {
+        &self.router
+    }
 }
 
+/// Sync-specific code.
 impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
     const SYNC_INTERVAL: Duration = std::time::Duration::from_secs(5);
 

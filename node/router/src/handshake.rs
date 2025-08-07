@@ -28,7 +28,7 @@ use snarkvm::{
 use anyhow::{Result, bail};
 use futures::SinkExt;
 use rand::{Rng, rngs::OsRng};
-use std::{collections::hash_map::Entry, io, mem, net::SocketAddr};
+use std::{collections::hash_map::Entry, io, net::SocketAddr};
 use tokio::net::TcpStream;
 use tokio_stream::StreamExt;
 use tokio_util::codec::Framed;
@@ -154,10 +154,10 @@ impl<N: Network> Router<N> {
     ) -> io::Result<ChallengeRequest<N>> {
         match self.peer_pool.write().entry(peer_addr) {
             Entry::Vacant(entry) => {
-                entry.insert(Peer::new_connecting(false));
+                entry.insert(Peer::new_connecting(false, peer_addr));
             }
             Entry::Occupied(mut entry) if matches!(entry.get(), Peer::Candidate(_)) => {
-                entry.insert(Peer::new_connecting(entry.get().is_trusted()));
+                entry.insert(Peer::new_connecting(entry.get().is_trusted(), peer_addr));
             }
             Entry::Occupied(_) => {
                 return Err(error(format!("Duplicate connection attempt with '{peer_addr}'")));
@@ -320,11 +320,11 @@ impl<N: Network> Router<N> {
 
         match self.peer_pool.write().entry(listener_addr) {
             Entry::Vacant(entry) => {
-                entry.insert(Peer::new_connecting(false));
+                entry.insert(Peer::new_connecting(false, listener_addr));
             }
             Entry::Occupied(mut entry) => match entry.get_mut() {
                 peer @ Peer::Candidate(_) => {
-                    let _ = mem::replace(peer, Peer::new_connecting(peer.is_trusted()));
+                    *peer = Peer::new_connecting(peer.is_trusted(), listener_addr);
                 }
                 Peer::Connecting(_) => {
                     bail!("Dropping connection request from '{listener_addr}' (already connecting)");
