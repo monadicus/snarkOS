@@ -154,7 +154,7 @@ while [ $total_wait -lt 300 ]; do  # 5 minutes max
 done
 
 # Function checking that nodes created logs on disk.
-check_logs() {
+function check_logs() {
   echo "Checking logs for all nodes..."
   all_reached=true
   for ((validator_index = 0; validator_index < $total_validators; validator_index++)); do
@@ -175,7 +175,7 @@ check_logs() {
   return 0
 }
 
-# Deploy a program.
+# Creates a test program.
 mkdir -p program
 echo """program test_program.aleo;
 
@@ -198,12 +198,14 @@ echo """{
 }
 """ > program/program.json
 cd program
-# Deploy the program.
-deploy_result=$(snarkos developer deploy --private-key APrivateKey1zkp8CZNn3yeCseEtxuVPbDCwSyhGW6yZKUYKfgXmcpoGPWH --network $network_id --priority-fee 0 --broadcast http://localhost:3030/$network_name/transaction/broadcast --query http://localhost:3030 test_program.aleo)
+
+# Deploy the test program
+deploy_result=$(snarkos developer deploy --dev-key 0 --network $network_id --endpoint=localhost:3030 --broadcast test_program.aleo)
 # Wait for the deployment to be processed.
 sleep 10
+
 # Execute a function in the deployed program.
-execute_result=$(snarkos developer execute --private-key APrivateKey1zkp8CZNn3yeCseEtxuVPbDCwSyhGW6yZKUYKfgXmcpoGPWH --network $network_id --query http://localhost:3030 --broadcast http://localhost:3030/$network_name/transaction/broadcast test_program.aleo main 1u32 1u32)
+execute_result=$(snarkos developer execute --dev-key 0 --network $network_id --endpoint=localhost:3030 --broadcast test_program.aleo main 1u32 1u32)
 # Wait for the execution to be processed.
 sleep 10
 # Fail if the execution transaction does not exist.
@@ -216,8 +218,9 @@ if [[ "$found" -lt 200 || "$found" -ge 300 ]]; then
 else
   echo "✅ Transaction executed successfully: $execute_result"
 fi
+
 # Scan the network for records.
-scan_result=$(snarkos developer scan --private-key APrivateKey1zkp8CZNn3yeCseEtxuVPbDCwSyhGW6yZKUYKfgXmcpoGPWH --network $network_id --start 0 --endpoint http://localhost:3030)
+scan_result=$(snarkos developer scan --dev-key 0 --network $network_id --start 0 --endpoint=localhost:3030)
 num_records=$(echo "$scan_result" | grep "owner" | wc -l)
 # Fail if the scan did not return 4 records.
 if [[ "$num_records" -ne 4 ]]; then

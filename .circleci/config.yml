@@ -66,7 +66,7 @@ commands:
     parameters:
       cache_key:
         type: string
-        default: v3.3.1-rust-1.83.0-snarkos-stable-cache
+        default: v3.3.1-rust-1.88.0-snarkos-stable-cache
     steps:
       - run: set -e
       - run:
@@ -93,7 +93,7 @@ commands:
     parameters:
       cache_key:
         type: string
-        default: v3.3.1-rust-1.83.0-snarkos-stable-cache
+        default: v3.3.1-rust-1.88.0-snarkos-stable-cache
     steps:
       - run: (sccache -s||true)
       - run: set +e
