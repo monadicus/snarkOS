@@ -42,7 +42,7 @@ chmod 755 "$log_dir"
 declare -a PIDS
 
 # Define a cleanup function to kill all processes on exit
-cleanup() {
+function cleanup() {
   echo "🚨 Cleaning up ${#PIDS[@]} process(es)…"
   for pid in "${PIDS[@]}"; do
     if kill -0 "$pid" 2>/dev/null; then
