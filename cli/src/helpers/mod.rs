@@ -24,9 +24,6 @@ use dynamic_format::*;
 
 pub(crate) mod args;
 
-pub mod ureq;
-pub(crate) use self::ureq::*;
-
 pub mod logger;
 pub use logger::*;
 

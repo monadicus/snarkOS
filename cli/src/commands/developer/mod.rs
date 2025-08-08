@@ -31,28 +31,24 @@ pub use query::*;
 mod transfer_private;
 pub use transfer_private::*;
 
-use crate::helpers::{args::network_id_parser, http_get_json, http_post_json, logger::initialize_terminal_logger};
+use crate::helpers::{args::network_id_parser, logger::initialize_terminal_logger};
 
+use serde::{Serialize, de::DeserializeOwned};
 use ureq::http::Uri;
 
 use snarkvm::{
     console::network::Network,
     package::Package,
     prelude::{
-        Address,
         CanaryV0,
         Ciphertext,
-        Identifier,
-        Literal,
         MainnetV0,
         Plaintext,
         PrivateKey,
-        Program,
         ProgramID,
         Record,
         TestnetV0,
         ToBytes,
-        Value,
         ViewKey,
         block::Transaction,
     },
@@ -161,31 +157,15 @@ impl Developer {
         }
     }
 
-    /// Fetch the program from the given endpoint.
-    fn fetch_program<N: Network>(program_id: &ProgramID<N>, endpoint: &Uri) -> Result<Program<N>> {
-        http_get_json(&format!("{endpoint}{}/program/{program_id}", N::SHORT_NAME))
-            .with_context(|| format!("Failed to fetch program {program_id}"))
-    }
-
-    /// Fetch the public balance in microcredits associated with the address from the given endpoint.
-    fn get_public_balance<N: Network>(address: &Address<N>, endpoint: &Uri) -> Result<u64> {
-        // Initialize the program id and account identifier.
-        let credits = ProgramID::<N>::from_str("credits.aleo")?;
-        let account_mapping = Identifier::<N>::from_str("account")?;
-
-        // Send a request to the query node.
-        let result = http_get_json::<Option<Value<N>>>(&format!(
-            "{endpoint}{}/program/{credits}/mapping/{account_mapping}/{address}",
-            N::SHORT_NAME,
-        ));
-
-        // Return the balance in microcredits.
-        match result {
-            Ok(Some(Value::Plaintext(Plaintext::Literal(Literal::<N>::U64(amount), _)))) => Ok(*amount),
-            Ok(None) => Ok(0),
-            Ok(Some(..)) => bail!("Failed to deserialize balance for {address}"),
-            Err(err) => Err(err.context(format!("Failed to fetch balance for {address}"))),
-        }
+    fn http_post_json<I: Serialize, O: DeserializeOwned>(path: &str, arg: &I) -> Result<O> {
+        ureq::post(path)
+            .config()
+            .build()
+            .send_json(arg)
+            .with_context(|| "HTTP POST request failed")?
+            .into_body()
+            .read_json()
+            .with_context(|| "Failed to parse JSON response")
     }
 
     /// Determine if the transaction should be broadcast or displayed to user.
@@ -235,7 +215,7 @@ impl Developer {
         if broadcast {
             let endpoint = format!("{endpoint}{}/transaction/broadcast", N::SHORT_NAME);
 
-            let result: Result<String, _> = http_post_json(&endpoint, &transaction);
+            let result: Result<String, _> = Self::http_post_json(&endpoint, &transaction);
 
             match result {
                 Ok(response_string) => {

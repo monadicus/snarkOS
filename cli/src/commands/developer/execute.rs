@@ -108,6 +108,8 @@ impl Execute {
 
         // Specify the query
         let query = Query::<N, BlockMemory<N>>::from(endpoint.clone());
+
+        // TODO (kaimast): can this ever be true?
         let is_static_query = matches!(query, Query::STATIC(_));
 
         // Retrieve the private key.
@@ -142,7 +144,7 @@ impl Execute {
 
             if !is_static_query {
                 // Load the program and it's imports into the process.
-                load_program(&endpoint, &mut vm.process().write(), &program_id)?;
+                load_program(&query, &mut vm.process().write(), &program_id)?;
             }
 
             // Prepare the fee.
@@ -170,7 +172,8 @@ impl Execute {
         if self.record.is_none() && !is_static_query {
             // Fetch the public balance.
             let address = Address::try_from(&private_key)?;
-            let public_balance = Developer::get_public_balance(&address, &endpoint)
+            let public_balance = query
+                .get_public_balance(&address)
                 .with_context(|| "Failed to check for sufficient funds to send transaction")?;
 
             // Check if the public balance is sufficient.
@@ -210,9 +213,13 @@ impl Execute {
 }
 
 /// A helper function to recursively load the program and all of its imports into the process.
-fn load_program<N: Network>(endpoint: &Uri, process: &mut Process<N>, program_id: &ProgramID<N>) -> Result<()> {
+fn load_program<N: Network>(
+    query: &Query<N, BlockMemory<N>>,
+    process: &mut Process<N>,
+    program_id: &ProgramID<N>,
+) -> Result<()> {
     // Fetch the program.
-    let program = Developer::fetch_program(program_id, endpoint)?;
+    let program = query.get_program(program_id).with_context(|| "Failed to fetch program")?;
 
     // Return early if the program is already loaded.
     if process.contains_program(program.id()) {
@@ -224,8 +231,8 @@ fn load_program<N: Network>(endpoint: &Uri, process: &mut Process<N>, program_id
         // Add the imports to the process if does not exist yet.
         if !process.contains_program(import_program_id) {
             // Recursively load the program and its imports.
-            load_program(endpoint, process, import_program_id)
-                .with_context(|| format!("Failed to load program {import_program_id}"))?;
+            load_program(query, process, import_program_id)
+                .with_context(|| format!("Failed to load imported program {import_program_id}"))?;
         }
     }
 
