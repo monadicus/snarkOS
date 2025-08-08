@@ -13,13 +13,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::helpers::ureq::http_get;
+use snarkvm::{
+    ledger::{query::Query, store::helpers::memory::BlockMemory},
+    prelude::Network,
+};
 
-use snarkvm::prelude::Network;
-
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use clap::Parser;
-use ureq::http::Uri;
+
+use std::str::FromStr;
 
 #[derive(Debug, Parser)]
 pub struct QueryTransaction {
@@ -30,17 +32,16 @@ pub struct QueryTransaction {
 }
 
 impl QueryTransaction {
-    pub fn parse<N: Network>(self, endpoint: Uri) -> Result<String> {
-        // Request the latest block height from the endpoint.
-        let endpoint = if self.unconfirmed {
-            format!("{endpoint}{}/transaction/unconfirmed/{}", N::SHORT_NAME, self.transaction_id)
+    pub fn parse<N: Network>(self, query: Query<N, BlockMemory<N>>) -> Result<String> {
+        let transaction_id = N::TransactionID::from_str(self.transaction_id.as_str())
+            .map_err(|_| anyhow!("Failed to parse transaction ID"))?;
+
+        let txn = if self.unconfirmed {
+            query.get_unconfirmed_transaction(&transaction_id)?
         } else {
-            format!("{endpoint}{}/transaction/{}", N::SHORT_NAME, self.transaction_id)
+            query.get_transaction(&transaction_id)?
         };
 
-        match http_get(&endpoint) {
-            Ok(mut body) => Ok(body.read_to_string()?),
-            Err(err) => Err(anyhow!("Failed to fetch transaction {}", self.transaction_id).context(err)),
-        }
+        serde_json::to_string_pretty(&txn).with_context(|| "Failed to convert transaction to JSON string")
     }
 }

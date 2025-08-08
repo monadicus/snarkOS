@@ -18,7 +18,10 @@ pub use transaction::QueryTransaction;
 
 use crate::helpers::args::prepare_endpoint;
 
-use snarkvm::prelude::Network;
+use snarkvm::{
+    ledger::{query::Query as LedgerQuery, store::helpers::memory::BlockMemory},
+    prelude::Network,
+};
 
 use anyhow::Result;
 use clap::Parser;
@@ -44,9 +47,10 @@ impl Query {
         use QueryCommand::*;
 
         let endpoint = prepare_endpoint(self.endpoint)?;
+        let query = LedgerQuery::<N, BlockMemory<N>>::from(endpoint.clone());
 
         match self.command {
-            Transaction(txn) => txn.parse::<N>(endpoint),
+            Transaction(txn) => txn.parse::<N>(query),
         }
     }
 }

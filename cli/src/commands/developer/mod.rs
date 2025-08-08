@@ -103,7 +103,7 @@ pub struct Developer {
 impl Developer {
     pub fn parse(self) -> Result<String> {
         if let Some(verbosity) = self.verbosity {
-            initialize_terminal_logger(verbosity).with_context(|| "Failed to initalize terminal logger")?
+            initialize_terminal_logger(verbosity).with_context(|| "Failed to initialize terminal logger")?
         }
 
         match self.network {
@@ -175,7 +175,7 @@ impl Developer {
 
         // Send a request to the query node.
         let result = http_get_json::<Option<Value<N>>>(&format!(
-            "{endpoint}/{}/program/{credits}/mapping/{account_mapping}/{address}",
+            "{endpoint}{}/program/{credits}/mapping/{account_mapping}/{address}",
             N::SHORT_NAME,
         ));
 

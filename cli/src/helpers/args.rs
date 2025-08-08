@@ -55,7 +55,7 @@ pub(crate) fn parse_private_key<N: Network>(
 ) -> Result<PrivateKey<N>> {
     if let Some(index) = dev_key {
         let private_key = get_development_key(index)?;
-        println!("🔑 Using development private key for node {index} ({private_key}\n");
+        println!("🔑 Using development private key for node {index} ({private_key})\n");
         return Ok(private_key);
     }
 
