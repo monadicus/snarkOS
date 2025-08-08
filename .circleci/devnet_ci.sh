@@ -12,7 +12,7 @@ min_height=$4
 : "${total_validators:=4}"
 : "${total_clients:=2}"
 : "${network_id:=0}"
-: "${min_height:=45}"
+: "${min_height:=60}" # To likely go past the 100 round garbage collection limit.
 
 # Determine network name based on network_id
 case $network_id in
