@@ -202,9 +202,12 @@ impl<N: Network, C: ConsensusStorage<N>> Validator<N, C> {
     pub fn rest(&self) -> &Option<Rest<N, C, Self>> {
         &self.rest
     }
-}
 
-impl<N: Network, C: ConsensusStorage<N>> Validator<N, C> {
+    /// Returns the router.
+    pub fn router(&self) -> &Router<N> {
+        &self.router
+    }
+
     // /// Initialize the transaction pool.
     // fn initialize_transaction_pool(&self, dev: Option<u16>) -> Result<()> {
     //     use snarkvm::{
