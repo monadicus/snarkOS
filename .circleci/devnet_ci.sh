@@ -209,6 +209,7 @@ sleep 10
 # Fail if the execution transaction does not exist.
 tx=$(echo "$execute_result" | tail -n 1)
 found=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:3030/$network_name/transaction/$tx")
+# Fail if the HTTP response is not 2XX.
 if [[ "$found" -lt 200 || "$found" -ge 300 ]]; then
   echo "❌ Test failed! Transaction does not exist or contains an error: \ndeploy_result: $deploy_result\n\execute_result: $execute_result\nfound: $found"
   exit 1
