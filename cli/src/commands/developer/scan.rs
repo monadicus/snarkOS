@@ -43,7 +43,9 @@ const MAX_BLOCK_RANGE: u32 = 50;
 /// Scan the snarkOS node for records.
 #[derive(Debug, Parser)]
 #[clap(
-    group(clap::ArgGroup::new("key").required(true).multiple(false))
+    // The user needs to set view_key, private_key, or dev_key,
+    // but they cannot set private_key and dev_key.
+    group(clap::ArgGroup::new("key").required(true).multiple(true))
 )]
 pub struct Scan {
     /// Specify the network to create a deployment for.
@@ -64,11 +66,13 @@ pub struct Scan {
     dev_key: Option<u16>,
 
     /// The block height to start scanning from.
-    #[clap(long, conflicts_with = "last", requires = "end")]
+    /// Will scan until the most recent block or the height specified with `--end`.
+    #[clap(long, conflicts_with = "last")]
     start: Option<u32>,
 
-    /// The block height to stop scanning.
-    #[clap(long, conflicts_with = "last", requires = "start")]
+    /// The block height to stop scanning at.
+    /// Will start scanning at the geneiss block or the height specified with `--start`.
+    #[clap(long, conflicts_with = "last")]
     end: Option<u32>,
 
     /// Scan the latest `n` blocks.
