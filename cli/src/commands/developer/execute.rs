@@ -21,9 +21,10 @@ use crate::{
 
 use snarkvm::{
     console::network::Network,
-    ledger::store::helpers::memory::BlockMemory,
+    ledger::{query::QueryTrait, store::helpers::memory::BlockMemory},
     prelude::{
         Address,
+        ConsensusVersion,
         Identifier,
         Locator,
         Process,
@@ -40,6 +41,7 @@ use anyhow::{Context, Result, bail};
 use clap::Parser;
 use colored::Colorize;
 use std::{path::PathBuf, str::FromStr};
+use tracing::debug;
 use ureq::http::Uri;
 use zeroize::Zeroize;
 
@@ -143,8 +145,15 @@ impl Execute {
             let vm = VM::from(store)?;
 
             if !is_static_query {
+                let height = query.current_block_height()?;
+                let version = N::CONSENSUS_VERSION(height)?;
+                debug!("At block height {height} and consensus version {version:?}");
+
+                // Ensure the correct edition is used if on newer consensus versions.
+                let edition = if version < ConsensusVersion::V8 { 0 } else { 1 };
+
                 // Load the program and it's imports into the process.
-                load_program(&query, &mut vm.process().write(), &program_id)?;
+                load_program(&query, &mut vm.process().write(), &program_id, edition)?;
             }
 
             // Prepare the fee.
@@ -217,6 +226,7 @@ fn load_program<N: Network>(
     query: &Query<N, BlockMemory<N>>,
     process: &mut Process<N>,
     program_id: &ProgramID<N>,
+    edition: u16,
 ) -> Result<()> {
     // Fetch the program.
     let program = query.get_program(program_id).with_context(|| "Failed to fetch program")?;
@@ -231,14 +241,16 @@ fn load_program<N: Network>(
         // Add the imports to the process if does not exist yet.
         if !process.contains_program(import_program_id) {
             // Recursively load the program and its imports.
-            load_program(query, process, import_program_id)
+            load_program(query, process, import_program_id, edition)
                 .with_context(|| format!("Failed to load imported program {import_program_id}"))?;
         }
     }
 
     // Add the program to the process if it does not already exist.
     if !process.contains_program(program.id()) {
-        process.add_program(&program).with_context(|| format!("Failed to add program {}", program.id()))?;
+        process
+            .add_programs_with_editions(&[(program, edition)])
+            .with_context(|| format!("Failed to add program {program_id}"))?;
     }
 
     Ok(())
