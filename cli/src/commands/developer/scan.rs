@@ -13,7 +13,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::helpers::args::{network_id_parser, prepare_endpoint};
+use crate::helpers::{
+    args::{network_id_parser, prepare_endpoint},
+    dev::get_development_key,
+};
 
 use snarkos_node_cdn::CDN_BASE_URL;
 use snarkvm::{
@@ -40,7 +43,7 @@ const MAX_BLOCK_RANGE: u32 = 50;
 /// Scan the snarkOS node for records.
 #[derive(Debug, Parser)]
 #[clap(
-    group(clap::ArgGroup::new("key").required(true).multiple(true))
+    group(clap::ArgGroup::new("key").required(true).multiple(false))
 )]
 pub struct Scan {
     /// Specify the network to create a deployment for.
@@ -49,12 +52,16 @@ pub struct Scan {
     network: u16,
 
     /// An optional private key scan for unspent records.
-    #[clap(short, long, group = "key")]
+    #[clap(short, long, group = "key", conflicts_with = "dev_key")]
     private_key: Option<String>,
 
     /// The view key used to scan for records.
     #[clap(short, long, group = "key")]
     view_key: Option<String>,
+
+    /// Use a developer validator key tok generate the deployment.
+    #[clap(long, group = "key")]
+    dev_key: Option<u16>,
 
     /// The block height to start scanning from.
     #[clap(long, conflicts_with = "last", requires = "end")]
@@ -114,10 +121,16 @@ impl Scan {
 
     /// Returns the view key and optional private key, from the given configurations.
     fn parse_account<N: Network>(&self) -> Result<(Option<PrivateKey<N>>, ViewKey<N>)> {
-        match (&self.private_key, &self.view_key) {
+        let private_key = if let Some(private_key) = &self.private_key {
+            Some(PrivateKey::<N>::from_str(private_key)?)
+        } else if let Some(index) = &self.dev_key {
+            Some(get_development_key(*index)?)
+        } else {
+            None
+        };
+
+        match (private_key, &self.view_key) {
             (Some(private_key), Some(view_key)) => {
-                // Derive the private key.
-                let private_key = PrivateKey::<N>::from_str(private_key)?;
                 // Derive the expected view key.
                 let expected_view_key = ViewKey::<N>::try_from(private_key)?;
                 // Derive the view key.
@@ -131,8 +144,6 @@ impl Scan {
                 Ok((Some(private_key), view_key))
             }
             (Some(private_key), _) => {
-                // Derive the private key.
-                let private_key = PrivateKey::<N>::from_str(private_key)?;
                 // Derive the view key.
                 let view_key = ViewKey::<N>::try_from(private_key)?;
 

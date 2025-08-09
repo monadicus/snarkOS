@@ -147,7 +147,7 @@ impl Execute {
             if !is_static_query {
                 let height = query.current_block_height()?;
                 let version = N::CONSENSUS_VERSION(height)?;
-                debug!("At block height {height} and consensus version {version:?}");
+                debug!("At block height {height} and consensus {version:?}");
 
                 // Ensure the correct edition is used if on newer consensus versions.
                 let edition = if version < ConsensusVersion::V8 { 0 } else { 1 };
