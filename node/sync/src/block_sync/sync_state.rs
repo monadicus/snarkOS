@@ -59,7 +59,7 @@ impl SyncState {
         if let Some(num_behind) = self.num_blocks_behind() {
             num_behind > 0
         } else {
-            debug!("Cannot block sync. No peer locators yet");
+            debug!("Cannot block sync: the node has not received block locators yet");
             false
         }
     }

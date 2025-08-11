@@ -29,7 +29,7 @@ function exit_handler() {
 trap exit_handler EXIT
 trap child_exit_handler CHLD
 
-# Define a trap handler that prints a message when an error occurs 
+# Define a trap handler that prints a message when an error occurs.
 trap 'echo "⛔️ Error in $BASH_SOURCE at line $LINENO: \"$BASH_COMMAND\" failed (exit $?)"' ERR
 
 # Ensure there are no old ledger files and the node syncs from scratch
@@ -39,7 +39,7 @@ snarkos clean --network $network_id || true
 # Use the same CPU cores as in the other benchmarks, so the numbers are comparable.
 taskset -c 1,2 snarkos start --nodisplay --network $network_id \
   --client  --log-filter=$log_filter &
-PIDS[client_index]=$!
+PIDS[0]=$!
 
 wait_for_nodes 0 1
 

@@ -49,6 +49,9 @@ use helpers::rangify_heights;
 mod sync_state;
 use sync_state::SyncState;
 
+mod metrics;
+use metrics::BlockSyncMetrics;
+
 // The redundancy factor decreases the possibility of a malicious peers sending us an invalid block locator
 // by requiring multiple peers to advertise the same (prefix of) block locators.
 // However, we do not use this in production yet.
@@ -157,11 +160,16 @@ pub struct BlockSync<N: Network> {
 
     /// Gets notified when there was an update to the locators, a peer disconnected, or we received a new block response.
     notify: Notify,
+
+    /// Tracks sync speed
+    metrics: Arc<BlockSyncMetrics>,
 }
 
 impl<N: Network> BlockSync<N> {
     /// Initializes a new block sync module.
     pub fn new(ledger: Arc<dyn LedgerService<N>>) -> Self {
+        let metrics = Arc::new(BlockSyncMetrics::default());
+
         Self {
             ledger,
             sync_state: Default::default(),
@@ -170,7 +178,17 @@ impl<N: Network> BlockSync<N> {
             requests: Default::default(),
             common_ancestors: Default::default(),
             advance_with_sync_blocks_lock: Default::default(),
+            metrics,
         }
+    }
+
+    /// Spawns background tasks
+    /// (currently only metrics collection)
+    pub fn initialize(&self) {
+        let metrics = self.metrics.clone();
+        tokio::spawn(async move {
+            metrics.update_loop().await;
+        });
     }
 
     pub async fn wait_for_update(&self) {
@@ -262,6 +280,10 @@ impl<N: Network> BlockSync<N> {
 
         BlockRequestsSummary { completed: rangify_heights(&completed), outstanding: rangify_heights(&outstanding) }
     }
+
+    pub fn get_sync_speed(&self) -> f64 {
+        self.metrics.get_sync_speed()
+    }
 }
 
 // Helper functions needed for testing
@@ -333,6 +355,8 @@ impl<N: Network> BlockSync<N> {
                 return false;
             }
         };
+
+        debug!("Sending {len} block requests to peers {peers:?}", len = requests.len(), peers = sync_peers.keys());
 
         // Use a randomly sampled subset of the sync IPs.
         let sync_ips: IndexSet<_> =
@@ -468,7 +492,10 @@ impl<N: Network> BlockSync<N> {
         // Start with the current height.
         let mut current_height = self.ledger.latest_block_height();
         let start_height = current_height;
-        trace!("Try advancing with block responses (at block {current_height})");
+        trace!(
+            "Try advancing with block responses (at block {current_height}, current sync speed is {})",
+            self.get_sync_speed()
+        );
 
         loop {
             let next_height = current_height + 1;
@@ -861,8 +888,13 @@ impl<N: Network> BlockSync<N> {
     pub fn remove_block_response(&self, height: u32) {
         // Remove the request entry for the given height.
         if let Some(e) = self.requests.write().remove(&height) {
-            trace!("Block request for height {height} was completed in {}ms", e.timestamp.elapsed().as_millis());
+            trace!(
+                "Block request for height {height} was completed in {}ms (sync speed is {})",
+                e.timestamp.elapsed().as_millis(),
+                self.get_sync_speed(),
+            );
         }
+        self.metrics.count_request_completed();
     }
 
     /// Removes all block requests for the given peer IP.
@@ -1305,6 +1337,7 @@ mod tests {
             requests: RwLock::new(sync.requests.read().clone()),
             sync_state: RwLock::new(sync.sync_state.read().clone()),
             advance_with_sync_blocks_lock: Default::default(),
+            metrics: Default::default(),
         }
     }
 

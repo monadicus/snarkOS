@@ -45,7 +45,7 @@ common_flags=" --nodisplay --network $network_id --nocdn --dev-num-validators=40
 taskset -c 0,1 snarkos start --dev 0 --client ${common_flags} \
   --logfile="$log_dir/client-0.log" &
 PIDS[0]=$!
- 
+
 # Spawn the clients that will sync the ledger
 # (running on the other two cores)
 for ((client_index = 1; client_index <= num_clients; client_index++)); do

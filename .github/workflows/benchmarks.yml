@@ -83,15 +83,18 @@ jobs:
         uses: benchmark-action/github-action-benchmark@v1
         with:
           name: snarkOS Benchmarks
-          tool: 'customSmallerIsBetter'
-          output-file-path: results.json
-          auto-push: false
           alert-threshold: '150%'
           comment-on-alert: true
-          summary-always: true
           fail-on-alert: true
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          # Use generic JSON format
+          tool: 'customSmallerIsBetter'
+          output-file-path: results.json
           alert-comment-cc-users: '@kaimast'
+          # Only push the results on staging (see below)
+          auto-push: false
+          # Enable Job Summary for PRs
+          summary-always: true
 
       - name: Push benchmark result
         # Avoid pushing results on pull requests or experimental branches, to reduce noise in the data.

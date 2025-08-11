@@ -73,6 +73,7 @@ function check_logs() {
       return 1
     fi
   done
+
   for ((client_index = 0; client_index < total_clients; client_index++)); do
     if [ ! -s "$log_dir/client-${client_index}.log" ]; then
       echo "❌ Test failed! Client #${client_index} did not create any logs in \"$log_dir\"."

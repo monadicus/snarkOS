@@ -99,7 +99,7 @@ function consensus_version_stable() {
   height=$(curl -s "http://localhost:3030/v2/$network_name/block/height/latest")
   if [[ "$consensus_version" =~ ^[0-9]+$ ]] && [[ "$height" =~ ^[0-9]+$ ]]; then
     # If the consensus version is greater than the last seen, we update it.
-    if (( consensus_version > last_seen_consensus_version)); then
+    if (( consensus_version > last_seen_consensus_version )); then
       echo "✅ Consensus version updated to $consensus_version"
     # If the consensus version is the same whereas the block height is different and at least 10, we can assume that the consensus version is stable
     else

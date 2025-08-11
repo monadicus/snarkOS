@@ -256,6 +256,9 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
 
     /// Spawns the tasks that performs the syncing logic for this client.
     fn initialize_sync(&self) {
+        // Start sync metric collection.
+        self.sync.initialize();
+
         // Start the sync loop.
         let _self = self.clone();
         let mut last_update = Instant::now();
