@@ -89,6 +89,12 @@ pub struct Execute {
     /// bytes, by default : bytes.
     #[clap(long, value_enum, default_value_t = StoreFormat::Bytes, requires="store")]
     store_format: StoreFormat,
+    /// Wait for the transaction to be accepted by the network. Requires --broadcast.
+    #[clap(long, requires = "broadcast")]
+    wait: bool,
+    /// Timeout in seconds when waiting for transaction confirmation. Default is 60 seconds.
+    #[clap(long, default_value_t = 60, requires = "wait")]
+    timeout: u64,
     /// Specify the path to a directory containing the ledger. Overrides the default path.
     #[clap(long = "storage_path")]
     storage_path: Option<PathBuf>,
@@ -215,6 +221,8 @@ impl Execute {
             self.dry_run,
             &self.store,
             self.store_format,
+            self.wait,
+            self.timeout,
             transaction,
             locator.to_string(),
         )

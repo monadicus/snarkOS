@@ -57,7 +57,12 @@ use snarkvm::{
 use anyhow::{Context, Result, bail, ensure};
 use clap::{Parser, ValueEnum};
 use colored::Colorize;
-use std::{path::PathBuf, str::FromStr};
+use std::{
+    path::PathBuf,
+    str::FromStr,
+    thread,
+    time::{Duration, Instant},
+};
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
 pub enum StoreFormat {
@@ -168,13 +173,55 @@ impl Developer {
             .with_context(|| "Failed to parse JSON response")
     }
 
+    fn http_get_json<O: DeserializeOwned>(path: &str) -> Result<O> {
+        ureq::get(path)
+            .call()
+            .with_context(|| "HTTP GET request failed")?
+            .into_body()
+            .read_json()
+            .with_context(|| "Failed to parse JSON response")
+    }
+
+    /// Wait for a transaction to be confirmed by the network.
+    fn wait_for_transaction_confirmation<N: Network>(
+        endpoint: &Uri,
+        transaction_id: &N::TransactionID,
+        timeout_seconds: u64,
+    ) -> Result<()> {
+        let start_time = Instant::now();
+        let timeout_duration = Duration::from_secs(timeout_seconds);
+        let poll_interval = Duration::from_secs(2); // Poll every 2 seconds
+
+        while start_time.elapsed() < timeout_duration {
+            // Check if transaction exists in a confirmed block
+            let tx_endpoint = format!("{endpoint}{}/transaction/{transaction_id}", N::SHORT_NAME);
+
+            match Self::http_get_json::<serde_json::Value>(&tx_endpoint) {
+                Ok(_) => {
+                    // Transaction was found, meaning it's confirmed
+                    return Ok(());
+                }
+                Err(_) => {
+                    // Transaction not found yet, continue polling
+                    thread::sleep(poll_interval);
+                }
+            }
+        }
+
+        // Timeout reached
+        bail!("❌ Transaction {} was not confirmed within {} seconds", transaction_id, timeout_seconds);
+    }
+
     /// Determine if the transaction should be broadcast or displayed to user.
+    #[allow(clippy::too_many_arguments)]
     fn handle_transaction<N: Network>(
         endpoint: &Uri,
         broadcast: bool,
         dry_run: bool,
         store: &Option<String>,
         store_format: StoreFormat,
+        wait: bool,
+        timeout: u64,
         transaction: Transaction<N>,
         operation: String,
     ) -> Result<String> {
@@ -213,9 +260,9 @@ impl Developer {
 
         // Determine if the transaction should be broadcast to the network.
         if broadcast {
-            let endpoint = format!("{endpoint}{}/transaction/broadcast", N::SHORT_NAME);
+            let broadcast_endpoint = format!("{endpoint}{}/transaction/broadcast", N::SHORT_NAME);
 
-            let result: Result<String, _> = Self::http_post_json(&endpoint, &transaction);
+            let result: Result<String, _> = Self::http_post_json(&broadcast_endpoint, &transaction);
 
             match result {
                 Ok(response_string) => {
@@ -229,30 +276,53 @@ impl Developer {
                             println!(
                                 "⌛ Deployment {transaction_id} ('{}') has been broadcast to {}.",
                                 operation.bold(),
-                                endpoint
+                                broadcast_endpoint
                             )
                         }
                         Transaction::Execute(..) => {
                             println!(
                                 "⌛ Execution {transaction_id} ('{}') has been broadcast to {}.",
                                 operation.bold(),
-                                endpoint
+                                broadcast_endpoint
                             )
                         }
                         Transaction::Fee(..) => {
-                            println!("❌ Failed to broadcast fee '{}' to the {}.", operation.bold(), endpoint)
+                            println!("❌ Failed to broadcast fee '{}' to the {}.", operation.bold(), broadcast_endpoint)
+                        }
+                    }
+
+                    // If wait is enabled, wait for transaction confirmation
+                    if wait {
+                        println!("⏳ Waiting for transaction confirmation (timeout: {timeout}s)...");
+                        Self::wait_for_transaction_confirmation::<N>(endpoint, &transaction_id, timeout)?;
+
+                        match transaction {
+                            Transaction::Deploy(..) => {
+                                println!("✅ Deployment {} ('{}') confirmed!", transaction_id, operation.bold())
+                            }
+                            Transaction::Execute(..) => {
+                                println!("✅ Execution {} ('{}') confirmed!", transaction_id, operation.bold())
+                            }
+                            Transaction::Fee(..) => {
+                                println!("✅ Fee {} ('{}') confirmed!", transaction_id, operation.bold())
+                            }
                         }
                     }
                 }
                 Err(error) => match transaction {
                     Transaction::Deploy(..) => {
-                        bail!("❌ Failed to deploy '{}' to {}: {}", operation.bold(), &endpoint, error)
+                        bail!("❌ Failed to deploy '{}' to {}: {}", operation.bold(), &broadcast_endpoint, error)
                     }
                     Transaction::Execute(..) => {
-                        bail!("❌ Failed to broadcast execution '{}' to {}: {}", operation.bold(), &endpoint, error)
+                        bail!(
+                            "❌ Failed to broadcast execution '{}' to {}: {}",
+                            operation.bold(),
+                            &broadcast_endpoint,
+                            error
+                        )
                     }
                     Transaction::Fee(..) => {
-                        bail!("❌ Failed to broadcast fee '{}' to {}: {}", operation.bold(), &endpoint, error)
+                        bail!("❌ Failed to broadcast fee '{}' to {}: {}", operation.bold(), &broadcast_endpoint, error)
                     }
                 },
             };

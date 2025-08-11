@@ -202,15 +202,11 @@ echo """{
 """ > program/program.json
 cd program
 
-# Deploy the test program
-deploy_result=$(snarkos developer deploy --dev-key 0 --network "$network_id" --endpoint=localhost:3030 --broadcast test_program.aleo)
-# Wait for the deployment to be processed.
-sleep 10
+# Deploy the test program and wait for the deployment to be processed.
+deploy_result=$(snarkos developer deploy --dev-key 0 --network "$network_id" --endpoint=localhost:3030 --broadcast test_program.aleo --wait --timeout 10)
 
-# Execute a function in the deployed program.
-execute_result=$(snarkos developer execute --dev-key 0 --network "$network_id" --endpoint=localhost:3030 --broadcast test_program.aleo main 1u32 1u32)
-# Wait for the execution to be processed.
-sleep 10
+# Execute a function in the deployed program and wait for the execution to be processed.
+execute_result=$(snarkos developer execute --dev-key 0 --network "$network_id" --endpoint=localhost:3030 --broadcast test_program.aleo main 1u32 1u32 --wait --timeout 10)
 
 # Fail if the execution transaction does not exist.
 tx=$(echo "$execute_result" | tail -n 1)
