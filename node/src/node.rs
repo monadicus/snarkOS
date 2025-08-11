@@ -15,9 +15,10 @@
 
 use crate::{Client, Prover, Validator, traits::NodeInterface};
 use snarkos_account::Account;
-use snarkos_node_router::messages::NodeType;
+use snarkos_node_router::{Router, messages::NodeType};
 use snarkvm::prelude::{
     Address,
+    Ledger,
     Network,
     PrivateKey,
     ViewKey,
@@ -166,6 +167,24 @@ impl<N: Network> Node<N> {
             Self::Validator(node) => node.is_dev(),
             Self::Prover(node) => node.is_dev(),
             Self::Client(node) => node.is_dev(),
+        }
+    }
+
+    /// Get the router for P2P networking
+    pub fn router(&self) -> &Router<N> {
+        match self {
+            Self::Validator(node) => node.router(),
+            Self::Prover(node) => node.router(),
+            Self::Client(node) => node.router(),
+        }
+    }
+
+    /// Get the underlying ledger (if any).
+    pub fn ledger(&self) -> Option<&Ledger<N, ConsensusDB<N>>> {
+        match self {
+            Self::Validator(node) => Some(node.ledger()),
+            Self::Prover(_) => None,
+            Self::Client(node) => Some(node.ledger()),
         }
     }
 }

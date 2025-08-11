@@ -361,6 +361,11 @@ impl<N: Network> Router<N> {
         }
     }
 
+    /// Returns the list of all peers (connected, connecting, and candidate).
+    pub fn get_peers(&self) -> Vec<Peer<N>> {
+        self.peer_pool.read().values().cloned().collect()
+    }
+
     /// Returns all connected peers.
     pub fn get_connected_peers(&self) -> Vec<ConnectedPeer<N>> {
         self.filter_connected_peers(|_| true)
