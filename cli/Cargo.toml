@@ -17,6 +17,7 @@ license = "Apache-2.0"
 edition = "2024"
 
 [features]
+async = []
 locktick = [
   "dep:locktick",
   "snarkos-node/locktick",

@@ -169,19 +169,15 @@ commands:
       - run:
           name: "Install snarkos"
           command: |
-            cargo install --locked --path .
+            cargo install --locked --path . --features test_network
       - run:
           name: "Run DB backup test"
           timeout: 10m  # Allow 10 minutes total
           command: |
             ./.circleci/db_backup_ci.sh # run the db checkpoint test script first, and clean the dev ledgers afterwards
-            snarkos clean --dev 0
-            snarkos clean --dev 1
-            snarkos clean --dev 2
-            snarkos clean --dev 3
       - run:
           name: "Run block advancement test"
-          imeout: 20m  # Allow 20 minutes total
+          timeout: 20m  # Allow 20 minutes total
           command: |
             ./.circleci/devnet_ci.sh << parameters.validators >> << parameters.clients >> << parameters.network_id >> << parameters.min_height >>
       - clear_environment:
