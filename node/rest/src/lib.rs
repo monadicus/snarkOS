@@ -40,7 +40,6 @@ use snarkvm::{
 
 use anyhow::{Context, Result};
 use axum::{
-    Json,
     body::Body,
     extract::{ConnectInfo, DefaultBodyLimit, Path, Query, State},
     http::{Method, Request, StatusCode, header::CONTENT_TYPE},

@@ -179,8 +179,12 @@ pub struct Start {
     /// Write log message to stdout instead of showing a terminal UI.
     ///
     /// This is useful, for example, for running a node as a service instead of in the foreground or to pipe its output into a file.
-    #[clap(long, verbatim_doc_comment)]
+    #[clap(long, verbatim_doc_comment, hide = true)]
     pub nodisplay: bool,
+
+    /// Do not show the Aleo banner and information about the node on startup.
+    #[clap(long, hide = true)]
+    pub nobanner: bool,
 
     /// Specify the log verbosity of the node.
     /// [options: 0 (lowest log level) to 6 (highest level)]
@@ -411,7 +415,12 @@ impl Start {
             },
             Some(index) => {
                 let private_key = get_development_key(index)?;
-                println!("🔑 Your development private key for node {index} is {}.\n", private_key.to_string().bold());
+                if !self.nobanner {
+                    println!(
+                        "🔑 Your development private key for node {index} is {}.\n",
+                        private_key.to_string().bold()
+                    );
+                }
                 Account::try_from(private_key)
             }
         }
@@ -595,8 +604,10 @@ impl Start {
     /// Returns the node type corresponding to the given configurations.
     #[rustfmt::skip]
     async fn parse_node<N: Network>(&mut self, shutdown: Arc<AtomicBool>) -> Result<Node<N>> {
-        // Print the welcome.
-        println!("{}", crate::helpers::welcome_message());
+        if !self.nobanner {
+            // Print the welcome banner.
+            println!("{}", crate::helpers::welcome_message());
+        }
 
         // Check if we are running with the lower coinbase and proof targets. This should only be
         // allowed in --dev mode and should not be allowed in mainnet mode.
@@ -630,6 +641,7 @@ impl Start {
             false => self.rest.or_else(|| Some("0.0.0.0:3030".parse().unwrap())),
         };
 
+        if !self.nobanner {
             // Print the Aleo address.
             println!("👛 Your Aleo address is {}.\n", account.address().to_string().bold());
             // Print the node type and network.
@@ -663,6 +675,7 @@ impl Start {
                     }
                 }
             }
+        }
 
         // If the node is a validator, check if the open files limit is lower than recommended.
         #[cfg(target_family = "unix")]
