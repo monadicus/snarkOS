@@ -69,6 +69,7 @@ use locktick::{
 };
 #[cfg(not(feature = "locktick"))]
 use parking_lot::{Mutex, RwLock};
+#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 use std::{
     collections::{HashMap, HashSet},
@@ -119,6 +120,7 @@ impl<N: Network> Primary<N> {
     pub const MAX_TRANSMISSIONS_TOLERANCE: usize = BatchHeader::<N>::MAX_TRANSMISSIONS_PER_BATCH * 2;
 
     /// Initializes a new primary instance.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         account: Account<N>,
         storage: Storage<N>,
@@ -127,10 +129,10 @@ impl<N: Network> Primary<N> {
         ip: Option<SocketAddr>,
         trusted_validators: &[SocketAddr],
         storage_mode: StorageMode,
+        dev: Option<u16>,
     ) -> Result<Self> {
         // Initialize the gateway.
-        let gateway =
-            Gateway::new(account, storage.clone(), ledger.clone(), ip, trusted_validators, storage_mode.dev())?;
+        let gateway = Gateway::new(account, storage.clone(), ledger.clone(), ip, trusted_validators, dev)?;
         // Initialize the sync module.
         let sync = Sync::new(gateway.clone(), storage.clone(), ledger.clone(), block_sync);
 
@@ -822,7 +824,7 @@ impl<N: Network> Primary<N> {
         let mut missing_transmissions = self.sync_with_batch_header_from_peer::<false>(peer_ip, &batch_header).await?;
 
         // Check that the transmission ids match and are not fee transactions.
-        if let Err(err) = cfg_iter_mut!(missing_transmissions).try_for_each(|(transmission_id, transmission)| {
+        if let Err(err) = cfg_iter_mut!(&mut missing_transmissions).try_for_each(|(transmission_id, transmission)| {
             // If the transmission is not well-formed, then return early.
             self.ledger.ensure_transmission_is_well_formed(*transmission_id, transmission)
         }) {
@@ -992,7 +994,7 @@ impl<N: Network> Primary<N> {
         let signer = signature.to_address();
 
         // Ensure the batch signature is signed by the validator.
-        if self.gateway.resolver().get_address(peer_ip).map_or(true, |address| address != signer) {
+        if self.gateway.resolver().get_address(peer_ip) != Some(signer) {
             // Proceed to disconnect the validator.
             self.gateway.disconnect(peer_ip);
             bail!("Malicious peer - batch signature is from a different validator ({signer})");
@@ -1080,7 +1082,7 @@ impl<N: Network> Primary<N> {
     /// This method performs the following steps:
     /// 1. Stores the given batch certificate, after ensuring it is valid.
     /// 2. If there are enough certificates to reach quorum threshold for the current round,
-    ///     then proceed to advance to the next round.
+    ///    then proceed to advance to the next round.
     async fn process_batch_certificate_from_peer(
         &self,
         peer_ip: SocketAddr,
@@ -1954,7 +1956,7 @@ mod tests {
     use snarkvm::{
         ledger::{
             committee::{Committee, MIN_VALIDATOR_STAKE},
-            ledger_test_helpers::sample_execution_transaction_with_fee,
+            snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee,
         },
         prelude::{Address, Signature},
     };
@@ -1996,7 +1998,7 @@ mod tests {
         let account = accounts[account_index].1.clone();
         let block_sync = Arc::new(BlockSync::new(ledger.clone()));
         let mut primary =
-            Primary::new(account, storage, ledger, block_sync, None, &[], StorageMode::Test(None)).unwrap();
+            Primary::new(account, storage, ledger, block_sync, None, &[], StorageMode::Test(None), None).unwrap();
 
         // Construct a worker instance.
         primary.workers = Arc::from([Worker::new(
@@ -2031,7 +2033,7 @@ mod tests {
     // Creates a mock solution.
     fn sample_unconfirmed_solution(rng: &mut TestRng) -> (SolutionID<CurrentNetwork>, Data<Solution<CurrentNetwork>>) {
         // Sample a random fake solution ID.
-        let solution_id = rng.gen::<u64>().into();
+        let solution_id = rng.r#gen::<u64>().into();
         // Vary the size of the solutions.
         let size = rng.gen_range(1024..10 * 1024);
         // Sample random fake solution bytes.
@@ -2046,7 +2048,7 @@ mod tests {
     fn sample_unconfirmed_transaction(
         rng: &mut TestRng,
     ) -> (<CurrentNetwork as Network>::TransactionID, Data<Transaction<CurrentNetwork>>) {
-        let transaction = sample_execution_transaction_with_fee(false, rng);
+        let transaction = sample_execution_transaction_with_fee(false, rng, 0);
         let id = transaction.id();
 
         (id, Data::Object(transaction))
@@ -2952,7 +2954,7 @@ mod tests {
         let mut aborted_transmissions = HashSet::new();
         let mut transmissions_without_aborted = HashMap::new();
         for (transmission_id, transmission) in transmissions.clone() {
-            match rng.gen::<bool>() || aborted_transmissions.is_empty() {
+            match rng.r#gen::<bool>() || aborted_transmissions.is_empty() {
                 true => {
                     // Insert the aborted transmission.
                     aborted_transmissions.insert(transmission_id);

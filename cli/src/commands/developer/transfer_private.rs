@@ -14,6 +14,7 @@
 // limitations under the License.
 
 use super::Developer;
+use crate::commands::StoreFormat;
 use snarkvm::{
     console::network::{CanaryV0, MainnetV0, Network, TestnetV0},
     ledger::store::helpers::memory::BlockMemory,
@@ -70,6 +71,10 @@ pub struct TransferPrivate {
     /// Store generated deployment transaction to a local file.
     #[clap(long)]
     store: Option<String>,
+    /// If --store is specified, the format in which the transaction should be stored : string or
+    /// bytes, by default : bytes.
+    #[clap(long, value_enum, default_value_t = StoreFormat::Bytes)]
+    store_format: StoreFormat,
     /// Specify the path to a directory containing the ledger. Overrides the default path (also for
     /// dev).
     #[clap(long = "storage_path")]
@@ -137,7 +142,7 @@ impl TransferPrivate {
             let input_record = Developer::parse_record(&private_key, &self.input_record)?;
             let inputs = [
                 Value::Record(input_record),
-                Value::from_str(&format!("{}", recipient))?,
+                Value::from_str(&format!("{recipient}"))?,
                 Value::from_str(&format!("{}u64", self.amount))?,
             ];
 
@@ -156,6 +161,13 @@ impl TransferPrivate {
         println!("✅ Created private transfer of {} microcredits to {}\n", &self.amount, recipient);
 
         // Determine if the transaction should be broadcast, stored, or displayed to the user.
-        Developer::handle_transaction(&self.broadcast, self.dry_run, &self.store, transaction, locator.to_string())
+        Developer::handle_transaction(
+            &self.broadcast,
+            self.dry_run,
+            &self.store,
+            self.store_format,
+            transaction,
+            locator.to_string(),
+        )
     }
 }

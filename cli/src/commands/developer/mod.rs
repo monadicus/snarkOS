@@ -49,9 +49,15 @@ use snarkvm::{
 };
 
 use anyhow::{Result, bail, ensure};
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use colored::Colorize;
 use std::{path::PathBuf, str::FromStr};
+
+#[derive(Copy, Clone, Debug, ValueEnum)]
+pub enum StoreFormat {
+    String,
+    Bytes,
+}
 
 /// Commands to deploy and execute transactions
 #[derive(Debug, Parser)]
@@ -183,6 +189,7 @@ impl Developer {
         broadcast: &Option<String>,
         dry_run: bool,
         store: &Option<String>,
+        store_format: StoreFormat,
         transaction: Transaction<N>,
         operation: String,
     ) -> Result<String> {
@@ -196,9 +203,22 @@ impl Developer {
         if let Some(path) = store {
             match PathBuf::from_str(path) {
                 Ok(file_path) => {
-                    let transaction_bytes = transaction.to_bytes_le()?;
-                    std::fs::write(&file_path, transaction_bytes)?;
-                    println!("Transaction {transaction_id} was stored to {}", file_path.display());
+                    match store_format {
+                        StoreFormat::Bytes => {
+                            let transaction_bytes = transaction.to_bytes_le()?;
+                            std::fs::write(&file_path, transaction_bytes)?;
+                        }
+                        StoreFormat::String => {
+                            let transaction_string = transaction.to_string();
+                            std::fs::write(&file_path, transaction_string)?;
+                        }
+                    }
+
+                    println!(
+                        "Transaction {transaction_id} was stored to {} as {:?}",
+                        file_path.display(),
+                        store_format
+                    );
                 }
                 Err(err) => {
                     println!("The transaction was unable to be stored due to: {err}");

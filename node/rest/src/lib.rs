@@ -23,6 +23,8 @@ pub use helpers::*;
 
 mod routes;
 
+mod version;
+
 use snarkos_node_cdn::CdnBlockSync;
 use snarkos_node_consensus::Consensus;
 use snarkos_node_router::{
@@ -36,7 +38,7 @@ use snarkvm::{
     prelude::{Ledger, Network, cfg_into_iter, store::ConsensusStorage},
 };
 
-use anyhow::Result;
+use anyhow::{Context, Result, bail};
 use axum::{
     Json,
     body::Body,
@@ -94,7 +96,7 @@ impl<N: Network, C: 'static + ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> 
         // Initialize the server.
         let mut server = Self { consensus, ledger, routing, cdn_sync, block_sync, handles: Default::default() };
         // Spawn the server.
-        server.spawn_server(rest_ip, rest_rps).await;
+        server.spawn_server(rest_ip, rest_rps).await?;
         // Return the server.
         Ok(server)
     }
@@ -113,7 +115,7 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
 }
 
 impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
-    async fn spawn_server(&mut self, rest_ip: SocketAddr, rest_rps: u32) {
+    async fn spawn_server(&mut self, rest_ip: SocketAddr, rest_rps: u32) -> Result<()> {
         let cors = CorsLayer::new()
             .allow_origin(Any)
             .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
@@ -147,8 +149,7 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
             snarkvm::console::network::TestnetV0::ID => "testnet",
             snarkvm::console::network::CanaryV0::ID => "canary",
             unknown_id => {
-                eprintln!("Unknown network ID ({unknown_id})");
-                return;
+                bail!("Unknown network ID ({unknown_id})");
             }
         };
 
@@ -158,6 +159,7 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
             // All the endpoints before the call to `route_layer` are protected with JWT auth.
             .route(&format!("/{network}/node/address"), get(Self::get_node_address))
             .route(&format!("/{network}/program/{{id}}/mapping/{{name}}"), get(Self::get_mapping_values))
+            .route(&format!("/{network}/db_backup"), post(Self::db_backup))
             .route_layer(middleware::from_fn(auth_middleware))
 
              // Get ../consensus_version
@@ -212,6 +214,7 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
             .route(&format!("/{network}/sync/requests/list"), get(Self::get_sync_requests_list))
 
             // GET misc endpoints.
+            .route(&format!("/{network}/version"), get(Self::get_version))
             .route(&format!("/{network}/blocks"), get(Self::get_blocks))
             .route(&format!("/{network}/height/{{hash}}"), get(Self::get_height))
             .route(&format!("/{network}/memoryPool/transmissions"), get(Self::get_memory_pool_transmissions))
@@ -255,12 +258,17 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
             })
         };
 
-        let rest_listener = TcpListener::bind(rest_ip).await.unwrap();
-        self.handles.lock().push(tokio::spawn(async move {
+        let rest_listener =
+            TcpListener::bind(rest_ip).await.with_context(|| "Failed to bind TCP port for REST endpoints")?;
+
+        let handle = tokio::spawn(async move {
             axum::serve(rest_listener, router.into_make_service_with_connect_info::<SocketAddr>())
                 .await
                 .expect("couldn't start rest server");
-        }))
+        });
+
+        self.handles.lock().push(handle);
+        Ok(())
     }
 }
 
