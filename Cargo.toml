@@ -45,18 +45,33 @@ default-features = false
 
 [workspace.dependencies.snarkvm]
 #path = "../snarkVM"
-#git = "https://github.com/ProvableHQ/snarkVM.git"
-#rev = "e1eb750"
-version = "=4.1.0"
+git = "https://github.com/ProvableHQ/snarkVM.git"
+rev = "fc4951e"
+#version = "=4.0.1"
 default-features = false
 #features = [ "circuit", "console", "rocks" ]
 
 [workspace.dependencies.anyhow]
 version = "1.0"
 
+[workspace.dependencies.async-trait]
+version = "0.1"
+
+[workspace.dependencies.axum]
+version = "0.8"
+
+[workspace.dependencies.axum-extra]
+version = "0.10"
+
 [workspace.dependencies.built]
 version = "0.8"
 features = ["git2"]
+
+[workspace.dependencies.bytes]
+version = "1"
+
+[workspace.dependencies.base64]
+version = "0.22"
 
 [workspace.dependencies.clap]
 version = "4.4"
@@ -69,11 +84,26 @@ version = "0.29"
 [workspace.dependencies.futures]
 version = "0.3"
 
+[workspace.dependencies.futures-util]
+version = "0.3"
+
+[workspace.dependencies.locktick]
+version = "0.3"
+
+[workspace.dependencies.lru]
+version = "0.16"
+
+[workspace.dependencies.once_cell]
+version = "1"
+
 [workspace.dependencies.proptest]
 version = "=1.6.0" # Remove this once we upgrade to rand 0.9
 
-[workspace.dependencies.base64]
-version = "0.22"
+[workspace.dependencies.rayon]
+version = "1"
+
+[workspace.dependencies.time]
+version = "0.3"
 
 [workspace.dependencies.tokio]
 version = "1.28"
@@ -92,8 +122,22 @@ default-features = false
 version = "1"
 default-features = false
 
+[workspace.dependencies.serde_json]
+version = "1"
+
 [workspace.dependencies.parking_lot]
 version = "0.12"
+
+[workspace.dependencies.rand]
+version = "0.8"
+default-features = false
+
+[workspace.dependencies.rand_chacha]
+version = "0.3"
+default-features = false
+
+[workspace.dependencies.rand_distr]
+version = "0.4"
 
 [workspace.dependencies.tracing]
 version = "0.1"
@@ -108,13 +152,38 @@ version = "0.3"
 [workspace.dependencies.test-strategy]
 version = "0.4"
 
+[workspace.dependencies.snarkos-account]
+path = "account"
+version = "=4.0.1"
+
+[workspace.dependencies.snarkos-cli]
+path = "cli"
+version = "=4.0.1"
+
+[workspace.dependencies.snarkos-display]
+path = "display"
+version = "=4.0.1"
+
+[workspace.dependencies.snarkos-node]
+path = "node"
+version = "=4.0.1"
+
+[workspace.dependencies.snarkos-node-bft]
+path = "node/bft"
+version = "=4.0.1"
+
+[workspace.dependencies.snarkos-node-bft-events]
+path = "node/bft/events"
+version = "=4.0.1"
+
 [workspace.dependencies.snarkos-node-bft-storage-service]
 path = "node/bft/storage-service"
 version = "=4.1.0"
 
 [workspace.dependencies.snarkos-node-bft-ledger-service]
 path = "node/bft/ledger-service"
-version = "=4.1.0"
+version = "=4.0.1"
+default-features = false
 
 [workspace.dependencies.snarkos-node-consensus]
 path = "node/consensus"
@@ -124,9 +193,21 @@ version = "=4.1.0"
 path = "node/cdn"
 version = "=4.1.0"
 
+[workspace.dependencies.snarkos-node-metrics]
+path = "node/metrics"
+version = "=4.0.1"
+
 [workspace.dependencies.snarkos-node-router]
 path = "node/router"
 version = "=4.1.0"
+
+[workspace.dependencies.snarkos-node-router-messages]
+path = "node/router/messages"
+version = "=4.0.1"
+
+[workspace.dependencies.snarkos-node-rest]
+path = "node/rest"
+version = "=4.0.1"
 
 [workspace.dependencies.snarkos-node-sync]
 path = "node/sync"
@@ -139,6 +220,10 @@ version = "=4.1.0"
 [workspace.dependencies.snarkos-node-sync-locators]
 path = "node/sync/locators"
 version = "=4.1.0"
+
+[workspace.dependencies.snarkos-node-tcp]
+path = "node/tcp"
+version = "=4.0.1"
 
 [[bin]]
 name = "snarkos"
@@ -186,20 +271,16 @@ version = "0.3"
 optional = true
 
 [dependencies.snarkos-account]
-path = "./account"
-version = "=4.1.0"
+workspace = true
 
 [dependencies.snarkos-cli]
-path = "./cli"
-version = "=4.1.0"
+workspace = true
 
 [dependencies.snarkos-node]
-path = "./node"
-version = "=4.1.0"
+workspace = true
 
 [dependencies.snarkos-node-bft]
-path = "./node/bft"
-version = "=4.1.0"
+workspace = true
 
 [dependencies.snarkos-node-cdn]
 workspace = true
@@ -208,23 +289,20 @@ workspace = true
 workspace = true
 
 [dependencies.snarkos-node-metrics]
-path = "./node/metrics"
-version = "=4.1.0"
+workspace = true
 optional = true
 
 [dependencies.snarkos-node-router]
 workspace = true
 
 [dependencies.snarkos-node-rest]
-path = "./node/rest"
-version = "=4.1.0"
+workspace = true
 
 [dependencies.snarkos-node-sync]
 workspace = true
 
 [dependencies.snarkos-node-tcp]
-path = "./node/tcp"
-version = "=4.1.0"
+workspace = true
 
 [target.'cfg(all(target_os = "linux", target_arch = "x86_64"))'.dependencies]
 tikv-jemallocator = "0.5"

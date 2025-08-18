@@ -23,7 +23,7 @@ metrics = [ "snarkvm/metrics" ]
 serial = [ ]
 
 [dependencies.locktick]
-version = "0.3"
+workspace = true
 features = [ "parking_lot" ]
 optional = true
 
@@ -31,10 +31,10 @@ optional = true
 version = "0.13"
 
 [dependencies.parking_lot]
-version = "0.12"
+workspace = true
 
 [dependencies.rayon]
-version = "1"
+workspace = true
 optional = true
 
 [dependencies.snarkvm]
@@ -42,4 +42,4 @@ workspace = true
 features = [ "console", "ledger", "metrics" ]
 
 [dependencies.time]
-version = "0.3"
+workspace = true
