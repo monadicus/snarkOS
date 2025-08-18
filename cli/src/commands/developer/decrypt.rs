@@ -38,6 +38,7 @@ pub struct Decrypt {
 }
 
 impl Decrypt {
+    /// Decrypt the record specified by the user.
     pub fn parse<N: Network>(self) -> Result<String> {
         // Parse the ciphertext record.
         let ciphertext_record = Record::<N, Ciphertext<N>>::from_str(&self.ciphertext)

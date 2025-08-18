@@ -19,13 +19,14 @@ use snarkvm::{
 };
 
 use anyhow::{Context, Result, anyhow};
-use clap::Parser;
+use clap::{Parser, builder::NonEmptyStringValueParser};
 
 use std::str::FromStr;
 
 #[derive(Debug, Parser)]
 pub struct QueryTransaction {
     /// ID of the transaction to fetch.
+    #[clap(value_parser=NonEmptyStringValueParser::default())]
     transaction_id: String,
     /// Search for unconfirmed transactions.
     #[clap(long)]
@@ -33,6 +34,7 @@ pub struct QueryTransaction {
 }
 
 impl QueryTransaction {
+    /// Retrieve the transaction specified by the user.
     pub fn parse<N: Network>(self, query: Query<N, BlockMemory<N>>) -> Result<String> {
         let transaction_id = N::TransactionID::from_str(self.transaction_id.as_str())
             .map_err(|_| anyhow!("Failed to parse transaction ID"))?;

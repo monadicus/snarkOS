@@ -16,6 +16,7 @@
 mod transaction;
 pub use transaction::QueryTransaction;
 
+use super::DEFAULT_ENDPOINT;
 use crate::helpers::args::prepare_endpoint;
 
 use snarkvm::{
@@ -35,7 +36,7 @@ pub enum QueryCommand {
 #[derive(Debug, Parser)]
 pub struct Query {
     /// The endpoint to scan blocks from.
-    #[clap(long, default_value = "https://api.explorer.provable.com/v1", global = true)]
+    #[clap(long, default_value = DEFAULT_ENDPOINT, global = true)]
     endpoint: Uri,
 
     #[clap(subcommand)]
@@ -43,6 +44,7 @@ pub struct Query {
 }
 
 impl Query {
+    /// Execute the query specified by the user.
     pub fn parse<N: Network>(self) -> Result<String> {
         use QueryCommand::*;
 

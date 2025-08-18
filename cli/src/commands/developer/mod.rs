@@ -33,9 +33,6 @@ pub use transfer_private::*;
 
 use crate::helpers::{args::network_id_parser, logger::initialize_terminal_logger};
 
-use serde::{Serialize, de::DeserializeOwned};
-use ureq::http::Uri;
-
 use snarkvm::{
     console::network::Network,
     package::Package,
@@ -54,16 +51,19 @@ use snarkvm::{
     },
 };
 
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Context, Result, anyhow, bail, ensure};
 use clap::{Parser, ValueEnum};
 use colored::Colorize;
+use serde::{Serialize, de::DeserializeOwned};
 use std::{
     path::PathBuf,
     str::FromStr,
     thread,
     time::{Duration, Instant},
 };
+use ureq::http::Uri;
 
+/// The format to store a generated transaction as.
 #[derive(Copy, Clone, Debug, ValueEnum)]
 pub enum StoreFormat {
     String,
@@ -104,6 +104,7 @@ pub struct Developer {
 }
 
 impl Developer {
+    /// Runs the developer subcommand chosen by the user.
     pub fn parse(self) -> Result<String> {
         if let Some(verbosity) = self.verbosity {
             initialize_terminal_logger(verbosity).with_context(|| "Failed to initialize terminal logger")?
@@ -117,6 +118,7 @@ impl Developer {
         }
     }
 
+    /// Internal logic of [`Self::parse`] for each of the different networks.
     fn parse_inner<N: Network>(self) -> Result<String> {
         use DeveloperCommand::*;
         match self.command {
@@ -164,6 +166,7 @@ impl Developer {
         }
     }
 
+    /// Helper function to send a POST request with a JSON body to an endpoint and await a JSON response.
     fn http_post_json<I: Serialize, O: DeserializeOwned>(path: &str, arg: &I) -> Result<O> {
         ureq::post(path)
             .config()
@@ -175,6 +178,7 @@ impl Developer {
             .with_context(|| "Failed to parse JSON response")
     }
 
+    /// Helper function to send a GET request to an endpoint and await a JSON response.
     fn http_get_json<O: DeserializeOwned>(path: &str) -> Result<O> {
         ureq::get(path)
             .call()
@@ -313,18 +317,22 @@ impl Developer {
                 }
                 Err(error) => match transaction {
                     Transaction::Deploy(..) => {
-                        bail!("❌ Failed to deploy '{}' to {}: {}", operation.bold(), &broadcast_endpoint, error)
+                        return Err(error.context(anyhow!(
+                            "Failed to deploy '{op}' to {broadcast_endpoint}",
+                            op = operation.bold()
+                        )));
                     }
                     Transaction::Execute(..) => {
-                        bail!(
-                            "❌ Failed to broadcast execution '{}' to {}: {}",
-                            operation.bold(),
-                            &broadcast_endpoint,
-                            error
-                        )
+                        return Err(error.context(anyhow!(
+                            "Failed to broadcast execution '{op}' to {broadcast_endpoint}",
+                            op = operation.bold()
+                        )));
                     }
                     Transaction::Fee(..) => {
-                        bail!("❌ Failed to broadcast fee '{}' to {}: {}", operation.bold(), &broadcast_endpoint, error)
+                        return Err(error.context(anyhow!(
+                            "Failed to broadcast fee '{op}' to {broadcast_endpoint}",
+                            op = operation.bold()
+                        )));
                     }
                 },
             };

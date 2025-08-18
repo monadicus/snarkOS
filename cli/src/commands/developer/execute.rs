@@ -207,7 +207,7 @@ impl Execute {
             // If the public balance is insufficient, return an error.
             if public_balance < base_fee {
                 bail!(
-                    "❌ The public balance of {} is insufficient to pay the base fee for `{}`",
+                    "The public balance of {} is insufficient to pay the base fee for `{}`",
                     public_balance,
                     locator.to_string().bold()
                 );
