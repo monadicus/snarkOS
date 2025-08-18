@@ -13,19 +13,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::helpers::{
-    args::{network_id_parser, prepare_endpoint},
-    dev::get_development_key,
-};
+use super::DEFAULT_ENDPOINT;
+use crate::helpers::{args::prepare_endpoint, dev::get_development_key};
 
 use snarkos_node_cdn::CDN_BASE_URL;
 use snarkvm::{
-    console::network::{MainnetV0, Network},
+    console::network::Network,
     prelude::{Ciphertext, Field, FromBytes, Plaintext, PrivateKey, Record, ViewKey, block::Block},
 };
 
 use anyhow::{Context, Result, bail, ensure};
-use clap::Parser;
+use clap::{Parser, builder::NonEmptyStringValueParser};
 #[cfg(feature = "locktick")]
 use locktick::parking_lot::RwLock;
 #[cfg(not(feature = "locktick"))]
@@ -45,23 +43,19 @@ const MAX_BLOCK_RANGE: u32 = 50;
 #[clap(
     // The user needs to set view_key, private_key, or dev_key,
     // but they cannot set private_key and dev_key.
-    group(clap::ArgGroup::new("key").required(true).multiple(true))
+    group(clap::ArgGroup::new("key").required(true).multiple(false))
 )]
 pub struct Scan {
-    /// Specify the network to create a deployment for.
-    /// [options: 0 = mainnet, 1 = testnet, 2 = canary]
-    #[clap(long, default_value_t=MainnetV0::ID, long, value_parser = network_id_parser())]
-    network: u16,
-
-    /// An optional private key scan for unspent records.
-    #[clap(short, long, group = "key", conflicts_with = "dev_key")]
+    /// The private key used for unspent records.
+    #[clap(short, long, group = "key", value_parser=NonEmptyStringValueParser::default())]
     private_key: Option<String>,
 
     /// The view key used to scan for records.
-    #[clap(short, long, group = "key")]
+    /// (if a private key is given, the view key is automatically derived and should not be set)
+    #[clap(short, long, group = "key", value_parser=NonEmptyStringValueParser::default())]
     view_key: Option<String>,
 
-    /// Use a developer validator key tok generate the deployment.
+    /// Use a development private key to scan for records.
     #[clap(long, group = "key")]
     dev_key: Option<u16>,
 
@@ -80,7 +74,7 @@ pub struct Scan {
     last: Option<u32>,
 
     /// The endpoint to scan blocks from.
-    #[clap(long, default_value = "https://api.explorer.provable.com/v1")]
+    #[clap(long, default_value = DEFAULT_ENDPOINT)]
     endpoint: Uri,
 
     /// Sets verbosity of log output. By default, no logs are shown.
@@ -125,36 +119,19 @@ impl Scan {
 
     /// Returns the view key and optional private key, from the given configurations.
     fn parse_account<N: Network>(&self) -> Result<(Option<PrivateKey<N>>, ViewKey<N>)> {
-        let private_key = if let Some(private_key) = &self.private_key {
-            Some(PrivateKey::<N>::from_str(private_key)?)
+        if let Some(private_key) = &self.private_key {
+            let private_key = PrivateKey::<N>::from_str(private_key)?;
+            let view_key = ViewKey::<N>::try_from(private_key)?;
+            Ok((Some(private_key), view_key))
         } else if let Some(index) = &self.dev_key {
-            Some(get_development_key(*index)?)
+            let private_key = get_development_key(*index)?;
+            let view_key = ViewKey::<N>::try_from(private_key)?;
+            Ok((Some(private_key), view_key))
+        } else if let Some(view_key) = &self.view_key {
+            Ok((None, ViewKey::<N>::from_str(view_key)?))
         } else {
-            None
-        };
-
-        match (private_key, &self.view_key) {
-            (Some(private_key), Some(view_key)) => {
-                // Derive the expected view key.
-                let expected_view_key = ViewKey::<N>::try_from(private_key)?;
-                // Derive the view key.
-                let view_key = ViewKey::<N>::from_str(view_key)?;
-
-                ensure!(
-                    expected_view_key == view_key,
-                    "The provided private key does not correspond to the provided view key."
-                );
-
-                Ok((Some(private_key), view_key))
-            }
-            (Some(private_key), _) => {
-                // Derive the view key.
-                let view_key = ViewKey::<N>::try_from(private_key)?;
-
-                Ok((Some(private_key), view_key))
-            }
-            (None, Some(view_key)) => Ok((None, ViewKey::<N>::from_str(view_key)?)),
-            (None, None) => bail!("Missing private key or view key."),
+            // This will be caught by clap
+            unreachable!();
         }
     }
 
@@ -426,11 +403,35 @@ mod tests {
         let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
         let view_key = ViewKey::try_from(private_key).unwrap();
 
-        // Generate unassociated private key and view key.
-        let unassociated_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
-        let unassociated_view_key = ViewKey::try_from(unassociated_private_key).unwrap();
-
+        // Test passing the private key only
         let config = Scan::try_parse_from(
+            ["snarkos", "--private-key", &format!("{private_key}"), "--last", "10", "--endpoint", "localhost"].iter(),
+        )
+        .unwrap();
+        assert!(config.parse_account::<CurrentNetwork>().is_ok());
+
+        let (result_pkey, result_vkey) = config.parse_account::<CurrentNetwork>().unwrap();
+        assert_eq!(result_pkey, Some(private_key));
+        assert_eq!(result_vkey, view_key);
+
+        // Passing an invalid view key should fail.
+        // Note: the current validation only rejects empty strings.
+        let err = Scan::try_parse_from(["snarkos", "--view-key", "", "--last", "10", "--endpoint", "localhost"].iter())
+            .unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::InvalidValue);
+
+        // Test passing the view key only
+        let config = Scan::try_parse_from(
+            ["snarkos", "--view-key", &format!("{view_key}"), "--last", "10", "--endpoint", "localhost"].iter(),
+        )
+        .unwrap();
+
+        let (result_pkey, result_vkey) = config.parse_account::<CurrentNetwork>().unwrap();
+        assert_eq!(result_pkey, None);
+        assert_eq!(result_vkey, view_key);
+
+        // Passing both will generate an error.
+        let err = Scan::try_parse_from(
             [
                 "snarkos",
                 "--private-key",
@@ -444,31 +445,18 @@ mod tests {
             ]
             .iter(),
         )
-        .unwrap();
-        assert!(config.parse_account::<CurrentNetwork>().is_ok());
+        .unwrap_err();
 
-        let config = Scan::try_parse_from(
-            [
-                "snarkos",
-                "--private-key",
-                &format!("{private_key}"),
-                "--view-key",
-                &format!("{unassociated_view_key}"),
-                "--last",
-                "10",
-                "--endpoint",
-                "localhost",
-            ]
-            .iter(),
-        )
-        .unwrap();
-        assert!(config.parse_account::<CurrentNetwork>().is_err());
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
     }
 
     #[test]
     fn test_parse_block_range() -> Result<()> {
+        // Hardcoded viewkey to ensure view key validation succeeds
+        const TEST_VIEW_KEY: &str = "AViewKey1qQVfici7WarfXgmq9iuH8tzRcrWtb8qYq1pEyRRE4kS7";
+
         let config = Scan::try_parse_from(
-            ["snarkos", "--view-key", "", "--start", "0", "--end", "10", "--endpoint", "localhost"].iter(),
+            ["snarkos", "--view-key", TEST_VIEW_KEY, "--start", "0", "--end", "10", "--endpoint", "localhost"].iter(),
         )?;
 
         let endpoint = Uri::default();
@@ -476,33 +464,48 @@ mod tests {
 
         // `start` height can't be greater than `end` height.
         let config = Scan::try_parse_from(
-            ["snarkos", "--view-key", "", "--start", "10", "--end", "5", "--endpoint", "localhost"].iter(),
+            ["snarkos", "--view-key", TEST_VIEW_KEY, "--start", "10", "--end", "5", "--endpoint", "localhost"].iter(),
         )?;
 
         let endpoint = Uri::default();
         assert!(config.parse_block_range::<CurrentNetwork>(&endpoint).is_err());
 
         // `last` conflicts with `start`
-        assert!(
-            Scan::try_parse_from(
-                ["snarkos", "--view-key", "", "--start", "0", "--last", "10", "--endpoint", ""].iter(),
-            )
-            .is_err()
-        );
+        let err = Scan::try_parse_from(
+            ["snarkos", "--view-key", TEST_VIEW_KEY, "--start", "0", "--last", "10", "--endpoint=localhost"].iter(),
+        )
+        .unwrap_err();
+
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
 
         // `last` conflicts with `end`
-        assert!(
-            Scan::try_parse_from(["snarkos", "--view-key", "", "--end", "10", "--last", "10", "--endpoint", ""].iter())
-                .is_err()
-        );
+        let err = Scan::try_parse_from(
+            ["snarkos", "--view-key", TEST_VIEW_KEY, "--end", "10", "--last", "10", "--endpoint", "localhost"].iter(),
+        )
+        .unwrap_err();
+
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
 
         // `last` conflicts with `start` and `end`
-        assert!(
-            Scan::try_parse_from(
-                ["snarkos", "--view-key", "", "--start", "0", "--end", "01", "--last", "10", "--endpoint", ""].iter(),
-            )
-            .is_err()
-        );
+        let err = Scan::try_parse_from(
+            [
+                "snarkos",
+                "--view-key",
+                TEST_VIEW_KEY,
+                "--start",
+                "0",
+                "--end",
+                "01",
+                "--last",
+                "10",
+                "--endpoint",
+                "localhost",
+            ]
+            .iter(),
+        )
+        .unwrap_err();
+
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
 
         Ok(())
     }

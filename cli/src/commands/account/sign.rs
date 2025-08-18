@@ -15,7 +15,12 @@
 
 use super::*;
 
+use clap::builder::NonEmptyStringValueParser;
+
 #[derive(Debug, Zeroize, Parser)]
+#[command(
+    group(clap::ArgGroup::new("key").required(true).multiple(false))
+)]
 pub struct Sign {
     /// Specify the network to create an execution for.
     /// [options: 0 = mainnet, 1 = testnet, 2 = canary]
@@ -23,14 +28,14 @@ pub struct Sign {
     pub(super) network: u16,
 
     /// Specify the account private key of the node
-    #[clap(long)]
+    #[clap(long, group = "key", value_parser=NonEmptyStringValueParser::default())]
     pub(super) private_key: Option<String>,
 
     /// Specify the path to a file containing the account private key of the node
-    #[clap(long, conflicts_with = "private_key")]
+    #[clap(long, group = "key", value_parser=NonEmptyStringValueParser::default())]
     pub(super) private_key_file: Option<String>,
 
-    /// Use a developer validator key tok generate the deployment.
+    /// Use a developer validator key to generate the deployment.
     #[clap(long, group = "key")]
     pub(super) dev_key: Option<u16>,
 

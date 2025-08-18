@@ -27,6 +27,7 @@ use std::str::FromStr;
 pub struct QueryTransaction {
     /// ID of the transaction to fetch.
     transaction_id: String,
+    /// Search for unconfirmed transactions.
     #[clap(long)]
     unconfirmed: bool,
 }

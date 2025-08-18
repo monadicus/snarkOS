@@ -16,10 +16,10 @@
 use super::Developer;
 use crate::{
     commands::StoreFormat,
-    helpers::args::{network_id_parser, parse_private_key, prepare_endpoint},
+    helpers::args::{parse_private_key, prepare_endpoint},
 };
 use snarkvm::{
-    console::network::{MainnetV0, Network},
+    console::network::Network,
     ledger::store::helpers::memory::BlockMemory,
     prelude::{
         Address,
@@ -44,10 +44,6 @@ use zeroize::Zeroize;
     group(clap::ArgGroup::new("mode").required(true).multiple(false))
 )]
 pub struct TransferPrivate {
-    /// Specify the network to create an execution for.
-    /// [options: 0 = mainnet, 1 = testnet, 2 = canary]
-    #[clap(long, default_value_t=MainnetV0::ID, long, value_parser = network_id_parser())]
-    network: u16,
     /// The input record used to craft the transfer.
     #[clap(long)]
     input_record: String,

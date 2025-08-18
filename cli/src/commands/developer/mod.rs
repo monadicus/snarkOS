@@ -87,6 +87,8 @@ pub enum DeveloperCommand {
     Query(Query),
 }
 
+const DEFAULT_ENDPOINT: &str = "https://api.explorer.provable.com/v1";
+
 #[derive(Debug, Parser)]
 pub struct Developer {
     /// The specific developer command to run.

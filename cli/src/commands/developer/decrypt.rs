@@ -19,7 +19,7 @@ use snarkvm::{
 };
 
 use anyhow::{Context, Result, bail};
-use clap::Parser;
+use clap::{Parser, builder::NonEmptyStringValueParser};
 use std::str::FromStr;
 use zeroize::Zeroize;
 
@@ -30,7 +30,7 @@ pub struct Decrypt {
     #[clap(short, long)]
     ciphertext: String,
     /// The view key used to decrypt the record ciphertext.
-    #[clap(short, long)]
+    #[clap(short, long, value_parser=NonEmptyStringValueParser::default())]
     view_key: String,
     /// Sets verbosity of log output. By default, no logs are shown.
     #[clap(long)]
@@ -44,7 +44,7 @@ impl Decrypt {
             .with_context(|| "Failed to parse ciphertext record")?;
 
         // Parse the account view key.
-        let view_key = ViewKey::<N>::from_str(&self.view_key).with_context(|| "Faield to parse view key")?;
+        let view_key = ViewKey::<N>::from_str(&self.view_key).with_context(|| "Failed to parse view key")?;
 
         match ciphertext_record.decrypt(&view_key) {
             Ok(plaintext_record) => Ok(plaintext_record.to_string()),

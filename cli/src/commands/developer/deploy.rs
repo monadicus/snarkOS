@@ -13,10 +13,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::Developer;
+use super::{DEFAULT_ENDPOINT, Developer};
 use crate::{
     commands::StoreFormat,
-    helpers::args::{network_id_parser, parse_private_key, prepare_endpoint},
+    helpers::args::{parse_private_key, prepare_endpoint},
 };
 
 use snarkvm::{
@@ -37,8 +37,8 @@ use snarkvm::{
 };
 
 use aleo_std::StorageMode;
-use anyhow::{Result, bail};
-use clap::Parser;
+use anyhow::Result;
+use clap::{Parser, builder::NonEmptyStringValueParser};
 use colored::Colorize;
 use snarkvm::prelude::{Address, ConsensusVersion};
 use std::{path::PathBuf, str::FromStr};
@@ -56,24 +56,20 @@ use anyhow::Context;
 pub struct Deploy {
     /// The name of the program to deploy.
     program_id: String,
-    /// Specify the network to create a deployment for.
-    /// [options: 0 = mainnet, 1 = testnet, 2 = canary]
-    #[clap(long, default_value_t=MainnetV0::ID, long, value_parser = network_id_parser())]
-    network: u16,
     /// A path to a directory containing a manifest file. Defaults to the current working directory.
     #[clap(long)]
     path: Option<String>,
     /// The private key used to generate the deployment.
-    #[clap(short = 'p', long, group = "key")]
+    #[clap(short = 'p', long, group = "key", value_parser=NonEmptyStringValueParser::default())]
     private_key: Option<String>,
     /// Use a developer validator key tok generate the deployment.
     #[clap(long, group = "key")]
     dev_key: Option<u16>,
     /// Specify the path to a file containing the account private key of the node
-    #[clap(long, group = "key")]
+    #[clap(long, group = "key", value_parser=NonEmptyStringValueParser::default())]
     private_key_file: Option<String>,
     /// The endpoint to query node state from and broadcast to (if set to broadcast).
-    #[clap(short, long)]
+    #[clap(short, long, default_value=DEFAULT_ENDPOINT)]
     endpoint: Uri,
     /// The priority fee in microcredits.
     #[clap(long, default_value_t = 0)]
@@ -120,7 +116,7 @@ impl Deploy {
             MainnetV0::ID => self.construct_deployment::<MainnetV0, AleoV0>(),
             TestnetV0::ID => self.construct_deployment::<TestnetV0, AleoTestnetV0>(),
             CanaryV0::ID => self.construct_deployment::<CanaryV0, AleoCanaryV0>(),
-            unknown_id => bail!("Unknown network ID ({unknown_id})"),
+            _ => unreachable!(),
         }
         .with_context(|| "Deployment failed")
     }
@@ -238,6 +234,8 @@ impl Deploy {
 mod tests {
     use super::*;
     use crate::commands::{CLI, Command, DeveloperCommand};
+
+    use anyhow::bail;
 
     #[test]
     fn clap_snarkos_deploy_missing_mode() {

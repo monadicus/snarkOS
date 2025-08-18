@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::Developer;
+use super::{DEFAULT_ENDPOINT, Developer};
 use crate::{
     commands::StoreFormat,
     helpers::args::{parse_private_key, prepare_endpoint},
@@ -38,7 +38,7 @@ use snarkvm::{
 
 use aleo_std::StorageMode;
 use anyhow::{Context, Result, bail};
-use clap::Parser;
+use clap::{Parser, builder::NonEmptyStringValueParser};
 use colored::Colorize;
 use std::{path::PathBuf, str::FromStr};
 use tracing::debug;
@@ -53,22 +53,24 @@ use zeroize::Zeroize;
 )]
 pub struct Execute {
     /// The program identifier.
+    #[clap(value_parser=NonEmptyStringValueParser::default())]
     program_id: String,
     /// The function name.
+    #[clap(value_parser=NonEmptyStringValueParser::default())]
     function: String,
     /// The function inputs.
     inputs: Vec<String>,
     /// The private key used to generate the execution.
-    #[clap(short = 'p', long, group = "key")]
+    #[clap(short = 'p', long, group = "key", value_parser=NonEmptyStringValueParser::default())]
     private_key: Option<String>,
     /// Specify the path to a file containing the account private key of the node
-    #[clap(long, group = "key")]
+    #[clap(long, group = "key", value_parser=NonEmptyStringValueParser::default())]
     private_key_file: Option<String>,
-    /// Use a developer validator key tok generate the deployment.
+    /// Use a developer validator key to generate the execution
     #[clap(long, group = "key")]
     dev_key: Option<u16>,
     /// The endpoint to query node state from and broadcast to (if set to broadcast).
-    #[clap(short, long)]
+    #[clap(short, long, default_value=DEFAULT_ENDPOINT)]
     endpoint: Uri,
     /// The priority fee in microcredits.
     #[clap(long, default_value_t = 0)]
