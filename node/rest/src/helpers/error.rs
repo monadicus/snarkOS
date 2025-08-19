@@ -28,27 +28,27 @@ pub struct RestError {
 
 impl RestError {
     /// Creates a new internal server error.
-    pub fn new(message: impl Into<String>) -> Self {
-        Self { status: StatusCode::INTERNAL_SERVER_ERROR, message: message.into() }
+    pub fn new(message: String) -> Self {
+        Self { status: StatusCode::INTERNAL_SERVER_ERROR, message }
     }
 
     /// Creates a new error with a specific status code.
-    pub fn with_status(message: impl Into<String>, status: StatusCode) -> Self {
-        Self { status, message: message.into() }
+    pub fn with_status(message: String, status: StatusCode) -> Self {
+        Self { status, message }
     }
 
     /// Creates a 400 Bad Request error.
-    pub fn bad_request(message: impl Into<String>) -> Self {
+    pub fn bad_request(message: String) -> Self {
         Self::with_status(message, StatusCode::BAD_REQUEST)
     }
 
     /// Creates a 404 Not Found error.
-    pub fn not_found(message: impl Into<String>) -> Self {
+    pub fn not_found(message: String) -> Self {
         Self::with_status(message, StatusCode::NOT_FOUND)
     }
 
     /// Creates a 503 Service Unavailable error.
-    pub fn service_unavailable(message: impl Into<String>) -> Self {
+    pub fn service_unavailable(message: String) -> Self {
         Self::with_status(message, StatusCode::SERVICE_UNAVAILABLE)
     }
 }

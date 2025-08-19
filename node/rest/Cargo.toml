@@ -114,5 +114,9 @@ workspace = true
 [dev-dependencies.base64]
 workspace = true
 
+[dev-dependencies.tower]
+version = "0.4"
+features = ["util"]
+
 [build-dependencies.built]
 workspace = true

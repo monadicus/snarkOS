@@ -132,11 +132,6 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
 
 impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
     async fn spawn_server(&mut self, rest_ip: SocketAddr, rest_rps: u32) -> Result<()> {
-        let cors = CorsLayer::new()
-            .allow_origin(Any)
-            .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
-            .allow_headers([CONTENT_TYPE]);
-
         // Log the REST rate limit per IP.
         debug!("REST rate limit per IP - {rest_rps} RPS");
 
@@ -152,6 +147,11 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
 
         // Closure to build the API routes for a given version.
         let build_routes = || {
+            let cors = CorsLayer::new()
+                .allow_origin(Any)
+                .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+                .allow_headers([CONTENT_TYPE]);
+
             // Prepare the rate limiting setup.
             let governor_config = Box::new(
                 GovernorConfigBuilder::default()
@@ -267,7 +267,7 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
             // Custom logging.
             .layer(middleware::from_fn(log_middleware))
             // Enable CORS.
-            .layer(cors.clone())
+            .layer(cors)
             // Cap the request body size at 512KiB.
             .layer(DefaultBodyLimit::max(512 * 1024))
             .layer(GovernorLayer {
@@ -315,10 +315,77 @@ pub fn fmt_id(id: impl ToString) -> String {
 }
 
 /// Middleware to ensure legacy routes always return HTTP 500 on error.
-async fn legacy_error_middleware(req: Request<Body>, next: Next<Body>) -> Response {
+async fn legacy_error_middleware(req: Request<Body>, next: Next) -> Response {
     let mut res = next.run(req).await;
     if !res.status().is_success() {
         *res.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
     }
     res
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{
+        Router,
+        body::Body,
+        http::{Request, StatusCode},
+        middleware,
+        routing::get,
+    };
+    use tower::ServiceExt; // for `oneshot`
+
+    fn test_app() -> Router {
+        let build_routes = || {
+            Router::new()
+                .route(
+                    "/not_found",
+                    get(|| async { Err::<(), RestError>(RestError::not_found("missing".to_string())) }),
+                )
+                .route(
+                    "/bad_request",
+                    get(|| async { Err::<(), RestError>(RestError::bad_request("bad".to_string())) }),
+                )
+                .route(
+                    "/service_unavailable",
+                    get(|| async { Err::<(), RestError>(RestError::service_unavailable("gone".to_string())) }),
+                )
+        };
+        let router_v1 = build_routes().route_layer(middleware::from_fn(legacy_error_middleware));
+        let router_v2 = Router::new().nest("/v2", build_routes());
+        router_v1.merge(router_v2)
+    }
+
+    #[tokio::test]
+    async fn v1_routes_force_internal_server_error() {
+        let app = test_app();
+
+        let res = app.clone().oneshot(Request::builder().uri("/not_found").body(Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+
+        let res =
+            app.clone().oneshot(Request::builder().uri("/bad_request").body(Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+
+        let res =
+            app.oneshot(Request::builder().uri("/service_unavailable").body(Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn v2_routes_return_specific_errors() {
+        let app = test_app();
+
+        let res =
+            app.clone().oneshot(Request::builder().uri("/v2/not_found").body(Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+
+        let res =
+            app.clone().oneshot(Request::builder().uri("/v2/bad_request").body(Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+
+        let res =
+            app.oneshot(Request::builder().uri("/v2/service_unavailable").body(Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
 }
