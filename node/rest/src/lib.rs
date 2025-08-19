@@ -140,25 +140,6 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
         // Log the REST rate limit per IP.
         debug!("REST rate limit per IP - {rest_rps} RPS");
 
-        // Prepare the rate limiting setup.
-        let governor_config = Box::new(
-            GovernorConfigBuilder::default()
-                .per_nanosecond((1_000_000_000 / rest_rps) as u64)
-                .burst_size(rest_rps)
-                .error_handler(|error| {
-                    // Properly return a 429 Too Many Requests error
-                    let error_message = error.to_string();
-                    let mut response = Response::new(error_message.clone().into());
-                    *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-                    if error_message.contains("Too Many Requests") {
-                        *response.status_mut() = StatusCode::TOO_MANY_REQUESTS;
-                    }
-                    response
-                })
-                .finish()
-                .expect("Couldn't set up rate limiting for the REST server!"),
-        );
-
         // Get the network being used.
         let network = match N::ID {
             snarkvm::console::network::MainnetV0::ID => "mainnet",
@@ -169,7 +150,27 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
             }
         };
 
-        let router = {
+        // Closure to build the API routes for a given version.
+        let build_routes = || {
+            // Prepare the rate limiting setup.
+            let governor_config = Box::new(
+                GovernorConfigBuilder::default()
+                    .per_nanosecond((1_000_000_000 / rest_rps) as u64)
+                    .burst_size(rest_rps)
+                    .error_handler(|error| {
+                        // Properly return a 429 Too Many Requests error
+                        let error_message = error.to_string();
+                        let mut response = Response::new(error_message.clone().into());
+                        *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+                        if error_message.contains("Too Many Requests") {
+                            *response.status_mut() = StatusCode::TOO_MANY_REQUESTS;
+                        }
+                        response
+                    })
+                    .finish()
+                    .expect("Couldn't set up rate limiting for the REST server!"),
+            );
+
             let routes = axum::Router::new()
 
             // All the endpoints before the call to `route_layer` are protected with JWT auth.
@@ -266,13 +267,18 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
             // Custom logging.
             .layer(middleware::from_fn(log_middleware))
             // Enable CORS.
-            .layer(cors)
+            .layer(cors.clone())
             // Cap the request body size at 512KiB.
             .layer(DefaultBodyLimit::max(512 * 1024))
             .layer(GovernorLayer {
                 config: governor_config.into(),
             })
         };
+
+        // Build routers for v1 and v2.
+        let router_v1 = build_routes().route_layer(middleware::from_fn(legacy_error_middleware));
+        let router_v2 = axum::Router::new().nest("/v2", build_routes());
+        let router = router_v1.merge(router_v2);
 
         let rest_listener =
             TcpListener::bind(rest_ip).await.with_context(|| "Failed to bind TCP port for REST endpoints")?;
@@ -306,4 +312,13 @@ pub fn fmt_id(id: impl ToString) -> String {
         formatted_id.push_str("..");
     }
     formatted_id
+}
+
+/// Middleware to ensure legacy routes always return HTTP 500 on error.
+async fn legacy_error_middleware(req: Request<Body>, next: Next<Body>) -> Response {
+    let mut res = next.run(req).await;
+    if !res.status().is_success() {
+        *res.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+    }
+    res
 }
