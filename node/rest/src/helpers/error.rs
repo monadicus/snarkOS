@@ -18,17 +18,32 @@ use axum::{
     response::{IntoResponse, Response},
 };
 
-/// An enum of error handlers for the REST API server.
-pub struct RestError(pub String);
+/// An error handler for the REST API server.
+pub struct RestError {
+    pub status: StatusCode,
+    pub message: String,
+}
+
+impl RestError {
+    /// Creates a new `RestError` with an internal server error status.
+    pub fn new(message: impl Into<String>) -> Self {
+        Self { status: StatusCode::INTERNAL_SERVER_ERROR, message: message.into() }
+    }
+
+    /// Creates a new `RestError` with the given status code.
+    pub fn with_status(status: StatusCode, message: impl Into<String>) -> Self {
+        Self { status, message: message.into() }
+    }
+}
 
 impl IntoResponse for RestError {
     fn into_response(self) -> Response {
-        (StatusCode::INTERNAL_SERVER_ERROR, format!("Something went wrong: {}", self.0)).into_response()
+        (self.status, format!("Something went wrong: {}", self.message)).into_response()
     }
 }
 
 impl From<anyhow::Error> for RestError {
     fn from(err: anyhow::Error) -> Self {
-        Self(err.to_string())
+        Self::new(err.to_string())
     }
 }
