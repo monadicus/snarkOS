@@ -18,17 +18,49 @@ use axum::{
     response::{IntoResponse, Response},
 };
 
-/// An enum of error handlers for the REST API server.
-pub struct RestError(pub String);
+/// A generic error for the REST API server.
+pub struct RestError {
+    /// The HTTP status code to return.
+    pub status: StatusCode,
+    /// The error message.
+    pub message: String,
+}
+
+impl RestError {
+    /// Creates a new internal server error.
+    pub fn new(message: String) -> Self {
+        Self { status: StatusCode::INTERNAL_SERVER_ERROR, message }
+    }
+
+    /// Creates a new error with a specific status code.
+    pub fn with_status(message: String, status: StatusCode) -> Self {
+        Self { status, message }
+    }
+
+    /// Creates a 400 Bad Request error.
+    pub fn bad_request(message: String) -> Self {
+        Self::with_status(message, StatusCode::BAD_REQUEST)
+    }
+
+    /// Creates a 404 Not Found error.
+    pub fn not_found(message: String) -> Self {
+        Self::with_status(message, StatusCode::NOT_FOUND)
+    }
+
+    /// Creates a 503 Service Unavailable error.
+    pub fn service_unavailable(message: String) -> Self {
+        Self::with_status(message, StatusCode::SERVICE_UNAVAILABLE)
+    }
+}
 
 impl IntoResponse for RestError {
     fn into_response(self) -> Response {
-        (StatusCode::INTERNAL_SERVER_ERROR, format!("Something went wrong: {}", self.0)).into_response()
+        (self.status, format!("Something went wrong: {}", self.message)).into_response()
     }
 }
 
 impl From<anyhow::Error> for RestError {
     fn from(err: anyhow::Error) -> Self {
-        Self(err.to_string())
+        Self::new(err.to_string())
     }
 }
