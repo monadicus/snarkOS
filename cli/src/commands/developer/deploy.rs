@@ -69,7 +69,12 @@ pub struct Deploy {
     #[clap(long, group = "key", value_parser=NonEmptyStringValueParser::default())]
     private_key_file: Option<String>,
     /// The endpoint to query node state from and broadcast to (if set to broadcast).
-    #[clap(short, long, default_value=DEFAULT_ENDPOINT)]
+    ///
+    /// The given value is expected to be the base URL, e.g., "https://mynode.com", and will be extended automatically
+    /// to fit the network type and query.
+    /// For example, the base URL may extend to "http://mynode.com/testnet/transaction/unconfirmed/ID" to retrieve
+    /// an unconfirmed transaction on the test network.
+    #[clap(short, long, alias="query", default_value=DEFAULT_ENDPOINT, verbatim_doc_comment)]
     endpoint: Uri,
     /// The priority fee in microcredits.
     #[clap(long, default_value_t = 0)]
@@ -77,9 +82,11 @@ pub struct Deploy {
     /// The record to spend the fee from.
     #[clap(short, long)]
     record: Option<String>,
-    /// Set the transaction to be broadcasted to the given endpoint.
-    #[clap(short, long, group = "mode")]
-    broadcast: bool,
+    /// Set the transaction to be broadcasted using  (if no value is given, the query endpoint is used).
+    ///
+    /// The given value is expected the full URL of the endpoint, not just the base URL, e.g., "http://mynode.com/testnet/transaction/broadcast".
+    #[clap(short, long, group = "mode", verbatim_doc_comment)]
+    broadcast: Option<Option<Uri>>,
     /// Performs a dry-run of transaction generation.
     #[clap(short, long, group = "mode")]
     dry_run: bool,
@@ -218,7 +225,7 @@ impl Deploy {
         // Determine if the transaction should be broadcast, stored, or displayed to the user.
         Developer::handle_transaction(
             &endpoint,
-            self.broadcast,
+            &self.broadcast,
             self.dry_run,
             &self.store,
             self.store_format,
@@ -284,7 +291,45 @@ mod tests {
         assert_eq!(deploy.private_key_file, None);
         assert_eq!(deploy.endpoint, "ENDPOINT");
         assert!(deploy.dry_run);
-        assert!(!deploy.broadcast);
+        assert!(deploy.broadcast.is_none());
+        assert_eq!(deploy.store, None);
+        assert_eq!(deploy.priority_fee, 77);
+        assert_eq!(deploy.record, Some("RECORD".to_string()));
+
+        Ok(())
+    }
+
+    #[test]
+    fn clap_snarkos_deploy_broadcast() -> Result<()> {
+        let arg_vec = &[
+            "snarkos",
+            "developer",
+            "deploy",
+            "--private-key=PRIVATE_KEY",
+            "--endpoint=ENDPOINT",
+            "--priority-fee=77",
+            "--broadcast=ENDPOINT2",
+            "--record=RECORD",
+            "hello.aleo",
+        ];
+        // Use try parse here, as parse calls `exit()`.
+        let cli = CLI::try_parse_from(arg_vec)?;
+
+        let Command::Developer(developer) = cli.command else {
+            bail!("Unexpected result of clap parsing!");
+        };
+        let DeveloperCommand::Deploy(deploy) = developer.command else {
+            bail!("Unexpected result of clap parsing!");
+        };
+
+        assert_eq!(developer.network, 0);
+        assert_eq!(deploy.program_id, "hello.aleo");
+        assert_eq!(deploy.private_key, Some("PRIVATE_KEY".to_string()));
+        assert_eq!(deploy.private_key_file, None);
+        assert_eq!(deploy.endpoint, "ENDPOINT");
+        assert!(!deploy.dry_run);
+        // Check that the custom endpoint for broadcasting is used.
+        assert_eq!(Some(Some(Uri::try_from("ENDPOINT2").unwrap())), deploy.broadcast);
         assert_eq!(deploy.store, None);
         assert_eq!(deploy.priority_fee, 77);
         assert_eq!(deploy.record, Some("RECORD".to_string()));

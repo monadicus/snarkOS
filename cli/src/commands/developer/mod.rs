@@ -219,10 +219,15 @@ impl Developer {
     }
 
     /// Determine if the transaction should be broadcast or displayed to user.
+    ///
+    /// This function expects that exactly one of `dry_run`, `store`, and `broadcast` are `true` (or `Some`).
+    /// `broadcast` can be set to `Some(None)` to broadcast using the default endpoint.
+    /// Alternatively, it can be set to `Some(Some(url))` to providifferent
+    /// endpoint than that used for querying.
     #[allow(clippy::too_many_arguments)]
     fn handle_transaction<N: Network>(
         endpoint: &Uri,
-        broadcast: bool,
+        broadcast: &Option<Option<Uri>>,
         dry_run: bool,
         store: &Option<String>,
         store_format: StoreFormat,
@@ -265,8 +270,12 @@ impl Developer {
         };
 
         // Determine if the transaction should be broadcast to the network.
-        if broadcast {
-            let broadcast_endpoint = format!("{endpoint}{}/transaction/broadcast", N::SHORT_NAME);
+        if let Some(broadcast_value) = broadcast {
+            let broadcast_endpoint = if let Some(url) = broadcast_value {
+                url.to_string()
+            } else {
+                format!("{endpoint}{}/transaction/broadcast", N::SHORT_NAME)
+            };
 
             let result: Result<String, _> = Self::http_post_json(&broadcast_endpoint, &transaction);
 

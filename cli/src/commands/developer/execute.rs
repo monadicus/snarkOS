@@ -70,7 +70,12 @@ pub struct Execute {
     #[clap(long, group = "key")]
     dev_key: Option<u16>,
     /// The endpoint to query node state from and broadcast to (if set to broadcast).
-    #[clap(short, long, default_value=DEFAULT_ENDPOINT)]
+    ///
+    /// The given value is expected to be the base URL, e.g., "https://mynode.com", and will be extended automatically
+    /// to fit the network type and query.
+    /// For example, the base URL may extend to "http://mynode.com/testnet/transaction/unconfirmed/ID" to retrieve
+    /// an unconfirmed transaction on the test network.
+    #[clap(short, long, alias="query", default_value=DEFAULT_ENDPOINT, verbatim_doc_comment)]
     endpoint: Uri,
     /// The priority fee in microcredits.
     #[clap(long, default_value_t = 0)]
@@ -78,9 +83,11 @@ pub struct Execute {
     /// The record to spend the fee from.
     #[clap(short, long)]
     record: Option<String>,
-    /// The endpoint used to broadcast the generated transaction.
-    #[clap(short, long, group = "mode")]
-    broadcast: bool,
+    /// Set the transaction to be broadcasted using  (if no value is given, the query endpoint is used).
+    ///
+    /// The given value is expected the full URL of the endpoint, not just the base URL, e.g., "http://mynode.com/testnet/transaction/broadcast".
+    #[clap(short, long, group = "mode", verbatim_doc_comment)]
+    broadcast: Option<Option<Uri>>,
     /// Performs a dry-run of transaction generation.
     #[clap(short, long, group = "mode")]
     dry_run: bool,
@@ -219,7 +226,7 @@ impl Execute {
         // Determine if the transaction should be broadcast, stored, or displayed to the user.
         Developer::handle_transaction(
             &endpoint,
-            self.broadcast,
+            &self.broadcast,
             self.dry_run,
             &self.store,
             self.store_format,

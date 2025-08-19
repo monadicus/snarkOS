@@ -203,10 +203,11 @@ echo """{
 cd program
 
 # Deploy the test program and wait for the deployment to be processed.
-deploy_result=$(snarkos developer deploy --dev-key 0 --network "$network_id" --endpoint=localhost:3030 --broadcast test_program.aleo --wait --timeout 10)
+deploy_result=$(snarkos developer deploy --dev-key 0 --network "$network_id" --endpoint=localhost:3030 --broadcast  --wait --timeout 10 test_program.aleo)
 
 # Execute a function in the deployed program and wait for the execution to be processed.
-execute_result=$(snarkos developer execute --dev-key 0 --network "$network_id" --endpoint=localhost:3030 --broadcast test_program.aleo main 1u32 1u32 --wait --timeout 10)
+# Use the old flags here `--query` and `--broadcast=URL` to test they still work.
+execute_result=$(snarkos developer execute --dev-key 0 --network "$network_id" --query=localhost:3030 --broadcast=http://localhost:3030/$network_name/transaction/broadcast test_program.aleo main 1u32 1u32 --wait --timeout 10)
 
 # Fail if the execution transaction does not exist.
 tx=$(echo "$execute_result" | tail -n 1)

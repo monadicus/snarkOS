@@ -71,9 +71,9 @@ pub struct TransferPrivate {
     /// The record to spend the fee from.
     #[clap(long)]
     fee_record: String,
-    /// The endpoint used to broadcast the generated transaction.
+    /// Set the transaction to be broadcasted to the given endpoint (if no value is given, the query endpoint is used).
     #[clap(short, long, group = "mode")]
-    broadcast: bool,
+    broadcast: Option<Option<Uri>>,
     /// Performs a dry-run of transaction generation.
     #[clap(short, long, group = "mode")]
     dry_run: bool,
@@ -161,7 +161,7 @@ impl TransferPrivate {
         // Determine if the transaction should be broadcast, stored, or displayed to the user.
         Developer::handle_transaction(
             &endpoint,
-            self.broadcast,
+            &self.broadcast,
             self.dry_run,
             &self.store,
             self.store_format,
