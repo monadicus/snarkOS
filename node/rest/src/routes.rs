@@ -486,7 +486,7 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
     ) -> Result<ErasedJson, RestError> {
         // Do not process the request if the node is too far behind to avoid sending outdated data.
         if !rest.routing.is_within_sync_leniency() {
-            return Err(RestError::service_unavailable("Unable to  request delegators (node is syncing)".to_string()));
+            return Err(RestError::service_unavailable("Unable to request delegators (node is syncing)".to_string()));
         }
 
         // Return the delegators for the given validator.
