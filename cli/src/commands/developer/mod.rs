@@ -196,6 +196,11 @@ impl Developer {
         bail!("❌ Transaction {} was not confirmed within {} seconds", transaction_id, timeout_seconds);
     }
 
+    /// Gets the latest eidtion of an Aleo program.
+    fn get_latest_edition<N: Network>(endpoint: &Uri, program_id: &ProgramID<N>) -> Result<u16> {
+        Self::http_get_json(&format!("{endpoint}{}/program/{program_id}/latest_edition", N::SHORT_NAME,))
+    }
+
     /// Gets the public account balance of an Aleo Address (in microcredits).
     fn get_public_balance<N: Network>(endpoint: &Uri, address: &Address<N>) -> Result<u64> {
         // Initialize the program id and account identifier.
