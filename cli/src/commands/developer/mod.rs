@@ -33,23 +33,7 @@ pub use transfer_private::*;
 
 use crate::helpers::{args::network_id_parser, logger::initialize_terminal_logger};
 
-use snarkvm::{
-    console::network::Network,
-    package::Package,
-    prelude::{
-        CanaryV0,
-        Ciphertext,
-        MainnetV0,
-        Plaintext,
-        PrivateKey,
-        ProgramID,
-        Record,
-        TestnetV0,
-        ToBytes,
-        ViewKey,
-        block::Transaction,
-    },
-};
+use snarkvm::{package::Package, prelude::*};
 
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use clap::{Parser, ValueEnum};
@@ -216,6 +200,34 @@ impl Developer {
 
         // Timeout reached
         bail!("❌ Transaction {} was not confirmed within {} seconds", transaction_id, timeout_seconds);
+    }
+
+    /// Gets the public account balance of an Aleo Address (in microcredits).
+    fn get_public_balance<N: Network>(endpoint: &Uri, address: &Address<N>) -> Result<u64> {
+        // Initialize the program id and account identifier.
+        let account_mapping = Identifier::<N>::from_str("account")?;
+        let credits = ProgramID::<N>::from_str("credits.aleo")?;
+
+        // Send a request to the query node.
+        let result: Option<Value<N>> = Self::http_get_json(&format!(
+            "{endpoint}{}/program/{credits}/mapping/{account_mapping}/{address}",
+            N::SHORT_NAME,
+        ))?;
+
+        // Return the balance in microcredits.
+        match result {
+            Some(Value::Plaintext(Plaintext::Literal(Literal::<N>::U64(amount), _))) => Ok(*amount),
+            Some(..) => bail!("Failed to deserialize balance for {address}"),
+            None => Ok(0),
+        }
+    }
+
+    /// Returns the unconfirmed transaction for the given transaction ID.
+    fn get_unconfirmed_transaction<N: Network>(
+        endpoint: &Uri,
+        transaction_id: &N::TransactionID,
+    ) -> Result<Transaction<N>> {
+        Self::http_get_json(&format!("{endpoint}{}/transaction/unconfirmed/{transaction_id}", N::SHORT_NAME))
     }
 
     /// Determine if the transaction should be broadcast or displayed to user.

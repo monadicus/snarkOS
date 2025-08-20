@@ -196,8 +196,7 @@ impl Execute {
         if self.record.is_none() && !is_static_query {
             // Fetch the public balance.
             let address = Address::try_from(&private_key)?;
-            let public_balance = query
-                .get_public_balance(&address)
+            let public_balance = Developer::get_public_balance(&endpoint, &address)
                 .with_context(|| "Failed to check for sufficient funds to send transaction")?;
 
             // Check if the public balance is sufficient.

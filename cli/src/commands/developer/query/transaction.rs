@@ -13,13 +13,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::commands::Developer;
+
 use snarkvm::{
-    ledger::{query::Query, store::helpers::memory::BlockMemory},
+    ledger::{query::Query as LedgerQuery, store::helpers::memory::BlockMemory},
     prelude::Network,
 };
 
 use anyhow::{Context, Result, anyhow};
 use clap::{Parser, builder::NonEmptyStringValueParser};
+use ureq::http::Uri;
 
 use std::str::FromStr;
 
@@ -35,13 +38,14 @@ pub struct QueryTransaction {
 
 impl QueryTransaction {
     /// Retrieve the transaction specified by the user.
-    pub fn parse<N: Network>(self, query: Query<N, BlockMemory<N>>) -> Result<String> {
+    pub fn parse<N: Network>(self, endpoint: Uri) -> Result<String> {
         let transaction_id = N::TransactionID::from_str(self.transaction_id.as_str())
             .map_err(|_| anyhow!("Failed to parse transaction ID"))?;
 
         let txn = if self.unconfirmed {
-            query.get_unconfirmed_transaction(&transaction_id)?
+            Developer::get_unconfirmed_transaction(&endpoint, &transaction_id)?
         } else {
+            let query = LedgerQuery::<N, BlockMemory<N>>::from(endpoint);
             query.get_transaction(&transaction_id)?
         };
 
