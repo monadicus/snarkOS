@@ -25,9 +25,6 @@ pub use execute::*;
 mod scan;
 pub use scan::*;
 
-mod query;
-pub use query::*;
-
 mod transfer_private;
 pub use transfer_private::*;
 
@@ -67,8 +64,6 @@ pub enum DeveloperCommand {
     Scan(Scan),
     /// Execute the `credits.aleo/transfer_private` function.
     TransferPrivate(TransferPrivate),
-    /// Get information about something on the Aleo chain.
-    Query(Query),
 }
 
 const DEFAULT_ENDPOINT: &str = "https://api.explorer.provable.com/v1";
@@ -111,7 +106,6 @@ impl Developer {
             Execute(execute) => execute.parse::<N>(),
             Scan(scan) => scan.parse::<N>(),
             TransferPrivate(transfer_private) => transfer_private.parse::<N>(),
-            Query(query) => query.parse::<N>(),
         }
     }
 
@@ -220,14 +214,6 @@ impl Developer {
             Some(..) => bail!("Failed to deserialize balance for {address}"),
             None => Ok(0),
         }
-    }
-
-    /// Returns the unconfirmed transaction for the given transaction ID.
-    fn get_unconfirmed_transaction<N: Network>(
-        endpoint: &Uri,
-        transaction_id: &N::TransactionID,
-    ) -> Result<Transaction<N>> {
-        Self::http_get_json(&format!("{endpoint}{}/transaction/unconfirmed/{transaction_id}", N::SHORT_NAME))
     }
 
     /// Determine if the transaction should be broadcast or displayed to user.
