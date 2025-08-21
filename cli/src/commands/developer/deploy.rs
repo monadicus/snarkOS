@@ -82,7 +82,7 @@ pub struct Deploy {
     /// The record to spend the fee from.
     #[clap(short, long)]
     record: Option<String>,
-    /// Set the transaction to be broadcasted using  (if no value is given, the query endpoint is used).
+    /// Set the URL used to broadcast the transaction (if no value is given, the query endpoint is used).
     ///
     /// The given value is expected the full URL of the endpoint, not just the base URL, e.g., "http://mynode.com/testnet/transaction/broadcast".
     #[clap(short, long, group = "mode", verbatim_doc_comment)]

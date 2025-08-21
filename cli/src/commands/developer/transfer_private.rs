@@ -71,7 +71,7 @@ pub struct TransferPrivate {
     /// The record to spend the fee from.
     #[clap(long)]
     fee_record: String,
-    /// Set the transaction to be broadcasted to the given endpoint (if no value is given, the query endpoint is used).
+    /// Set the URL used to broadcast the transaction (if no value is given, the query endpoint is used).
     #[clap(short, long, group = "mode")]
     broadcast: Option<Option<Uri>>,
     /// Performs a dry-run of transaction generation.
