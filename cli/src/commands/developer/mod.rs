@@ -82,14 +82,15 @@ pub struct Developer {
     verbosity: Option<u8>,
 }
 
-/// Format for serialized errors returned by the REST API.
-#[derive(serde::Deserialize)]
+/// The serialized REST error sent over the network.
+#[derive(Debug, Deserialize)]
 struct RestError {
     /// The type of error (corresponding to the HTTP status code).
     error_type: String,
     /// The top-level error message.
     message: String,
     /// The chain of errors that led to the top-level error.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     chain: Vec<String>,
 }
 

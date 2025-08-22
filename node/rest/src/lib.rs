@@ -44,7 +44,6 @@ use axum::{
     extract::{ConnectInfo, DefaultBodyLimit, Path, Query, State},
     http::{Method, Request, StatusCode, header::CONTENT_TYPE},
     middleware,
-    middleware::Next,
     response::Response,
     routing::{get, post},
 };
@@ -130,14 +129,11 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
 }
 
 impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
-    async fn spawn_server(&mut self, rest_ip: SocketAddr, rest_rps: u32) -> Result<()> {
+    fn build_routes(&self, rest_rps: u32) -> axum::Router {
         let cors = CorsLayer::new()
             .allow_origin(Any)
             .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
             .allow_headers([CONTENT_TYPE]);
-
-        // Log the REST rate limit per IP.
-        debug!("REST rate limit per IP - {rest_rps} RPS");
 
         // Prepare the rate limiting setup.
         let governor_config = Box::new(
@@ -158,9 +154,8 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
                 .expect("Couldn't set up rate limiting for the REST server!"),
         );
 
-        let router = {
-            let network = N::SHORT_NAME;
-            let routes = axum::Router::new()
+        let network = N::SHORT_NAME;
+        let routes = axum::Router::new()
 
             // All the endpoints before the call to `route_layer` are protected with JWT auth.
             .route(&format!("/{network}/node/address"), get(Self::get_node_address))
@@ -233,28 +228,26 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
             .route(&format!("/{network}/committee/{{height}}"), get(Self::get_committee))
             .route(&format!("/{network}/delegators/{{validator}}"), get(Self::get_delegators_for_validator));
 
-            // If the node is a validator and `telemetry` features is enabled, enable the additional endpoint.
-            #[cfg(feature = "telemetry")]
-            let routes = match self.consensus {
-                Some(_) => routes.route(
-                    &format!("/{network}/validators/participation"),
-                    get(Self::get_validator_participation_scores),
-                ),
-                None => routes,
-            };
+        // If the node is a validator and `telemetry` features is enabled, enable the additional endpoint.
+        #[cfg(feature = "telemetry")]
+        let routes = match self.consensus {
+            Some(_) => routes
+                .route(&format!("/{network}/validators/participation"), get(Self::get_validator_participation_scores)),
+            None => routes,
+        };
 
-            // If the `history` feature is enabled, enable the additional endpoint.
-            #[cfg(feature = "history")]
-            let routes =
-                routes.route(&format!("/{network}/block/{{blockHeight}}/history/{{mapping}}"), get(Self::get_history));
+        // If the `history` feature is enabled, enable the additional endpoint.
+        #[cfg(feature = "history")]
+        let routes =
+            routes.route(&format!("/{network}/block/{{blockHeight}}/history/{{mapping}}"), get(Self::get_history));
 
-            routes
+        routes
             // Pass in `Rest` to make things convenient.
             .with_state(self.clone())
             // Enable tower-http tracing.
             .layer(TraceLayer::new_for_http())
             // Custom logging.
-            .layer(middleware::from_fn(log_middleware))
+            .layer(middleware::map_request(log_middleware))
             // Enable CORS.
             .layer(cors)
             // Cap the request body size at 512KiB.
@@ -262,7 +255,15 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
             .layer(GovernorLayer {
                 config: governor_config.into(),
             })
-        };
+    }
+
+    async fn spawn_server(&mut self, rest_ip: SocketAddr, rest_rps: u32) -> Result<()> {
+        // Log the REST rate limit per IP.
+        debug!("REST rate limit per IP - {rest_rps} RPS");
+
+        let v1_router = self.build_routes(rest_rps).layer(middleware::map_response(v1_error_middleware));
+        let v2_router = axum::Router::new().nest("/v2", self.build_routes(rest_rps));
+        let router = v1_router.merge(v2_router);
 
         let rest_listener =
             TcpListener::bind(rest_ip).await.with_context(|| "Failed to bind TCP port for REST endpoints")?;
@@ -278,14 +279,48 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
     }
 }
 
-async fn log_middleware(
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    request: Request<Body>,
-    next: Next,
-) -> Result<Response, StatusCode> {
+/// Creates a log message for every HTTP request.
+async fn log_middleware(ConnectInfo(addr): ConnectInfo<SocketAddr>, request: Request<Body>) -> Request<Body> {
     info!("Received '{} {}' from '{addr}'", request.method(), request.uri());
+    request
+}
 
-    Ok(next.run(request).await)
+/// Converts errors to the old style for the v1 API.
+/// The error code will always be 500 and the content a simple string.
+async fn v1_error_middleware(response: Response) -> Response {
+    // The status code used by all v1 errors
+    const V1_STATUS_CODE: StatusCode = StatusCode::INTERNAL_SERVER_ERROR;
+
+    if response.status().is_success() {
+        return response;
+    }
+
+    // Return opaque error instead of panicking
+    let fallback = || {
+        let mut response = Response::new(Body::from("Failed to convert error"));
+        *response.status_mut() = V1_STATUS_CODE;
+        response
+    };
+
+    let Ok(bytes) = axum::body::to_bytes(response.into_body(), usize::MAX).await else {
+        return fallback();
+    };
+
+    // Deserialize REST error so we can convert it to a string
+    let Ok(json_err) = serde_json::from_slice::<SerializedRestError>(&bytes) else {
+        return fallback();
+    };
+
+    let mut message = json_err.message;
+    for next in json_err.chain.into_iter() {
+        message = format!("{message} — {next}");
+    }
+
+    let mut response = Response::new(Body::from(message));
+
+    *response.status_mut() = V1_STATUS_CODE;
+
+    response
 }
 
 /// Formats an ID into a truncated identifier (for logging purposes).
@@ -296,4 +331,66 @@ pub fn fmt_id(id: impl ToString) -> String {
         formatted_id.push_str("..");
     }
     formatted_id
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use anyhow::anyhow;
+    use axum::{
+        Router,
+        body::Body,
+        http::{Request, StatusCode},
+        middleware,
+        routing::get,
+    };
+    use tower::ServiceExt; // for `oneshot`
+
+    fn test_app() -> Router {
+        let build_routes = || {
+            Router::new()
+                .route("/not_found", get(|| async { Err::<(), RestError>(RestError::not_found(anyhow!("missing"))) }))
+                .route("/bad_request", get(|| async { Err::<(), RestError>(RestError::bad_request(anyhow!("bad"))) }))
+                .route(
+                    "/service_unavailable",
+                    get(|| async { Err::<(), RestError>(RestError::service_unavailable(anyhow!("gone"))) }),
+                )
+        };
+        let router_v1 = build_routes().route_layer(middleware::map_response(v1_error_middleware));
+        let router_v2 = Router::new().nest("/v2", build_routes());
+        router_v1.merge(router_v2)
+    }
+
+    #[tokio::test]
+    async fn v1_routes_force_internal_server_error() {
+        let app = test_app();
+
+        let res = app.clone().oneshot(Request::builder().uri("/not_found").body(Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+
+        let res =
+            app.clone().oneshot(Request::builder().uri("/bad_request").body(Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+
+        let res =
+            app.oneshot(Request::builder().uri("/service_unavailable").body(Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn v2_routes_return_specific_errors() {
+        let app = test_app();
+
+        let res =
+            app.clone().oneshot(Request::builder().uri("/v2/not_found").body(Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+
+        let res =
+            app.clone().oneshot(Request::builder().uri("/v2/bad_request").body(Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+
+        let res =
+            app.oneshot(Request::builder().uri("/v2/service_unavailable").body(Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
 }

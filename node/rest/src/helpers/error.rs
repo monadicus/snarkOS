@@ -19,7 +19,7 @@ use axum::{
     http::{StatusCode, header::CONTENT_TYPE},
     response::{IntoResponse, Response},
 };
-use serde_json::json;
+use serde::{Deserialize, Serialize};
 
 /// An enum of error handlers for the REST API server.
 #[derive(Debug)]
@@ -36,6 +36,15 @@ pub enum RestError {
     ServiceUnavailable(AnyhowError),
     /// 500 Internal Server Error - Actual server errors, unexpected failures
     InternalServerError(AnyhowError),
+}
+
+/// The serialized REST error sent over the network.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SerializedRestError {
+    pub message: String,
+    pub error_type: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub chain: Vec<String>,
 }
 
 impl RestError {
@@ -94,22 +103,14 @@ impl IntoResponse for RestError {
         };
 
         // Convert to JSON and include the chain of causes (if any).
-        let error_chain = Self::error_chain(&error);
-        let json_body = if error_chain.is_empty() {
-            json!({
-                "message": error.to_string(),
-                "error_type": error_type,
-            })
-        } else {
-            json!({
-                "message": error.to_string(),
-                "error_type": error_type,
-                "chain": error_chain,
-            })
-        }
-        .to_string();
+        let json_body = serde_json::to_string(&SerializedRestError {
+            message: error.to_string(),
+            error_type: error_type.to_string(),
+            chain: Self::error_chain(&error),
+        })
+        .unwrap_or_else(|err| format!("Failed to serialize error: {err}"));
 
-        info!("Returning REST error: {json_body}");
+        info!("Returning REST error: {json_body:?}");
 
         let mut response = Response::new(json_body.into());
         *response.status_mut() = status;
