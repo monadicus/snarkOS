@@ -54,30 +54,33 @@ trap cleanup EXIT
 trap 'echo "⛔️ Error in $BASH_SOURCE at line $LINENO: \"$BASH_COMMAND\" failed (exit $?)"' ERR
 
 # Start all validator nodes in the background
-for ((validator_index = 0; validator_index < $total_validators; validator_index++)); do
+for ((validator_index = 0; validator_index < total_validators; validator_index++)); do
   snarkos clean --dev $validator_index
 
   log_file="$log_dir/validator-$validator_index.log"
-  if [ "$validator_index" -eq 0 ]; then
-    snarkos start --nodisplay --network $network_id --dev $validator_index --allow-external-peers --dev-num-validators $total_validators --validator --logfile $log_file --metrics --no-dev-txs &
+  if [ $validator_index -eq 0 ]; then
+    snarkos start --nodisplay --network "$network_id" --dev "$validator_index" --allow-external-peers \
+      --dev-num-validators "$total_validators" --validator --logfile "$log_file" --metrics --no-dev-txs &
   else
-    snarkos start --nodisplay --network $network_id --dev $validator_index --allow-external-peers --dev-num-validators $total_validators --validator --logfile $log_file &
+    snarkos start --nodisplay --network "$network_id" --dev "$validator_index" --allow-external-peers \
+      --dev-num-validators "$total_validators" --validator --logfile "$log_file" &
   fi
-  PIDS[$validator_index]=$!
+  PIDS[validator_index]=$!
   echo "Started validator $validator_index with PID ${PIDS[$validator_index]}"
   # Add 1-second delay between starting nodes to avoid hitting rate limits
   sleep 1
 done
 
 # Start all client nodes in the background
-for ((client_index = 0; client_index < $total_clients; client_index++)); do
+for ((client_index = 0; client_index < total_clients; client_index++)); do
   node_index=$((client_index + total_validators))
 
   snarkos clean --dev $node_index
 
   log_file="$log_dir/client-$client_index.log"
-  snarkos start --nodisplay --network $network_id --dev $node_index --dev-num-validators $total_validators --client --logfile $log_file &
-  PIDS[$node_index]=$!
+  snarkos start --nodisplay --network "$network_id" --dev $node_index --dev-num-validators "$total_validators" \
+      --client --logfile "$log_file" &
+  PIDS[node_index]=$!
   echo "Started client $client_index with PID ${PIDS[$node_index]}"
   # Add 1-second delay between starting nodes to avoid hitting rate limits
   if [ $client_index -lt $((total_clients - 1)) ]; then
@@ -96,11 +99,11 @@ check_heights() {
     echo "Node $node_index block height: $height"
     
     # Track highest height for reporting
-    if [[ "$height" =~ ^[0-9]+$ ]] && [ $height -gt $highest_height ]; then
+    if [[ "$height" =~ ^[0-9]+$ ]] && [ "$height" -gt "$highest_height" ]; then
       highest_height=$height
     fi
     
-    if ! [[ "$height" =~ ^[0-9]+$ ]] || [ $height -lt $min_height ]; then
+    if ! [[ "$height" =~ ^[0-9]+$ ]] || [ "$height" -lt "$min_height" ]; then
       all_reached=false
     fi
   done
@@ -154,20 +157,20 @@ while [ $total_wait -lt 300 ]; do  # 5 minutes max
 done
 
 # Function checking that nodes created logs on disk.
-check_logs() {
+function check_logs() {
   echo "Checking logs for all nodes..."
   all_reached=true
-  for ((validator_index = 0; validator_index < $total_validators; validator_index++)); do
+  for ((validator_index = 0; validator_index < total_validators; validator_index++)); do
     if [ ! -s "$log_dir/validator-${validator_index}.log" ]; then
       echo "❌ Test failed! Validator #${validator_index} did not create any logs."
-      ls $log_dir
+      ls "$log_dir"
       return 1
     fi
   done
-  for ((client_index = 0; client_index < $total_clients; client_index++)); do
+  for ((client_index = 0; client_index < total_clients; client_index++)); do
     if [ ! -s "$log_dir/client-${client_index}.log" ]; then
       echo "❌ Test failed! Client #${client_index} did not create any logs."
-      ls $log_dir
+      ls "$log_dir"
       return 1
     fi
   done
@@ -175,7 +178,7 @@ check_logs() {
   return 0
 }
 
-# Deploy a program.
+# Creates a test program.
 mkdir -p program
 echo """program test_program.aleo;
 
@@ -198,27 +201,29 @@ echo """{
 }
 """ > program/program.json
 cd program
-# Deploy the program.
-deploy_result=$(snarkos developer deploy --private-key APrivateKey1zkp8CZNn3yeCseEtxuVPbDCwSyhGW6yZKUYKfgXmcpoGPWH --network $network_id --priority-fee 0 --broadcast http://localhost:3030/$network_name/transaction/broadcast --query http://localhost:3030 test_program.aleo)
-# Wait for the deployment to be processed.
-sleep 10
-# Execute a function in the deployed program.
-execute_result=$(snarkos developer execute --private-key APrivateKey1zkp8CZNn3yeCseEtxuVPbDCwSyhGW6yZKUYKfgXmcpoGPWH --network $network_id --query http://localhost:3030 --broadcast http://localhost:3030/$network_name/transaction/broadcast test_program.aleo main 1u32 1u32)
-# Wait for the execution to be processed.
-sleep 10
+
+# Deploy the test program and wait for the deployment to be processed.
+deploy_result=$(snarkos developer deploy --dev-key 0 --network "$network_id" --endpoint=localhost:3030 --broadcast  --wait --timeout 10 test_program.aleo)
+
+# Execute a function in the deployed program and wait for the execution to be processed.
+# Use the old flags here `--query` and `--broadcast=URL` to test they still work.
+execute_result=$(snarkos developer execute --dev-key 0 --network "$network_id" --query=localhost:3030 --broadcast=http://localhost:3030/$network_name/transaction/broadcast test_program.aleo main 1u32 1u32 --wait --timeout 10)
+
 # Fail if the execution transaction does not exist.
 tx=$(echo "$execute_result" | tail -n 1)
 found=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:3030/$network_name/transaction/$tx")
 # Fail if the HTTP response is not 2XX.
 if [[ "$found" -lt 200 || "$found" -ge 300 ]]; then
-  echo "❌ Test failed! Transaction does not exist or contains an error: \ndeploy_result: $deploy_result\n\execute_result: $execute_result\nfound: $found"
+  printf "❌ Test failed! Transaction does not exist or contains an error: \ndeploy_result: %s\n\execute_result: %s\nfound: %s\n" \
+    "$deploy_result" "$execute_result" "$found"
   exit 1
 else
   echo "✅ Transaction executed successfully: $execute_result"
 fi
+
 # Scan the network for records.
-scan_result=$(snarkos developer scan --private-key APrivateKey1zkp8CZNn3yeCseEtxuVPbDCwSyhGW6yZKUYKfgXmcpoGPWH --network $network_id --start 0 --endpoint http://localhost:3030)
-num_records=$(echo "$scan_result" | grep "owner" | wc -l)
+scan_result=$(snarkos developer scan --dev-key 0 --network "$network_id" --start 0 --endpoint=localhost:3030)
+num_records=$(echo "$scan_result" | grep -c "owner")
 # Fail if the scan did not return 4 records.
 if [[ "$num_records" -ne 4 ]]; then
   echo "❌ Test failed! Expected 4 records, but found $num_records: $scan_result"
@@ -250,7 +255,7 @@ echo "❌ Test failed! Not all nodes reached minimum height within 15 minutes."
 
 # Print logs for debugging
 echo "Last 20 lines of validator logs:"
-for ((validator_index = 0; validator_index < $total_validators; validator_index++)); do
+for ((validator_index = 0; validator_index < total_validators; validator_index++)); do
   echo "=== Validator $validator_index logs ==="
   tail -n 20 "$log_dir/validator-$validator_index.log"
 done
