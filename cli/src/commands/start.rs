@@ -179,7 +179,7 @@ pub struct Start {
     /// Write log message to stdout instead of showing a terminal UI.
     ///
     /// This is useful, for example, for running a node as a service instead of in the foreground or to pipe its output into a file.
-    #[clap(long, verbatim_doc_comment, hide = true)]
+    #[clap(long, verbatim_doc_comment)]
     pub nodisplay: bool,
 
     /// Do not show the Aleo banner and information about the node on startup.
