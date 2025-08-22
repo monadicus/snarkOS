@@ -8,7 +8,7 @@ network_id=0 # CDN sync is tested for mainnet
 min_height=250
 
 # Adjust this to show more/less log messages
-log_filter="info"
+log_filter="info,snarkos_node_rest=warn"
 
 max_wait=600 # Wait for up to ten minutes
 poll_interval=1 # Check block heights every second
