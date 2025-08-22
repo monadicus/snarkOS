@@ -154,92 +154,88 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
                 .expect("Couldn't set up rate limiting for the REST server!"),
         );
 
-        let network = N::SHORT_NAME;
         let routes = axum::Router::new()
 
             // All the endpoints before the call to `route_layer` are protected with JWT auth.
-            .route(&format!("/{network}/node/address"), get(Self::get_node_address))
-            .route(&format!("/{network}/program/{{id}}/mapping/{{name}}"), get(Self::get_mapping_values))
-            .route(&format!("/{network}/db_backup"), post(Self::db_backup))
+            .route("/node/address", get(Self::get_node_address))
+            .route("/program/{id}/mapping/{name}", get(Self::get_mapping_values))
+            .route("/db_backup", post(Self::db_backup))
             .route_layer(middleware::from_fn(auth_middleware))
 
              // Get ../consensus_version
-            .route(&format!("/{network}/consensus_version"), get(Self::get_consensus_version))
+            .route("/consensus_version", get(Self::get_consensus_version))
 
             // GET ../block/..
-            .route(&format!("/{network}/block/height/latest"), get(Self::get_block_height_latest))
-            .route(&format!("/{network}/block/hash/latest"), get(Self::get_block_hash_latest))
-            .route(&format!("/{network}/block/latest"), get(Self::get_block_latest))
-            .route(&format!("/{network}/block/{{height_or_hash}}"), get(Self::get_block))
+            .route("/block/height/latest", get(Self::get_block_height_latest))
+            .route("/block/hash/latest", get(Self::get_block_hash_latest))
+            .route("/block/latest", get(Self::get_block_latest))
+            .route("/block/{height_or_hash}", get(Self::get_block))
             // The path param here is actually only the height, but the name must match the route
             // above, otherwise there'll be a conflict at runtime.
-            .route(&format!("/{network}/block/{{height_or_hash}}/header"), get(Self::get_block_header))
-            .route(&format!("/{network}/block/{{height_or_hash}}/transactions"), get(Self::get_block_transactions))
+            .route("/block/{height_or_hash}/header", get(Self::get_block_header))
+            .route("/block/{height_or_hash}/transactions", get(Self::get_block_transactions))
 
             // GET and POST ../transaction/..
-            .route(&format!("/{network}/transaction/{{id}}"), get(Self::get_transaction))
-            .route(&format!("/{network}/transaction/confirmed/{{id}}"), get(Self::get_confirmed_transaction))
-            .route(&format!("/{network}/transaction/unconfirmed/{{id}}"), get(Self::get_unconfirmed_transaction))
-            .route(&format!("/{network}/transaction/broadcast"), post(Self::transaction_broadcast))
+            .route("/transaction/{id}", get(Self::get_transaction))
+            .route("/transaction/confirmed/{id}", get(Self::get_confirmed_transaction))
+            .route("/transaction/unconfirmed/{id}", get(Self::get_unconfirmed_transaction))
+            .route("/transaction/broadcast", post(Self::transaction_broadcast))
 
             // POST ../solution/broadcast
-            .route(&format!("/{network}/solution/broadcast"), post(Self::solution_broadcast))
-
+            .route("/solution/broadcast", post(Self::solution_broadcast))
 
             // GET ../find/..
-            .route(&format!("/{network}/find/blockHash/{{tx_id}}"), get(Self::find_block_hash))
-            .route(&format!("/{network}/find/blockHeight/{{state_root}}"), get(Self::find_block_height_from_state_root))
-            .route(&format!("/{network}/find/transactionID/deployment/{{program_id}}"), get(Self::find_latest_transaction_id_from_program_id))
-            .route(&format!("/{network}/find/transactionID/deployment/{{program_id}}/{{edition}}"), get(Self::find_transaction_id_from_program_id_and_edition))
-            .route(&format!("/{network}/find/transactionID/{{transition_id}}"), get(Self::find_transaction_id_from_transition_id))
-            .route(&format!("/{network}/find/transitionID/{{input_or_output_id}}"), get(Self::find_transition_id))
+            .route("/find/blockHash/{tx_id}", get(Self::find_block_hash))
+            .route("/find/blockHeight/{state_root}", get(Self::find_block_height_from_state_root))
+            .route("/find/transactionID/deployment/{program_id}", get(Self::find_latest_transaction_id_from_program_id))
+            .route("/find/transactionID/deployment/{program_id}/{edition}", get(Self::find_transaction_id_from_program_id_and_edition))
+            .route("/find/transactionID/{transition_id}", get(Self::find_transaction_id_from_transition_id))
+            .route("/find/transitionID/{input_or_output_id}", get(Self::find_transition_id))
 
             // GET ../peers/..
-            .route(&format!("/{network}/peers/count"), get(Self::get_peers_count))
-            .route(&format!("/{network}/peers/all"), get(Self::get_peers_all))
-            .route(&format!("/{network}/peers/all/metrics"), get(Self::get_peers_all_metrics))
+            .route("/peers/count", get(Self::get_peers_count))
+            .route("/peers/all", get(Self::get_peers_all))
+            .route("/peers/all/metrics", get(Self::get_peers_all_metrics))
 
             // GET ../program/..
-            .route(&format!("/{network}/program/{{id}}"), get(Self::get_program))
-            .route(&format!("/{network}/program/{{id}}/latest_edition"), get(Self::get_latest_program_edition))
-            .route(&format!("/{network}/program/{{id}}/{{edition}}"), get(Self::get_program_for_edition))
-            .route(&format!("/{network}/program/{{id}}/mappings"), get(Self::get_mapping_names))
-            .route(&format!("/{network}/program/{{id}}/mapping/{{name}}/{{key}}"), get(Self::get_mapping_value))
+            .route("/program/{id}", get(Self::get_program))
+            .route("/program/{id}/latest_edition", get(Self::get_latest_program_edition))
+            .route("/program/{id}/{edition}", get(Self::get_program_for_edition))
+            .route("/program/{id}/mappings", get(Self::get_mapping_names))
+            .route("/program/{id}/mapping/{name}/{key}", get(Self::get_mapping_value))
 
             // GET ../sync/..
             // Note: keeping ../sync_status for compatibility
-            .route(&format!("/{network}/sync_status"), get(Self::get_sync_status))
-            .route(&format!("/{network}/sync/status"), get(Self::get_sync_status))
-            .route(&format!("/{network}/sync/peers"), get(Self::get_sync_peers))
-            .route(&format!("/{network}/sync/requests"), get(Self::get_sync_requests_summary))
-            .route(&format!("/{network}/sync/requests/list"), get(Self::get_sync_requests_list))
+            .route("/sync_status", get(Self::get_sync_status))
+            .route("/sync/status", get(Self::get_sync_status))
+            .route("/sync/peers", get(Self::get_sync_peers))
+            .route("/sync/requests", get(Self::get_sync_requests_summary))
+            .route("/sync/requests/list", get(Self::get_sync_requests_list))
 
             // GET misc endpoints.
-            .route(&format!("/{network}/version"), get(Self::get_version))
-            .route(&format!("/{network}/blocks"), get(Self::get_blocks))
-            .route(&format!("/{network}/height/{{hash}}"), get(Self::get_height))
-            .route(&format!("/{network}/memoryPool/transmissions"), get(Self::get_memory_pool_transmissions))
-            .route(&format!("/{network}/memoryPool/solutions"), get(Self::get_memory_pool_solutions))
-            .route(&format!("/{network}/memoryPool/transactions"), get(Self::get_memory_pool_transactions))
-            .route(&format!("/{network}/statePath/{{commitment}}"), get(Self::get_state_path_for_commitment))
-            .route(&format!("/{network}/stateRoot/latest"), get(Self::get_state_root_latest))
-            .route(&format!("/{network}/stateRoot/{{height}}"), get(Self::get_state_root))
-            .route(&format!("/{network}/committee/latest"), get(Self::get_committee_latest))
-            .route(&format!("/{network}/committee/{{height}}"), get(Self::get_committee))
-            .route(&format!("/{network}/delegators/{{validator}}"), get(Self::get_delegators_for_validator));
+            .route("/version", get(Self::get_version))
+            .route("/blocks", get(Self::get_blocks))
+            .route("/height/{hash}", get(Self::get_height))
+            .route("/memoryPool/transmissions", get(Self::get_memory_pool_transmissions))
+            .route("/memoryPool/solutions", get(Self::get_memory_pool_solutions))
+            .route("/memoryPool/transactions", get(Self::get_memory_pool_transactions))
+            .route("/statePath/{commitment}", get(Self::get_state_path_for_commitment))
+            .route("/stateRoot/latest", get(Self::get_state_root_latest))
+            .route("/stateRoot/{height}", get(Self::get_state_root))
+            .route("/committee/latest", get(Self::get_committee_latest))
+            .route("/committee/{height}", get(Self::get_committee))
+            .route("/delegators/{validator}", get(Self::get_delegators_for_validator));
 
         // If the node is a validator and `telemetry` features is enabled, enable the additional endpoint.
         #[cfg(feature = "telemetry")]
         let routes = match self.consensus {
-            Some(_) => routes
-                .route(&format!("/{network}/validators/participation"), get(Self::get_validator_participation_scores)),
+            Some(_) => routes.route("/validators/participation", get(Self::get_validator_participation_scores)),
             None => routes,
         };
 
         // If the `history` feature is enabled, enable the additional endpoint.
         #[cfg(feature = "history")]
-        let routes =
-            routes.route(&format!("/{network}/block/{{blockHeight}}/history/{{mapping}}"), get(Self::get_history));
+        let routes = routes.route("/block/{blockHeight}/history/{mapping}", get(Self::get_history));
 
         routes
             // Pass in `Rest` to make things convenient.
@@ -261,9 +257,21 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
         // Log the REST rate limit per IP.
         debug!("REST rate limit per IP - {rest_rps} RPS");
 
-        let v1_router = self.build_routes(rest_rps).layer(middleware::map_response(v1_error_middleware));
-        let v2_router = axum::Router::new().nest("/v2", self.build_routes(rest_rps));
-        let router = v1_router.merge(v2_router);
+        // Add the v1 API as default and under "/v1".
+        let default_router = axum::Router::new().nest(
+            &format!("/{}", N::SHORT_NAME),
+            self.build_routes(rest_rps).layer(middleware::map_response(v1_error_middleware)),
+        );
+        let v1_router = axum::Router::new().nest(
+            &format!("/v1/{}", N::SHORT_NAME),
+            self.build_routes(rest_rps).layer(middleware::map_response(v1_error_middleware)),
+        );
+
+        // Add the v2 API under "/v2".
+        let v2_router = axum::Router::new().nest(&format!("/v2/{}", N::SHORT_NAME), self.build_routes(rest_rps));
+
+        // Combine all routes.
+        let router = default_router.merge(v1_router).merge(v2_router);
 
         let rest_listener =
             TcpListener::bind(rest_ip).await.with_context(|| "Failed to bind TCP port for REST endpoints")?;
@@ -295,7 +303,7 @@ async fn v1_error_middleware(response: Response) -> Response {
         return response;
     }
 
-    // Return opaque error instead of panicking
+    // Returns a opaque error instead of panicking.
     let fallback = || {
         let mut response = Response::new(Body::from("Failed to convert error"));
         *response.status_mut() = V1_STATUS_CODE;

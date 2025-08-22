@@ -111,7 +111,7 @@ check_heights() {
   highest_height=0
   for ((node_index = 0; node_index < $((total_validators + total_clients)); node_index++)); do
     port=$((3030 + node_index))
-    height=$(curl -s "http://127.0.0.1:$port/$network_name/block/height/latest" || echo "0")
+    height=$(curl -s "http://127.0.0.1:$port/v2/$network_name/block/height/latest" || echo "0")
     echo "Node $node_index block height: $height"
     
     # Track highest height for reporting
@@ -137,8 +137,8 @@ last_seen_consensus_version=0
 last_seen_height=0
 # Function checking that the first node reached the latest (unchanging) consensus version.
 consensus_version_stable() {
-  consensus_version=$(curl -s "http://localhost:3030/$network_name/consensus_version")
-  height=$(curl -s "http://localhost:3030/$network_name/block/height/latest")
+  consensus_version=$(curl -s "http://localhost:3030/v2/$network_name/consensus_version")
+  height=$(curl -s "http://localhost:3030/v2/$network_name/block/height/latest")
   if [[ "$consensus_version" =~ ^[0-9]+$ ]] && [[ "$height" =~ ^[0-9]+$ ]]; then
     # If the consensus version is greater than the last seen, we update it.
     if (( consensus_version > last_seen_consensus_version)); then
@@ -223,11 +223,12 @@ _deploy_result=$(cd program && snarkos developer deploy --dev-key 0 --network "$
 
 # Execute a function in the deployed program and wait for the execution to be processed.
 # Use the old flags here `--query` and `--broadcast=URL` to test they still work.
-execute_result=$(cd program && snarkos developer execute --dev-key 0 --network "$network_id" --query=localhost:3030 --broadcast=http://localhost:3030/$network_name/transaction/broadcast test_program.aleo main 1u32 1u32 --wait --timeout 10)
+# Also, use the v1 API to test it still works.
+execute_result=$(cd program && snarkos developer execute --dev-key 0 --network "$network_id" --query=localhost:3030 --broadcast=http://localhost:3030/v1/$network_name/transaction/broadcast test_program.aleo main 1u32 1u32 --wait --timeout 10)
 
 # Fail if the execution transaction does not exist.
 tx=$(echo "$execute_result" | tail -n 1)
-found=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:3030/$network_name/transaction/$tx")
+found=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:3030/v2/$network_name/transaction/$tx")
 # Fail if the HTTP response is not 2XX.
 if (( found < 200 || found >= 300 )); then
   printf "❌ Test failed! Transaction does not exist or contains an error: \nexecute_result: %s\nfound: %s\n" \

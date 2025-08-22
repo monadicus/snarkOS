@@ -237,7 +237,7 @@ impl Developer {
 
         while start_time.elapsed() < timeout_duration {
             // Check if transaction exists in a confirmed block
-            let tx_endpoint = format!("{endpoint}{}/transaction/{transaction_id}", N::SHORT_NAME);
+            let tx_endpoint = format!("{endpoint}v2/{}/transaction/{transaction_id}", N::SHORT_NAME);
             let result = Self::http_get(&tx_endpoint).with_context(|| "Failed to check transaction status")?;
 
             match result {
@@ -255,7 +255,7 @@ impl Developer {
 
     /// Gets the latest eidtion of an Aleo program.
     fn get_latest_edition<N: Network>(endpoint: &Uri, program_id: &ProgramID<N>) -> Result<u16> {
-        match Self::http_get_json(&format!("{endpoint}{}/program/{program_id}/latest_edition", N::SHORT_NAME,))? {
+        match Self::http_get_json(&format!("{endpoint}v2/{}/program/{program_id}/latest_edition", N::SHORT_NAME,))? {
             Some(edition) => Ok(edition),
             None => bail!("Got unexpected 404 response"),
         }
@@ -269,7 +269,7 @@ impl Developer {
 
         // Send a request to the query node.
         let result: Option<Value<N>> = Self::http_get_json(&format!(
-            "{endpoint}{}/program/{credits}/mapping/{account_mapping}/{address}",
+            "{endpoint}v2/{}/program/{credits}/mapping/{account_mapping}/{address}",
             N::SHORT_NAME,
         ))?;
 
@@ -337,7 +337,7 @@ impl Developer {
             let broadcast_endpoint = if let Some(url) = broadcast_value {
                 url.to_string()
             } else {
-                format!("{endpoint}{}/transaction/broadcast", N::SHORT_NAME)
+                format!("{endpoint}v2/{}/transaction/broadcast", N::SHORT_NAME)
             };
 
             let result: Result<String> = match Self::http_post_json(&broadcast_endpoint, &transaction) {
