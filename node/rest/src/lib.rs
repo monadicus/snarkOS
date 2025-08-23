@@ -220,6 +220,7 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
             .route("/memoryPool/solutions", get(Self::get_memory_pool_solutions))
             .route("/memoryPool/transactions", get(Self::get_memory_pool_transactions))
             .route("/statePath/{commitment}", get(Self::get_state_path_for_commitment))
+            .route("/statePaths", get(Self::get_state_paths_for_commitments))
             .route("/stateRoot/latest", get(Self::get_state_root_latest))
             .route("/stateRoot/{height}", get(Self::get_state_root))
             .route("/committee/latest", get(Self::get_committee_latest))

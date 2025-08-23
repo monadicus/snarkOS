@@ -34,6 +34,15 @@ use rayon::prelude::*;
 
 use version::VersionInfo;
 
+/// Deserialize a CSV string into a vector of strings.
+fn de_csv<'de, D>(de: D) -> std::result::Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s = String::deserialize(de)?;
+    Ok(if s.trim().is_empty() { Vec::new() } else { s.split(',').map(|x| x.trim().to_string()).collect() })
+}
+
 /// The `get_blocks` query object.
 #[derive(Deserialize, Serialize)]
 pub(crate) struct BlockRange {
@@ -59,6 +68,13 @@ pub(crate) struct Metadata {
 #[derive(Copy, Clone, Deserialize, Serialize)]
 pub(crate) struct CheckTransaction {
     check_transaction: Option<bool>,
+}
+
+/// The query object for `get_state_paths_for_commitments`.
+#[derive(Clone, Deserialize, Serialize)]
+pub(crate) struct Commitments {
+    #[serde(deserialize_with = "de_csv")]
+    commitments: Vec<String>,
 }
 
 /// The return value for a `sync_status` query.
@@ -445,6 +461,36 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
         Path(commitment): Path<Field<N>>,
     ) -> Result<ErasedJson, RestError> {
         Ok(ErasedJson::pretty(rest.ledger.get_state_path_for_commitment(&commitment)?))
+    }
+
+    // GET /<network>/statePaths?commitments=cm1,cm2,...
+    pub(crate) async fn get_state_paths_for_commitments(
+        State(rest): State<Self>,
+        Query(commitments): Query<Commitments>,
+    ) -> Result<ErasedJson, RestError> {
+        // Retrieve the number of commitments.
+        let num_commitments = commitments.commitments.len();
+        // Return an error if no commitments are provided.
+        if num_commitments == 0 {
+            return Err(RestError("No commitments provided".to_string()));
+        }
+        // Return an error if the number of commitments exceeds the maximum allowed.
+        if num_commitments > N::MAX_INPUTS {
+            return Err(RestError(format!(
+                "Too many commitments provided (max: {}, got: {})",
+                N::MAX_INPUTS,
+                num_commitments
+            )));
+        }
+
+        // Deserialize the commitments from the query.
+        let commitments = commitments
+            .commitments
+            .iter()
+            .map(|s| s.parse::<Field<N>>().map_err(|_| RestError(format!("Invalid commitment: {s}"))))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(ErasedJson::pretty(rest.ledger.get_state_paths_for_commitments(&commitments)?))
     }
 
     // GET /<network>/stateRoot/latest
