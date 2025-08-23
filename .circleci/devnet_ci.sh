@@ -135,6 +135,7 @@ check_heights() {
 
 last_seen_consensus_version=0
 last_seen_height=0
+
 # Function checking that the first node reached the latest (unchanging) consensus version.
 consensus_version_stable() {
   consensus_version=$(curl -s "http://localhost:3030/v2/$network_name/consensus_version")
@@ -224,7 +225,7 @@ _deploy_result=$(cd program && snarkos developer deploy --dev-key 0 --network "$
 # Execute a function in the deployed program and wait for the execution to be processed.
 # Use the old flags here `--query` and `--broadcast=URL` to test they still work.
 # Also, use the v1 API to test it still works.
-execute_result=$(cd program && snarkos developer execute --dev-key 0 --network "$network_id" --query=localhost:3030 --broadcast=http://localhost:3030/v1/$network_name/transaction/broadcast test_program.aleo main 1u32 1u32 --wait --timeout 10)
+execute_result=$(cd program && snarkos developer execute --dev-key 0 --network "$network_id" --query=localhost:3030 --broadcast=http://localhost:3030/v1/${network_name}/transaction/broadcast test_program.aleo main 1u32 1u32 --wait --timeout 10)
 
 # Fail if the execution transaction does not exist.
 tx=$(echo "$execute_result" | tail -n 1)
@@ -243,8 +244,7 @@ echo "ℹ️Testing REST API and REST Error Handling"
 # Test invalid transaction data (JsonDataError) returns 422 Unprocessable Content
 echo "Testing invalid transaction data returns 422 status code..."
 (cd program && snarkos developer execute --dev-key 0 --network "$network_id" --endpoint=localhost:3030 \
-  --store txn_data.json --store-format=string \
-  test_program.aleo main 1u32 1u32)
+  --store txn_data.json --store-format=string test_program.aleo main 1u32 1u32)
 
 # Modify the proof data
 # This changes the last three characters in the hash but keeps the correct length.
@@ -254,7 +254,7 @@ echo "Testing invalid transaction data returns 422 status code..."
 invalid_tx_status=$(curl -s -w "%{http_code}" -X POST \
   -H "Content-Type: application/json" \
   -d "$(< ./program/invalid_txn_data.json)" \
-  "http://localhost:3030/$network_name/transaction/broadcast" \
+  "http://localhost:3030/v2/$network_name/transaction/broadcast" \
   -o /dev/null)
 
 if (( invalid_tx_status == 422 )); then
@@ -268,7 +268,7 @@ fi
 json_error=$(curl -s -X POST \
   -H "Content-Type: application/json" \
   -d "$(< ./program/invalid_txn_data.json)" \
-  "http://localhost:3030/$network_name/transaction/broadcast")
+  "http://localhost:3030/v2/$network_name/transaction/broadcast")
 
 # Ensure the top-level error message is "Invalid transaction"
 if ! jq -e '.message | test("Invalid transaction")' <<< "$json_error" > /dev/null ; then 
@@ -282,7 +282,7 @@ echo "✅ Invalid transaction return valid JSON error"
 malformed_json_response=$(curl -s -w "%{http_code}" -X POST \
   -H "Content-Type: application/json" \
   -d '{"malformed": json}' \
-  "http://localhost:3030/$network_name/transaction/broadcast" \
+  "http://localhost:3030/v2/$network_name/transaction/broadcast" \
   -o /dev/null)
 
 if (( malformed_json_response == 400 )); then
@@ -296,7 +296,7 @@ fi
 malformed_json_error=$(curl -s -X POST \
   -H "Content-Type: application/json" \
   -d '{"malformed": json}' \
-  "http://localhost:3030/$network_name/transaction/broadcast")
+  "http://localhost:3030/v2/$network_name/transaction/broadcast")
 
 # Verify the message contains JSON-related error text
 if ! jq -e '.message | test("Invalid JSON")' <<< "$malformed_json_error" > /dev/null; then
@@ -310,7 +310,7 @@ echo "✅ Malformed JSON returns properly formatted RestError with JSON syntax e
 echo "Testing missing Content-Type header returns 400 status code..."
 missing_content_type_response=$(curl -s -w "%{http_code}" -X POST \
   -d '{"valid": "json"}' \
-  "http://localhost:3030/$network_name/transaction/broadcast" \
+  "http://localhost:3030/v2/$network_name/transaction/broadcast" \
   -o /dev/null)
 
 if (( missing_content_type_response == 400 )); then
@@ -324,7 +324,7 @@ fi
 echo "Testing missing Content-Type returns valid RestError format..."
 missing_content_type_error=$(curl -s -X POST \
   -d '{"valid": "json"}' \
-  "http://localhost:3030/$network_name/transaction/broadcast")
+  "http://localhost:3030/v2/$network_name/transaction/broadcast")
 
 # Verify the response is valid JSON
 if ! jq . <<< "$missing_content_type_error" > /dev/null 2>&1; then
