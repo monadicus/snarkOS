@@ -472,11 +472,11 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
         let num_commitments = commitments.commitments.len();
         // Return an error if no commitments are provided.
         if num_commitments == 0 {
-            return Err(RestError("No commitments provided".to_string()));
+            return Err(RestError::unprocessable_entity(anyhow!("No commitments provided")));
         }
         // Return an error if the number of commitments exceeds the maximum allowed.
         if num_commitments > N::MAX_INPUTS {
-            return Err(RestError(format!(
+            return Err(RestError::unprocessable_entity(anyhow!(
                 "Too many commitments provided (max: {}, got: {})",
                 N::MAX_INPUTS,
                 num_commitments
@@ -487,7 +487,10 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
         let commitments = commitments
             .commitments
             .iter()
-            .map(|s| s.parse::<Field<N>>().map_err(|_| RestError(format!("Invalid commitment: {s}"))))
+            .map(|s| {
+                s.parse::<Field<N>>()
+                    .map_err(|err| RestError::unprocessable_entity(err.context(format!("Invalid commitment: {s}"))))
+            })
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(ErasedJson::pretty(rest.ledger.get_state_paths_for_commitments(&commitments)?))
