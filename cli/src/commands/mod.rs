@@ -54,6 +54,10 @@ pub struct CLI {
     /// Specify a subcommand.
     #[clap(subcommand)]
     pub command: Command,
+
+    /// Disable checking for new versions at startup.
+    #[clap(long, global = true)]
+    pub noupdater: bool,
 }
 
 /// The subcommand passed after `snarkos`, e.g. `Start` corresponds to `snarkos start`.
