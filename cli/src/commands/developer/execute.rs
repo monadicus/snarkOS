@@ -158,14 +158,14 @@ impl Execute {
             // Initialize the VM.
             let vm = VM::from(store)?;
 
-            if !is_static_query {
+            if !is_static_query && program_id != ProgramID::from_str("credits.aleo")? {
                 let height = query.current_block_height()?;
                 let version = N::CONSENSUS_VERSION(height)?;
                 debug!("At block height {height} and consensus {version:?}");
-
-                // Load the program and it's imports into the process.
                 let edition = Developer::get_latest_edition(&endpoint, &program_id)
                     .with_context(|| format!("Failed to get latest edition for program {program_id}"))?;
+
+                // Load the program and it's imports into the process.
                 load_program(&query, &mut vm.process().write(), &program_id, edition)?;
             }
 
