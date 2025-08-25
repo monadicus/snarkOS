@@ -55,7 +55,7 @@ while (( total_wait < max_wait )); do
     echo "🎉 Test passed!. Waited $total_wait for $min_height blocks. Throughput was $throughput blocks/s."
 
     # Append data to results file.
-    printf "{ \"name\": \"cdn-sync\", \"unit\": \"blocks/s\", \"value\": %.3f, \"extra\": \"total_wait=%is\" }\n" \
+    printf "{ \"name\": \"cdn-sync\", \"unit\": \"blocks/s\", \"value\": %.3f, \"extra\": \"total_wait=%is, target_height=${min_height}\" }\n" \
        "$throughput" "$total_wait" | tee -a results.json
     shutdown "${PIDS[@]}"
     exit 0

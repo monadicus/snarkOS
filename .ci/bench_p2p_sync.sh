@@ -5,7 +5,7 @@
 ###########################################################
 
 network_id=1
-min_height=240
+min_height=250
 
 # The number of clients that are syncing
 num_clients=1
@@ -20,6 +20,10 @@ poll_interval=1 # Check block heights every second
 
 network_name=$(get_network_name $network_id)
 echo "Using network: $network_name (ID: $network_id)"
+
+snapshot_info=$(<info.txt)
+echo "Snapshot_info:"
+echo "${snapshot_info}"
 
 # Create log directory
 log_dir=".logs-$(date +"%Y%m%d%H%M%S")"
@@ -76,8 +80,8 @@ while (( total_wait < max_wait )); do
     echo "🎉 Test passed!. Waited $total_wait for $min_height blocks. Throughput was $throughput blocks/s."
 
     # Append data to results file.
-    printf "{ \"name\": \"p2p-sync\", \"unit\": \"blocks/s\", \"value\": %.3f, \"extra\": \"total_wait=%is\" },\n" \
-       "$throughput" "$total_wait" | tee -a results.json
+    printf "{ \"name\": \"p2p-sync\", \"unit\": \"blocks/s\", \"value\": %.3f, \"extra\": \"total_wait=%is, target_height=%i, %s\" },\n" \
+       "$throughput" "$total_wait" "$min_height" "$snapshot_info" | tee -a results.json
     shutdown "${PIDS[@]}"
     exit 0
   fi

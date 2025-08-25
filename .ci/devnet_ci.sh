@@ -1,4 +1,9 @@
 #!/bin/bash
+
+####################################################
+# Runs and tests a development network
+####################################################
+
 set -eo pipefail # error on any command failure
 
 # Uncomment this to print commands before executing them for easier debugging.
@@ -52,7 +57,7 @@ common_flags="--nodisplay --nobanner --noupdater --network=$network_id \
 
 # Start all validator nodes in the background
 for ((validator_index = 0; validator_index < total_validators; validator_index++)); do
-  snarkos clean --dev $validator_index
+  snarkos clean --dev $validator_index --network=$network_id
 
   log_file="$log_dir/validator-$validator_index.log"
   if [ $validator_index -eq 0 ]; then
@@ -64,6 +69,7 @@ for ((validator_index = 0; validator_index < total_validators; validator_index++
   fi
   PIDS[validator_index]=$!
   echo "Started validator $validator_index with PID ${PIDS[$validator_index]}"
+
   # Add 1-second delay between starting nodes to avoid hitting rate limits
   sleep 1
 done
