@@ -2382,7 +2382,7 @@ mod tests {
         // Check the workers are empty.
         primary.workers().iter().for_each(|worker| assert!(worker.transmissions().is_empty()));
 
-        // Generate a solution and a transaction.
+        // Generate a solution and transactions.
         let (solution_id, solution) = sample_unconfirmed_solution(&mut rng);
         primary.workers[0].process_unconfirmed_solution(solution_id, solution).await.unwrap();
 

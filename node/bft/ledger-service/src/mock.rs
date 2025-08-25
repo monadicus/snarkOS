@@ -21,7 +21,7 @@ use snarkvm::{
         narwhal::{BatchCertificate, Data, Subdag, Transmission, TransmissionID},
         puzzle::{Solution, SolutionID},
     },
-    prelude::{Address, ConsensusVersion, Field, Network, Result, Zero, bail, ensure},
+    prelude::{Address, ConsensusVersion, Field, Network, Result, Zero, bail, ensure, consensus_config_value},
 };
 
 use indexmap::IndexMap;
@@ -244,8 +244,9 @@ impl<N: Network> LedgerService<N> for MockLedgerService<N> {
         &self,
         _transaction_id: N::TransactionID,
         _transaction: Transaction<N>,
-        _consensus_version: ConsensusVersion,
+        consensus_version: ConsensusVersion,
     ) -> Result<u64> {
-        Ok(N::TRANSACTION_SPEND_LIMIT.last().unwrap().1)
+        let height = N::CONSENSUS_HEIGHT(consensus_version).unwrap();
+        Ok(consensus_config_value!(N, TRANSACTION_SPEND_LIMIT, height).unwrap())
     }
 }
