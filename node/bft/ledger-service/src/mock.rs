@@ -21,7 +21,7 @@ use snarkvm::{
         narwhal::{BatchCertificate, Data, Subdag, Transmission, TransmissionID},
         puzzle::{Solution, SolutionID},
     },
-    prelude::{Address, ConsensusVersion, Field, Network, Result, Zero, bail, ensure, consensus_config_value},
+    prelude::{Address, ConsensusVersion, Field, Network, Result, Zero, bail, consensus_config_value, ensure},
 };
 
 use indexmap::IndexMap;
