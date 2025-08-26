@@ -183,7 +183,8 @@ impl Deploy {
             let vm = VM::from(store).with_context(|| "Failed to initialize the virtual machine")?;
 
             // Compute the minimum deployment cost.
-            let (minimum_deployment_cost, (_, _, _, _)) = deployment_cost(&vm.process().read(), &deployment)?;
+            let (minimum_deployment_cost, (_, _, _, _)) =
+                deployment_cost(&vm.process().read(), &deployment, consensus_version)?;
 
             // Prepare the fees.
             let fee = match &self.record {
