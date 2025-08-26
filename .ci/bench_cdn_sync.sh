@@ -22,14 +22,12 @@ echo "Using network: $network_name (ID: $network_id)"
 log_dir=".logs-$(date +"%Y%m%d%H%M%S")"
 mkdir -p "$log_dir"
 
-# Array to store PIDs of all processes
-declare -a PIDS
-
 # Define a trap handler that cleans up all processes on exit.
 function exit_handler() {
-  shutdown "${PIDS[@]}"
+  stop_nodes
 }
 trap exit_handler EXIT
+trap child_exit_handler CHLD
 
 # Define a trap handler that prints a message when an error occurs 
 trap 'echo "⛔️ Error in $BASH_SOURCE at line $LINENO: \"$BASH_COMMAND\" failed (exit $?)"' ERR
@@ -57,7 +55,6 @@ while (( total_wait < max_wait )); do
     # Append data to results file.
     printf "{ \"name\": \"cdn-sync\", \"unit\": \"blocks/s\", \"value\": %.3f, \"extra\": \"total_wait=%is, target_height=${min_height}\" }\n" \
        "$throughput" "$total_wait" | tee -a results.json
-    shutdown "${PIDS[@]}"
     exit 0
   fi
   
@@ -69,5 +66,4 @@ done
 
 echo "❌ Test failed! Client did not sync within 5 minutes."
 
-shutdown "${PIDS[@]}"
 exit 1

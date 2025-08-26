@@ -32,14 +32,9 @@ log_dir="$PWD/.logs-$(date +"%Y%m%d%H%M%S")"
 mkdir -p "$log_dir"
 chmod 755 "$log_dir"
 
-# Array to store PIDs of all processes
-declare -a PIDS
-
 # Define a trap handler that cleans up all processes on exit.
 function exit_handler() {
-  shutdown "${PIDS[@]}"
-  rm program/main.aleo || true
-  rm program/program.json || true
+  stop_nodes
 
   # Remove all temporary files and folders
   rm program/program.json program/main.aleo || true
@@ -47,6 +42,7 @@ function exit_handler() {
   rmdir program || true
 }
 trap exit_handler EXIT
+trap child_exit_handler CHLD
 
 # Define a trap handler that prints a message when an error occurs 
 trap 'echo "⛔️ Error in $BASH_SOURCE at line $LINENO: \"$BASH_COMMAND\" failed (exit $?)"' ERR

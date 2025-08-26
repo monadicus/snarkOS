@@ -4,6 +4,23 @@
 # Utility functions for devnet scripts
 ######################################
 
+# Array to store PIDs of all processes
+declare -a PIDS
+
+# Flag is set true once a node process stopped
+node_stopped=false
+
+# Handler for a child process exiting
+function child_exit_handler() {
+  # only set to true if this was indeed a node
+  for i in "${!PIDS[@]}"; do
+    if [[ "${PIDS[i]}" -eq "$pid" ]]; then
+      echo "Node #${i} (pid=$pid) exited"
+      node_stopped=true
+    fi
+  done
+}
+
 # Function checking that each node reached a sufficient block height.
 function check_heights() {
   echo "Checking block heights on all nodes..."
@@ -88,10 +105,9 @@ function get_network_name() {
 }
 
 # Stops all running processe in the given list.
-function shutdown() {
-  pids=("$@")
-  echo "🚨 Cleaning up ${#pids[@]} process(es)…"
-  for pid in "${pids[@]}"; do
+function stop_nodes() {
+  echo "🚨 Cleaning up ${#PIDS[@]} process(es)…"
+  for pid in "${PIDS[@]}"; do
     if kill -0 "$pid" 2>/dev/null; then
       kill -9 "$pid" 2>/dev/null || true
     fi
@@ -123,6 +139,11 @@ function wait_for_nodes() {
   local total_clients=$2
 
   while true; do
+    if [ "$node_stopped" = true ]; then
+      echo "Something went wrong: one more nodes stopped unexpectedly"
+      return 1
+    fi
+    
     if check_nodes "$total_validators" "$total_clients"; then
       echo "All nodes are ready!"
       return 0

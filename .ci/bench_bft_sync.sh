@@ -25,14 +25,12 @@ echo ${snapshot_info}
 log_dir=".logs-$(date +"%Y%m%d%H%M%S")"
 mkdir -p "$log_dir"
 
-# Array to store PIDs of all processes
-declare -a PIDS
-
 # Define a trap handler that cleans up all processes on exit.
 function exit_handler() {
-  shutdown "${PIDS[@]}"
+  stop_nodes
 }
 trap exit_handler EXIT
+trap child_exit_handler CHLD
 
 # Define a trap handler that prints a message when an error occurs 
 trap 'echo "⛔️ Error in $BASH_SOURCE at line $LINENO: \"$BASH_COMMAND\" failed (exit $?)"' ERR
@@ -99,5 +97,4 @@ for ((node_index = 0; node_index <= num_nodes; node_index++)); do
   tail -n 20 "$log_dir/validator-$node_index.log"
 done
 
-shutdown "${PIDS[@]}"
 exit 1

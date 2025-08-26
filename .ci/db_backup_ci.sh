@@ -21,21 +21,17 @@ jwt[1]="eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhbGVvMXMzd3M1dHJhODdmanl
 jwt[2]="eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhbGVvMWFzaHl1OTZ0andlNjN1MGd0bm52OHo1bGhhcGR1NGw1cGpzbDJraGE3ZnY3aHZ6MmVxeHM1ZHowcmciLCJpYXQiOjE3NDkxMTYzNDUsImV4cCI6MjA2NDQ3NjM0NX0.zxO1ajmQ0Wqr1gg4NuRzH4i_hiUBt7_fP9WP3KHbp4c"
 jwt[3]="eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhbGVvMTJ1eDNnZGF1Y2swdjYwd2VzdGdjcHFqN3Y4cnJjcjN2MzQ2ZTRqdHEwNHE3a2t0MjJjenNoODA4djIiLCJpYXQiOjE3NDkxMTYzNDUsImV4cCI6MjA2NDQ3NjM0NX0.bJZ-fcrJwaI5YdPXDQ1nySV-jmxeABQCSvL1Ag9CSpo"
 
-# Array to store PIDs of all processes
-declare -a PIDS
-
 # Define a trap handler that cleans up all processes on exit.
-function exit_handler() {
-  shutdown "${PIDS[@]}"
-}
-trap exit_handler EXIT
+trap stop_nodes EXIT
+trap child_exit_handler CHLD
 
 # Define a trap handler that prints a message when an error occurs 
 trap 'echo "⛔️ Error in $BASH_SOURCE at line $LINENO: \"$BASH_COMMAND\" failed (exit $?)"' ERR
 
-
 # Start all validator nodes in the background
 for ((validator_index = 0; validator_index < total_validators; validator_index++)); do
+  snarkos clean --dev $validator_index --network=$network_id
+
   snarkos start --nodisplay --network $network_id --dev $validator_index --dev-num-validators $total_validators --validator --jwt-secret $jwt_secret --jwt-timestamp $jwt_ts &
   PIDS[validator_index]=$!
   echo "Started validator $validator_index with PID ${PIDS[$validator_index]}"
@@ -86,9 +82,9 @@ while (( total_wait < 600 )); do  # 10 minutes max
       checkpoint_created=false
 
       # Gracefully shut down the validators
-      shutdown "${PIDS[@]}"
+      stop_nodes
       # Wait until the shutdown concludes.
-      sleep 5
+      wait
 
       for ((validator_index = 0; validator_index < total_validators; validator_index++)); do
         # Remove the original ledger
@@ -125,7 +121,6 @@ while (( total_wait < 600 )); do  # 10 minutes max
       fi
 
       remaining_checkpoints=$((remaining_checkpoints-1))
-
     fi
   fi
 

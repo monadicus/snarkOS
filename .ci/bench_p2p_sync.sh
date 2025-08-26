@@ -29,14 +29,9 @@ echo "${snapshot_info}"
 log_dir=".logs-$(date +"%Y%m%d%H%M%S")"
 mkdir -p "$log_dir"
 
-# Array to store PIDs of all processes
-declare -a PIDS
-
 # Define a trap handler that cleans up all processes on exit.
-function exit_handler() {
-  shutdown "${PIDS[@]}"
-}
-trap exit_handler EXIT
+trap stop_nodes EXIT
+trap child_exit_handler CHLD
 
 # Define a trap handler that prints a message when an error occurs 
 trap 'echo "⛔️ Error in $BASH_SOURCE at line $LINENO: \"$BASH_COMMAND\" failed (exit $?)"' ERR
@@ -82,7 +77,6 @@ while (( total_wait < max_wait )); do
     # Append data to results file.
     printf "{ \"name\": \"p2p-sync\", \"unit\": \"blocks/s\", \"value\": %.3f, \"extra\": \"total_wait=%is, target_height=%i, %s\" },\n" \
        "$throughput" "$total_wait" "$min_height" "$snapshot_info" | tee -a results.json
-    shutdown "${PIDS[@]}"
     exit 0
   fi
   
@@ -101,5 +95,4 @@ for ((client_index = 0; client_index < num_clients; client_index++)); do
   tail -n 20 "$log_dir/client-$client_index.log"
 done
 
-shutdown "${PIDS[@]}"
 exit 1
