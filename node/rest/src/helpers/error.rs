@@ -43,7 +43,8 @@ pub enum RestError {
 pub struct SerializedRestError {
     pub message: String,
     pub error_type: String,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    /// Does not include error chain in message if it is empty, and generates an empty error chain if none is given.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub chain: Vec<String>,
 }
 
