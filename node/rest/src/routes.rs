@@ -326,7 +326,7 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
         metadata: Query<Metadata>,
     ) -> Result<ErasedJson, RestError> {
         // Get the program from the ledger.
-        let program = rest.ledger.get_program(id)?;
+        let program = rest.ledger.get_program(id).with_context(|| format!("Failed to find program `{id}`"))?;
         // Check if metadata is requested and return the program with metadata if so.
         if metadata.metadata.unwrap_or(false) {
             // Get the edition of the program.
@@ -345,7 +345,10 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
         metadata: Query<Metadata>,
     ) -> Result<ErasedJson, RestError> {
         // Get the program from the ledger.
-        let program = rest.ledger.get_program_for_edition(id, edition)?;
+        let program = rest
+            .ledger
+            .get_program_for_edition(id, edition)
+            .with_context(|| format!("Failed to find program `{id}` for edition {edition}"))?;
         // Check if metadata is requested and return the program with metadata if so.
         if metadata.metadata.unwrap_or(false) {
             return rest.return_program_with_metadata(program, edition);
