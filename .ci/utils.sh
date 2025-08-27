@@ -151,3 +151,15 @@ function wait_for_nodes() {
     fi
   done
 }
+
+# Compute the throughput for a number of operation over some time
+function compute_throughput {
+  local num_ops=$1
+  local duration=$2
+  local decimal_points=2
+  
+  # Use floating point division
+  result=$(bc <<< "scale=$decimal_points; $num_ops/$duration")
+
+  echo "$result"
+}

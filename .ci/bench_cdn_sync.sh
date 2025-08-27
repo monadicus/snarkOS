@@ -47,10 +47,9 @@ wait_for_nodes 0 1
 total_wait=0
 while (( total_wait < max_wait )); do
   if check_heights 0 1 $min_height "$network_name"; then
-    # Use floating point division
-    throughput=$(bc <<< "scale=2; $min_height/$total_wait")
+    throughput=$(compute_throughput "$min_height" "$total_wait")
 
-    echo "🎉 Test passed!. Waited $total_wait for $min_height blocks. Throughput was $throughput blocks/s."
+    echo "🎉 Benchmark done!. Waited $total_wait for $min_height blocks. Throughput was $throughput blocks/s."
 
     # Append data to results file.
     printf "{ \"name\": \"cdn-sync\", \"unit\": \"blocks/s\", \"value\": %.3f, \"extra\": \"total_wait=%is, target_height=${min_height}\" }\n" \

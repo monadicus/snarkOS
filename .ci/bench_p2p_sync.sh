@@ -22,7 +22,7 @@ poll_interval=1 # Check block heights every second
 sum_speed=0
 sumsq_speed=0
 samples=0
-max_speed=0
+max_speed=0.0
 
 # Fetch sync speeds from clients via REST and accumulate stats
 function sample_sync_speeds() {
@@ -50,14 +50,16 @@ function sample_sync_speeds() {
     fi
 
     echo "Sync speed: $speed"
-    if (( speed > max_speed )); then
-       max_speed=$speed
-    fi
 
     # Convert to fixed decimal for bc -l
     speed_dec=$(awk -v x="$speed" 'BEGIN{printf "%.12f", x}')
     if [[ -z "$speed_dec" ]]; then
       continue
+    fi
+
+    if (( $(echo "$speed > $max_speed" | bc -l) )); then
+      echo "New max speed: $speed"
+      max_speed=$speed
     fi
 
     # Accumulate using bc -l for floating point
@@ -67,12 +69,37 @@ function sample_sync_speeds() {
   done
 }
 
+# Check how fast a node responds to simple get_block requests.
+function measure_rest_api() {
+  local num_warmup_ops=20
+  local num_get_ops=1000
+
+  base_url="http://localhost:3030/v2/$network_name/block"
+
+  for ((_i = 0; _i < num_warmup_ops; _i++)); do
+    height=$((RANDOM % min_height))
+    curl -f "$base_url/$height"
+  done
+
+  for ((_i = 0; _i < num_warmup_ops; _i++)); do
+    height=$((RANDOM % min_height))
+    curl -f "$base_url/$height"
+  done
+  
+  throughput=$(compute_throughput "$num_get_ops" "$total_wait")
+
+  printf "{ \"name\": \"rest-get-block\", \"unit\": \"ops/s\", \"value\": %.6f, \"extra\": \"num_get_ops=%i, base_url=%s, %s\" },\n" \
+       "$throughput" "$num_get_ops" "$base_url" "$snapshot_info" | tee -a results.json
+}
+
+branch_name=$(git rev-parse --abbrev-ref HEAD)
+echo "On branch: ${branch_name}"
+
 network_name=$(get_network_name $network_id)
 echo "Using network: $network_name (ID: $network_id)"
 
 snapshot_info=$(<info.txt)
-echo "Snapshot_info:"
-echo "${snapshot_info}"
+echo "Snapshot_info: ${snapshot_info}"
 
 # Create log directory
 log_dir=".logs-$(date +"%Y%m%d%H%M%S")"
@@ -86,7 +113,8 @@ trap child_exit_handler CHLD
 trap 'echo "⛔️ Error in $BASH_SOURCE at line $LINENO: \"$BASH_COMMAND\" failed (exit $?)"' ERR
 
 # Shared flags betwen all nodes
-common_flags=" --nodisplay --network $network_id --nocdn --dev-num-validators=40 \
+common_flags=" --nodisplay --nobanner --noupdater --network $network_id \
+  --nocdn --dev-num-validators=40 \
   --no-dev-txs --log-filter=$log_filter"
 
 # The client that has the ledger
@@ -101,9 +129,9 @@ for ((client_index = 1; client_index <= num_clients; client_index++)); do
   prev_port=$((4130+client_index-1))
 
   # Ensure there are no old ledger files and the node syncs from scratch
-  snarkos clean --dev $client_index --network $network_id || true
+  taskset -c 2,3 snarkos clean --dev $client_index --network $network_id || true
 
-  taskset -c 2,3 snarkos start --dev $client_index --client ${common_flags} \
+  snarkos start --dev $client_index --client ${common_flags} \
     --logfile="$log_dir/client-$client_index.log" \
     --peers=127.0.0.1:$prev_port &
   PIDS[client_index]=$!
@@ -121,8 +149,7 @@ while (( total_wait < max_wait )); do
   sample_sync_speeds
 
   if check_heights 0 $((num_clients+1)) $min_height "$network_name"; then
-    # Use floating point division
-    throughput=$(bc <<< "scale=2; $min_height/$total_wait")
+    throughput=$(compute_throughput "$min_height" "$total_wait")
 
     # Compute unbiased sample variance of sync_speed_bps (in blocks^2/s^2)
     if (( samples > 1 )); then
@@ -133,13 +160,16 @@ while (( total_wait < max_wait )); do
       variance=$(echo "scale=8; 0" | bc -l)
     fi
 
-    echo "🎉 Test passed!. Waited $total_wait for $min_height blocks. Throughput was $throughput blocks/s."
+    echo "🎉 Benchmark done!. Waited $total_wait for $min_height blocks. Throughput was $throughput blocks/s."
 
     # Append data to results file.
     printf "{ \"name\": \"p2p-sync\", \"unit\": \"blocks/s\", \"value\": %.3f, \"extra\": \"total_wait=%is, target_height=%i, %s\" },\n" \
        "$throughput" "$total_wait" "$min_height" "$snapshot_info" | tee -a results.json
-    printf "{ \"name\": \"p2p-sync-speed-variance\", \"unit\": \"blocks^2/s^2\", \"value\": %.6f, \"extra\": \"samples=%d, mean_bps=%.6f, max_speed=%d, %s\" },\n" \
-       "$variance" "$samples" "$mean_speed" "$max_speed" "$snapshot_info" | tee -a results.json
+    printf "{ \"name\": \"p2p-sync-speed-variance\", \"unit\": \"blocks^2/s^2\", \"value\": %.6f, \"extra\": \"samples=%d, mean_speed=%.6f, max_speed=%d, branch=%s, %s\" },\n" \
+       "$variance" "$samples" "$mean_speed" "$max_speed" "$branch_name" "$snapshot_info" | tee -a results.json
+
+    measure_rest_api
+
     exit 0
   fi
   
