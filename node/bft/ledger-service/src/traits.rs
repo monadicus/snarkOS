@@ -22,7 +22,7 @@ use snarkvm::{
         narwhal::{BatchCertificate, Data, Subdag, Transmission, TransmissionID},
         puzzle::{Solution, SolutionID},
     },
-    prelude::{Address, Field, Network, Result},
+    prelude::{Address, ConsensusVersion, Field, Network, Result},
 };
 
 use indexmap::IndexMap;
@@ -134,5 +134,6 @@ pub trait LedgerService<N: Network>: Debug + Send + Sync {
         &self,
         transaction_id: N::TransactionID,
         transaction: Transaction<N>,
+        consensus_version: ConsensusVersion,
     ) -> Result<u64>;
 }
