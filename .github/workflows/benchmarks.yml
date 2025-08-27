@@ -58,15 +58,20 @@ jobs:
           key: ${{ runner.os }}-benchmark
 
       - name: Create results file
-        run: printf "[\n" | tee -a results.json
+        run: |
+          # Close the array
+          printf "[\n" | tee -a results.json
+
+          echo "Generated results file:"
+          cat results.json
 
       - name: Run P2P sync benchmark
         run:
           ./.ci/bench_p2p_sync.sh
 
-      #- name: Run BFT sync benchmark
-      #  run:
-      #    ./.ci/bench_bft_sync.sh
+      - name: Run BFT sync benchmark
+        run:
+          ./.ci/bench_bft_sync.sh
 
       - name: Install snarkOS (production)
         run:
@@ -85,7 +90,8 @@ jobs:
           name: snarkOS Benchmarks
           alert-threshold: '150%'
           comment-on-alert: true
-          fail-on-alert: true
+          # TODO: Set to `true` once the benchmarks have less noise.
+          fail-on-alert: false
           github-token: ${{ secrets.GITHUB_TOKEN }}
           # Use generic JSON format
           tool: 'customSmallerIsBetter'

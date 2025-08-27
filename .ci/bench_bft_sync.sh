@@ -7,19 +7,21 @@ min_height=250
 num_nodes=1
 
 # Adjust this to show more/less log messages
-log_filter="warn,snarkos_node_sync=debug"
+log_filter="info,snarkos_node_sync=debug,snarkos_node_bft::primary=warn"
 
 max_wait=1800 # Wait for up to 30 minutes
 poll_interval=1 # Check block heights every second
 
 . ./.ci/utils.sh
 
+branch_name=$(git rev-parse --abbrev-ref HEAD)
+echo "On branch: ${branch_name}"
+
 network_name=$(get_network_name $network_id)
 echo "Using network: $network_name (ID: $network_id)"
 
-info.txt > snapshot_info
-echo "Snapshot_info:"
-echo ${snapshot_info}
+snapshot_info=$(<info.txt)
+echo "Snapshot_info: ${snapshot_info}"
 
 # Create log directory
 log_dir=".logs-$(date +"%Y%m%d%H%M%S")"
@@ -36,7 +38,8 @@ trap child_exit_handler CHLD
 trap 'echo "⛔️ Error in $BASH_SOURCE at line $LINENO: \"$BASH_COMMAND\" failed (exit $?)"' ERR
 
 # Shared flags betwen all nodes
-common_flags=" --nodisplay --network $network_id --nocdn --dev-num-validators=40 \
+common_flags="--nobanner --noupdater --nodisplay --network $network_id \
+  --nocdn --dev-num-validators=40 \
   --no-dev-txs --log-filter=$log_filter"
 
 # The client that has the ledger
@@ -76,8 +79,8 @@ while (( total_wait < max_wait )); do
     echo "🎉 Benchmark done!. Waited $total_wait for $min_height blocks. Throughput was $throughput blocks/s."
 
     # Append data to results file.
-    printf "{ \"name\": \"bft-sync\", \"unit\": \"blocks/s\", \"value\": %.3f, \"extra\": \"total_wait=%is, target_height=${min_height}, ${snapshot_info}\" },\n" \
-       "$throughput" "$total_wait" | tee -a results.json
+    printf "{ \"name\": \"bft-sync\", \"unit\": \"blocks/s\", \"value\": %.3f, \"extra\": \"total_wait=%is, target_height=%i, branch=%s, %s\" },\n" \
+       "$throughput" "$total_wait" "$min_height" "$branch_name" "$snapshot_info"| tee -a results.json
     exit 0
   fi
   
