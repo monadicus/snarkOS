@@ -10,6 +10,16 @@ declare -a PIDS
 # Flag is set true once a node process stopped
 node_stopped=false
 
+# Tasksets to pin processes to specfic CPUs.
+# This is a no-op on MacOS.
+if [[ "$(uname)" == "Darwin" ]]; then
+  TASKSET1=""
+  TASKSET2=""
+else
+  TASKSET1="taskset -c 0,1"
+  TASKSET2="taskset -c 2,3"
+fi
+
 # Handler for a child process exiting
 function child_exit_handler() {
   # only set to true if this was indeed a node
@@ -130,6 +140,75 @@ function check_nodes() {
   done
 
   return 0
+}
+
+# Succeeds if the given string is an integer
+function is_integer() {
+  if [[ $1 =~ ^[0-9]+$ ]]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+# Succeeds if the given string is a float
+function is_float() {  
+  if [[ "$1" =~ ^[+-]?[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?$ ]]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+# succeeds if the node with the given index has the specified number of peers (or greater)
+function wait_for_peers() {
+  local node_index=$1
+  local min_peers=$2
+
+  local total_wait=0
+  local max_wait=300
+  local poll_interval=1
+  
+  while (( total_wait < max_wait )); do
+    result=$(curl -s "http://localhost:3030/v2/$network_name/peers/count")
+
+    if (is_integer "$result") && (( result >= min_peers )); then
+      return 0
+    fi
+
+    # Continue waiting
+    sleep $poll_interval
+    total_wait=$((total_wait+poll_interval))
+  done
+
+  echo "❌ Nodes did not connect within 5 minutes."
+  return 1
+}
+
+# Blocks until the node with the given index has at least one peer to sync from (or times out).
+function wait_for_sync_peers() {
+  local node_index=$1
+
+  local max_wait=300 
+  for ((total_wait=0; total_wait < max_wait; ++total_wait)); do
+    port=$((3030+node_index))
+    result=$(curl -s "http://localhost:${port}/v2/$network_name/sync/peers")
+    echo "$result"
+    num_peers=$(echo "$result" | jq -r '. | length')
+
+    # Height is set to zero without block locators. So wait for until it is greater than 0 for at least one peer.
+    for ((idx=0; idx<num_peers; ++idx)); do
+      count=$(echo "$result" | jq -r ".[keys[$idx]]")
+      if ((count > 0)); then
+        return 0
+      fi
+    done
+
+    # Continue waiting
+    sleep 1
+  done
+  
+  return 1
 }
 
 # Blocks until the network is ready.

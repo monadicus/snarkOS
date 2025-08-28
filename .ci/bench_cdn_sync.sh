@@ -37,19 +37,20 @@ snarkos clean --network $network_id || true
 
 # Spawn the client that will sync the ledger.
 # Use the same CPU cores as in the other benchmarks, so the numbers are comparable.
-taskset -c 1,2 snarkos start --nodisplay --network $network_id \
+$TASKSET2 snarkos start --nodisplay --network $network_id \
   --client  --log-filter=$log_filter &
 PIDS[0]=$!
 
 wait_for_nodes 0 1
 
 # Check heights periodically with a timeout
-total_wait=0
-while (( total_wait < max_wait )); do
+SECONDS=0
+while (( SECONDS < max_wait )); do
   if check_heights 0 1 $min_height "$network_name"; then
+    total_wait=$SECONDS
     throughput=$(compute_throughput "$min_height" "$total_wait")
 
-    echo "🎉 Benchmark done!. Waited $total_wait for $min_height blocks. Throughput was $throughput blocks/s."
+    echo "🎉 Benchmark done! Waited ${total_wait}s for $min_height blocks. Throughput was $throughput blocks/s."
 
     # Append data to results file.
     printf "{ \"name\": \"cdn-sync\", \"unit\": \"blocks/s\", \"value\": %.3f, \"extra\": \"total_wait=%is, target_height=${min_height}\" }\n" \
@@ -59,10 +60,9 @@ while (( total_wait < max_wait )); do
   
   # Continue waiting
   sleep $poll_interval
-  total_wait=$((total_wait+poll_interval))
-  echo "Waited $total_wait seconds so far..."
+  echo "Waited $SECONDS seconds so far..."
 done
 
-echo "❌ Test failed! Client did not sync within 5 minutes."
+echo "❌ Benchmark failed! Client did not sync within 10 minutes."
 
 exit 1
