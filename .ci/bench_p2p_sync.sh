@@ -215,7 +215,7 @@ while (( SECONDS < max_wait )); do
     # Append data to results file.
     printf "{ \"name\": \"p2p-sync\", \"unit\": \"blocks/s\", \"value\": %.3f, \"extra\": \"total_wait=%is, target_height=%i, connect_time=%is, %s\" },\n" \
        "$throughput" "$total_wait" "$min_height" "$connect_time" "$snapshot_info" | tee -a results.json
-    printf "{ \"name\": \"p2p-sync-speed-variance\", \"unit\": \"blocks^2/s^2\", \"value\": %.6f, \"extra\": \"samples=%d, mean_speed=%.6f, max_speed=%d, branch=%s, %s\" },\n" \
+    printf "{ \"name\": \"p2p-sync-speed-variance\", \"unit\": \"blocks^2/s^2\", \"value\": %.6f, \"extra\": \"samples=%d, mean_speed=%.6f, max_speed=%.6f, branch=%s, %s\" },\n" \
        "$variance" "$samples" "$mean_speed" "$max_speed" "$branch_name" "$snapshot_info" | tee -a results.json
 
     measure_rest_get_block

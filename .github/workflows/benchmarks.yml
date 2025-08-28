@@ -48,7 +48,8 @@ jobs:
  
       - name: Install snarkOS (test_network)
         run:
-          cargo install --path=. --locked --features=test_network
+          # use `test_network` flag without snarkVM `dev_println`
+          cargo install --path=. --locked --features=test_consensus_heights,test_targets
 
       # Download previous benchmark result from cache (if exists)
       - name: Download previous benchmark data
