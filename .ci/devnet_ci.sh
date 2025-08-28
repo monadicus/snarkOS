@@ -293,7 +293,7 @@ echo "ℹ️Testing network progress"
 # Check heights periodically with a timeout
 total_wait=0
 while (( total_wait < 600 )); do  # 10 minutes max
-  if check_heights "$total_validators" "$total_clients" "$min_height" "$network_name"; then
+  if check_heights 0 $((total_validators+total_clients) "$min_height" "$network_name" "$total_wait"; then
     echo "🎉 Test passed! All nodes reached minimum height."
 
     if check_logs "$log_dir" "$total_validators" "$total_clients"; then

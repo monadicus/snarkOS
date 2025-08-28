@@ -1,5 +1,11 @@
 #!/bin/bash
 
+#################################################################
+# Measures a validator syncing 1000 blocks from another validator
+#################################################################
+
+set -eo pipefail # error on any command failure
+
 network_id=1
 min_height=250
 
@@ -43,9 +49,9 @@ common_flags=(
   --dev-num-validators=40 --no-dev-txs "--log-filter=$log_filter"
 )
 
-# The client that has the ledger
+# The validator that has the ledger to by synced from.
 $TASKSET1 snarkos start --dev 0 --validator "${common_flags[@]}" \
-  --logfile="$log_dir/validator-0.log" &
+  --logfile="$log_dir/validator-0.log" 2>&1 | sed 's/^/[validator-0]/' &
 PIDS[0]=$!
 
 # Stores the list of all validators.
@@ -53,12 +59,14 @@ validators="127.0.0.1:5000"
 
 # Spawn the clients that will sync the ledger
 for node_index in $(seq 1 "$num_nodes"); do
+  name="validator-$node_index"
+
   # Ensure there are no old ledger files and the node syncs from scratch
   snarkos clean "--dev=$node_index" "---network=$network_id" || true
-  
+
   $TASKSET2 snarkos start "--dev=$node_index" --validator \
     "${common_flags[@]}" "--validators=$validators" \
-    "--logfile=$log_dir/validator-$node_index.log" &
+    "--logfile=$log_dir/$name.log" 2>&1 | sed "s/^/[$name] /"&
   PIDS[node_index]=$!
 
   # Add the validators BFT address to the validators list.
@@ -70,7 +78,7 @@ for node_index in $(seq 1 "$num_nodes"); do
 done
 
 # Block until nodes are running and connected to each other.
-wait_for_nodes 0 $((num_nodes+1))
+wait_for_nodes $((num_nodes+1)) 0
 
 SECONDS=0
 
@@ -87,11 +95,11 @@ echo "ℹ️ Nodes are fully connected (took $connect_time secs). Starting block
 # Check heights periodically with a timeout
 SECONDS=0
 while (( SECONDS < max_wait )); do
-  if check_heights $((num_nodes+1)) 0 $min_height "$network_name"; then
+  if check_heights 1 $((num_nodes+1)) $min_height "$network_name" "$SECONDS"; then
     total_wait=$SECONDS
     throughput=$(compute_throughput "$min_height" "$total_wait")
 
-    echo "🎉 Benchmark done! Waited ${total_wait}s for $min_height blocks. Throughput was $throughput blocks/s."
+    echo "🎉 BFT sync benchmark done! Waited $total_wait seconds for $min_height blocks. Throughput was $throughput blocks/s."
 
     # Append data to results file.
     printf "{ \"name\": \"bft-sync\", \"unit\": \"blocks/s\", \"value\": %.3f, \"extra\": \"total_wait=%is, target_height=%i, connect_time=%i, branch=%s, %s\" },\n" \
@@ -101,7 +109,6 @@ while (( SECONDS < max_wait )); do
   
   # Continue waiting
   sleep $poll_interval
-  echo "Waited $SECONDS seconds so far..."
 done
 
 echo "❌ Benchmark failed! Validators did not sync within 30 minutes."

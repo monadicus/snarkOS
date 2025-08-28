@@ -34,11 +34,14 @@ pub struct BlockSyncMetrics {
 }
 
 impl BlockSyncMetrics {
-    const METRIC_UPDATE_WINDOW: Duration = Duration::from_secs(60);
+    /// The interval in which sync speed is updated.
+    /// This is kept large enough to not cause any performance impact.
+    const METRIC_UPDATE_WINDOW: Duration = Duration::from_secs(10);
 
     pub async fn update_loop(&self) {
         let mut last_update = Instant::now();
 
+        // TODO(kaimast): pause the loop while a node is synced.
         loop {
             tokio::time::sleep(Self::METRIC_UPDATE_WINDOW).await;
 

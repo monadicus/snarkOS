@@ -4,6 +4,8 @@
 # Measures a client syncing 1000 blocks from another client
 ###########################################################
 
+set -eo pipefail # error on any command failure
+
 network_id=1
 min_height=250
 
@@ -49,8 +51,6 @@ function sample_sync_speeds() {
        continue
     fi
 
-    echo "Sync speed: $speed"
-
     # Convert to fixed decimal for bc -l
     speed_dec=$(awk -v x="$speed" 'BEGIN{printf "%.12f", x}')
     if [[ -z "$speed_dec" ]]; then
@@ -58,7 +58,6 @@ function sample_sync_speeds() {
     fi
 
     if (( $(echo "$speed > $max_speed" | bc -l) )); then
-      echo "New max speed: $speed"
       max_speed=$speed
     fi
 
@@ -69,29 +68,62 @@ function sample_sync_speeds() {
   done
 }
 
-# Check how fast a node responds to simple get_block requests.
-function measure_rest_api() {
-  local num_warmup_ops=20
-  local num_get_ops=1000
+function write_rest_results() {
+  local name=$1
+  local num_ops=$2
+  local total_wait=$3
+  local endpoint=$4
+
+  local throughput=$(compute_throughput "$num_ops" "$total_wait")
+
+  echo "🎉 REST benchmark \"$name\" done! It took $total_wait seconds for $num_ops ops. Throughput was $throughput ops/s."
+
+  printf "{ \"name\": \"rest-get-block\", \"unit\": \"ops/s\", \"value\": %.6f, \"extra\": \"num_ops=%i, total_wait=%i, endpoint=%s, %s\" },\n" \
+       "$throughput" "$num_ops" "$total_wait" "$endpoint" "$snapshot_info" | tee -a results.json
+}
+
+# Measure how long it takes to get the nodes current block height
+# This should not create much work on the snarkVM-side of things and is a good baseline
+# for how fast the REST API can be.
+function measure_rest_block_height() {
+  local num_warmup_ops=100
+  local num_ops=10000
+
+  url="http://localhost:3030/v2/$network_name/block/height/latest"
+
+  for _ in $(seq "$num_warmup_ops"); do
+    curl -f "$url" -s -o /dev/null
+  done
+
+  SECONDS=0
+  for _ in $(seq $num_ops); do
+    curl -f "$url" -s -o /dev/null
+  done
+
+  local total_wait=$SECONDS
+  write_rest_results "block_height" "$num_ops" "$total_wait" "$url" 
+}
+
+# Measure how long it takes to get a random block.
+function measure_rest_get_block() {
+  local num_warmup_ops=10
+  local num_get_ops=500
 
   base_url="http://localhost:3030/v2/$network_name/block"
 
   for _ in $(seq "$num_warmup_ops"); do
-    height=$((RANDOM % min_height))
-    curl -f "$base_url/$height"
+    height=$((RANDOM % min_height)) 
+    curl -f "$base_url/$height" -s -o /dev/null
   done
 
-  for _ in $(seq num_get_ops); do
+  SECONDS=0
+  for _ in $(seq $num_get_ops); do
     height=$((RANDOM % min_height))
-    curl -f "$base_url/$height"
+    curl -f "$base_url/$height" -s -o /dev/null
   done
-  
-  throughput=$(compute_throughput "$num_get_ops" "$total_wait")
 
-  echo "🎉 REST benchmark done! It took $total_wait seconds for $num_get_ops ops. Throughput was $throughput ops/s."
-
-  printf "{ \"name\": \"rest-get-block\", \"unit\": \"ops/s\", \"value\": %.6f, \"extra\": \"num_get_ops=%i, base_url=%s, %s\" },\n" \
-       "$throughput" "$num_get_ops" "$base_url" "$snapshot_info" | tee -a results.json
+  local total_wait=$SECONDS
+  write_rest_results "get_block" "$num_get_ops" "$total_wait" "$base_url"
 }
 
 branch_name=$(git rev-parse --abbrev-ref HEAD)
@@ -118,25 +150,27 @@ trap 'echo "⛔️ Error in $BASH_SOURCE at line $LINENO: \"$BASH_COMMAND\" fail
 common_flags=(
   --nodisplay --nobanner --noupdater "--network=$network_id" --nocdn
   --dev-num-validators=40 --no-dev-txs "--log-filter=$log_filter"
+  --rest-rps=1000000
 )
 
 # The client that has the ledger
 # (runs on the first two cores)
 $TASKSET1 snarkos start --dev 0 --client "${common_flags[@]}" \
-  --logfile="$log_dir/client-0.log" &
+  --logfile="$log_dir/client-0.log" 2>&1 | sed 's/^/[client-0]/' &
 PIDS[0]=$!
 
 # Spawn the clients that will sync the ledger
 # (running on the other two cores)
 for client_index in $(seq 1 "$num_clients"); do
   prev_port=$((4130+client_index-1))
+  name="client-$client_index"
 
   # Ensure there are no old ledger files and the node syncs from scratch
   snarkos clean "--dev=$client_index" "--network=$network_id" || true
 
   $TASKSET2 snarkos start "--dev=$client_index" --client \
     "${common_flags[@]}" "--peers=127.0.0.1:$prev_port" \
-    "--logfile=$log_dir/client-$client_index.log" &
+    "--logfile=$log_dir/$name.log" 2>&1 | sed "s/^/[$name] /" &
   PIDS[client_index]=$!
 
   # Add 1-second delay between starting nodes to avoid hitting rate limits
@@ -163,7 +197,7 @@ while (( SECONDS < max_wait )); do
   # Sample sync speed(s) for variance calculation
   sample_sync_speeds
 
-  if check_heights 0 $((num_clients+1)) $min_height "$network_name"; then
+  if check_heights 1 $((num_clients+1)) $min_height "$network_name" "$SECONDS"; then
     total_wait=$SECONDS
     throughput=$(compute_throughput "$min_height" "$total_wait")
 
@@ -176,7 +210,7 @@ while (( SECONDS < max_wait )); do
       variance=$(echo "scale=8; 0" | bc -l)
     fi
 
-    echo "🎉 Sync benchmark done! Waited $total_wait seconds for $min_height blocks. Throughput was $throughput blocks/s."
+    echo "🎉 P2P sync benchmark done! Waited $total_wait seconds for $min_height blocks. Throughput was $throughput blocks/s."
 
     # Append data to results file.
     printf "{ \"name\": \"p2p-sync\", \"unit\": \"blocks/s\", \"value\": %.3f, \"extra\": \"total_wait=%is, target_height=%i, connect_time=%is, %s\" },\n" \
@@ -184,13 +218,14 @@ while (( SECONDS < max_wait )); do
     printf "{ \"name\": \"p2p-sync-speed-variance\", \"unit\": \"blocks^2/s^2\", \"value\": %.6f, \"extra\": \"samples=%d, mean_speed=%.6f, max_speed=%d, branch=%s, %s\" },\n" \
        "$variance" "$samples" "$mean_speed" "$max_speed" "$branch_name" "$snapshot_info" | tee -a results.json
 
-    measure_rest_api
+    measure_rest_get_block
+    measure_rest_block_height
+
     exit 0
   fi
   
   # Continue waiting
   sleep $poll_interval
-  echo "Waited $SECONDS seconds so far..."
 done
 
 echo "❌ Benchmark failed! Clients did not sync within 40 minutes."

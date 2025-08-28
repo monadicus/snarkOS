@@ -33,27 +33,25 @@ function child_exit_handler() {
 
 # Function checking that each node reached a sufficient block height.
 function check_heights() {
-  echo "Checking block heights on all nodes..."
-
-  local total_validators=$1
-  local total_clients=$2
+  local start_index=$1
+  local end_index=$2
   local min_height=$3
   local network_name=$4
+  local elapsed=$5
 
   local all_reached=true
   local highest_height=0
 
-  for ((node_index = 0; node_index < total_validators + total_clients; node_index++)); do
+  for node_index in $(seq $start_index $((end_index-1))); do
     port=$((3030 + node_index))
     height=$(curl -s "http://127.0.0.1:$port/v2/$network_name/block/height/latest" || echo "0")
-    echo "Node $node_index block height: $height"
     
     # Track highest height for reporting
-    if [[ "$height" =~ ^[0-9]+$ ]] && (( height > highest_height )); then
+    if (is_integer "$height") && (( height > highest_height )); then
       highest_height=$height
     fi
     
-    if ! [[ "$height" =~ ^[0-9]+$ ]] || (( height < min_height )); then
+    if ! (is_integer "$height") || (( height < min_height )); then
       all_reached=false
     fi
   done
@@ -62,7 +60,10 @@ function check_heights() {
     echo "✅ SUCCESS: All nodes reached minimum height of $min_height"
     return 0
   else
-    echo "⏳ WAITING: Not all nodes reached minimum height of $min_height (highest so far: $highest_height)"
+    if (( elapsed > 0 && ((elapsed % 60) == 0) )); then
+      echo "⏳ WAITING: Not all nodes reached minimum height of $min_height (hightes node: $highest_height, elapsed: ${elapsed}s)"
+    fi
+
     return 1
   fi
 }

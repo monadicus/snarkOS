@@ -4,6 +4,8 @@
 # Measures a client syncing 1000 blocks from the CDN
 ####################################################
 
+set -eo pipefail # error on any command failure
+
 network_id=0 # CDN sync is tested for mainnet
 min_height=250
 
@@ -46,7 +48,7 @@ wait_for_nodes 0 1
 # Check heights periodically with a timeout
 SECONDS=0
 while (( SECONDS < max_wait )); do
-  if check_heights 0 1 $min_height "$network_name"; then
+  if check_heights 1 2 $min_height "$network_name" "$SECONDS"; then
     total_wait=$SECONDS
     throughput=$(compute_throughput "$min_height" "$total_wait")
 
@@ -60,7 +62,6 @@ while (( SECONDS < max_wait )); do
   
   # Continue waiting
   sleep $poll_interval
-  echo "Waited $SECONDS seconds so far..."
 done
 
 echo "❌ Benchmark failed! Client did not sync within 10 minutes."
