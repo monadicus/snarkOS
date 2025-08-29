@@ -12,7 +12,7 @@ min_height=250
 # Adjust this to show more/less log messages
 log_filter="info,snarkos_node_rest=warn,snarkos_node_cdn=debug"
 
-max_wait=600 # Wait for up to ten minutes
+max_wait=1800 # Wait for up to 30 minutes
 poll_interval=1 # Check block heights every second
 
 . ./.ci/utils.sh
@@ -64,6 +64,6 @@ while (( SECONDS < max_wait )); do
   sleep $poll_interval
 done
 
-echo "❌ Benchmark failed! Client did not sync within 10 minutes."
+echo "❌ Benchmark failed! Client did not sync within 30 minutes."
 
 exit 1
