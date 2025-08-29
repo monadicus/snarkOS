@@ -67,10 +67,12 @@ jobs:
           cat results.json
 
       - name: Run P2P sync benchmark
+        timeout-minutes: 60
         run:
           ./.ci/bench_p2p_sync.sh
 
       - name: Run BFT sync benchmark
+        timeout-minutes: 60
         run:
           ./.ci/bench_bft_sync.sh
 
@@ -79,6 +81,7 @@ jobs:
           cargo install --path=. --locked
 
       - name: Run CDN sync benchmark
+        timeout-minutes: 60
         run:
           ./.ci/bench_cdn_sync.sh
 
