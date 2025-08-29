@@ -78,7 +78,7 @@ function write_rest_results() {
 
   echo "🎉 REST benchmark \"$name\" done! It took $total_wait seconds for $num_ops ops. Throughput was $throughput ops/s."
 
-  printf "{ \"name\": \"rest-get-block\", \"unit\": \"ops/s\", \"value\": %.6f, \"extra\": \"num_ops=%i, total_wait=%i, endpoint=%s, %s\" },\n" \
+  printf "{ \"name\": \"rest-$hname\", \"unit\": \"ops/s\", \"value\": %.6f, \"extra\": \"num_ops=%i, total_wait=%i, endpoint=%s, %s\" },\n" \
        "$throughput" "$num_ops" "$total_wait" "$endpoint" "$snapshot_info" | tee -a results.json
 }
 
@@ -100,7 +100,7 @@ function measure_rest_block_height() {
   done
 
   local total_wait=$SECONDS
-  write_rest_results "block_height" "$num_ops" "$total_wait" "$url" 
+  write_rest_results "block-height" "$num_ops" "$total_wait" "$url" 
 }
 
 # Measure how long it takes to get a random block.
@@ -122,7 +122,7 @@ function measure_rest_get_block() {
   done
 
   local total_wait=$SECONDS
-  write_rest_results "get_block" "$num_get_ops" "$total_wait" "$base_url"
+  write_rest_results "get-block" "$num_get_ops" "$total_wait" "$base_url"
 }
 
 branch_name=$(git rev-parse --abbrev-ref HEAD)
