@@ -62,7 +62,7 @@ for node_index in $(seq 1 "$num_nodes"); do
   name="validator-$node_index"
 
   # Ensure there are no old ledger files and the node syncs from scratch
-  snarkos clean "--dev=$node_index" "---network=$network_id" || true
+  snarkos clean "--dev=$node_index" "--network=$network_id" || true
 
   $TASKSET2 snarkos start "--dev=$node_index" --validator \
     "${common_flags[@]}" "--validators=$validators" \

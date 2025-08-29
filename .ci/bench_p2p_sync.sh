@@ -82,9 +82,8 @@ function write_rest_results() {
        "$throughput" "$num_ops" "$total_wait" "$endpoint" "$snapshot_info" | tee -a results.json
 }
 
-# Measure how long it takes to get the nodes current block height
-# This should not create much work on the snarkVM-side of things and is a good baseline
-# for how fast the REST API can be.
+# Measure how long it takes to get the node's current block height.
+# This should not create much work on the snarkVM-side of things and is a good baseline# for how fast the REST API can be.
 function measure_rest_block_height() {
   local num_warmup_ops=100
   local num_ops=10000
@@ -143,7 +142,7 @@ mkdir -p "$log_dir"
 trap stop_nodes EXIT
 trap child_exit_handler CHLD
 
-# Define a trap handler that prints a message when an error occurs 
+# Define a trap handler that prints a message when an error occurs.
 trap 'echo "⛔️ Error in $BASH_SOURCE at line $LINENO: \"$BASH_COMMAND\" failed (exit $?)"' ERR
 
 # Shared flags betwen all nodes

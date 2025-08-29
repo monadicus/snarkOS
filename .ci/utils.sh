@@ -42,7 +42,7 @@ function check_heights() {
   local all_reached=true
   local highest_height=0
 
-  for node_index in $(seq $start_index $((end_index-1))); do
+  for node_index in $(seq "$start_index" $((end_index-1))); do
     port=$((3030 + node_index))
     height=$(curl -s "http://127.0.0.1:$port/v2/$network_name/block/height/latest" || echo "0")
     
@@ -126,7 +126,7 @@ function stop_nodes() {
   done
 }
 
-# succeeds if all nodes are available.
+# Succeeds if all nodes are available.
 function check_nodes() {
   local total_validators=$1
   local total_clients=$2
@@ -143,7 +143,7 @@ function check_nodes() {
   return 0
 }
 
-# Succeeds if the given string is an integer
+# Succeeds if the given string is an integer.
 function is_integer() {
   if [[ $1 =~ ^[0-9]+$ ]]; then
     return 0
@@ -152,7 +152,7 @@ function is_integer() {
   fi
 }
 
-# Succeeds if the given string is a float
+# Succeeds if the given string is a float.
 function is_float() {  
   if [[ "$1" =~ ^[+-]?[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?$ ]]; then
     return 0
@@ -161,7 +161,7 @@ function is_float() {
   fi
 }
 
-# succeeds if the node with the given index has the specified number of peers (or greater)
+# Succeeds if the node with the given index has the specified number of peers (or greater)
 function wait_for_peers() {
   local node_index=$1
   local min_peers=$2
@@ -232,7 +232,7 @@ function wait_for_nodes() {
   done
 }
 
-# Compute the throughput for a number of operation over some time
+# Compute the throughput for a number of operation over some time.
 function compute_throughput {
   local num_ops=$1
   local duration=$2
