@@ -46,6 +46,12 @@ impl Default for SyncState {
 }
 
 impl SyncState {
+    /// Initialize the sync state at the given height.
+    /// Useful, when starting a node that already has blocks in its local storage.
+    pub fn new_with_height(height: u32) -> Self {
+        Self { sync_height: height, ..Default::default() }
+    }
+
     /// Did we catch up with the greatest known peer height?
     /// This will return false if we never synced from a peer.
     pub fn is_block_synced(&self) -> bool {

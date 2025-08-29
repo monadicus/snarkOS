@@ -567,6 +567,7 @@ impl<N: Network> Sync<N> {
                     Ok(_) => {
                         // Update the current height if sync succeeds.
                         current_height = next_height;
+                        self.block_sync.count_request_completed();
                     }
                     Err(err) => {
                         // Mark the current height as processed in block_sync.

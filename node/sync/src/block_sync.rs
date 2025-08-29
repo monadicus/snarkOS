@@ -168,9 +168,12 @@ pub struct BlockSync<N: Network> {
 impl<N: Network> BlockSync<N> {
     /// Initializes a new block sync module.
     pub fn new(ledger: Arc<dyn LedgerService<N>>) -> Self {
+        // Make sync state aware of the blocks that already exist on disk at startup.
+        let sync_state = SyncState::new_with_height(ledger.latest_block_height());
+
         Self {
             ledger,
-            sync_state: Default::default(),
+            sync_state: RwLock::new(sync_state),
             notify: Default::default(),
             locators: Default::default(),
             requests: Default::default(),
@@ -526,6 +529,11 @@ impl<N: Network> BlockSync<N> {
             })
             .await?;
 
+            // Only count successful requests.
+            if advanced {
+                self.count_request_completed();
+            }
+
             // Remove the block response.
             self.remove_block_response(next_height);
 
@@ -776,15 +784,25 @@ impl<N: Network> BlockSync<N> {
         }
     }
 
+    /// Should only be called by validators when they successfully process a block request.
+    /// (for other nodes this will be automatically called internally)
+    ///
+    /// TODO(kaimast): remove this public function once the sync logic is fully unified `BlockSync`.
+    pub fn count_request_completed(&self) {
+        self.metrics.count_request_completed();
+    }
+
     /// Set the sync height to a the given value.
     /// This is a no-op if `new_height` is equal or less to the current sync height.
     pub fn set_sync_height(&self, new_height: u32) {
-        let mut state = self.sync_state.write();
-        state.set_sync_height(new_height);
+        // Scope state lock to avoid locking state and metrics at the same time.
+        let fully_synced = {
+            let mut state = self.sync_state.write();
+            state.set_sync_height(new_height);
+            !state.can_block_sync()
+        };
 
-        if !state.can_block_sync() {
-            // avoid locking state and metrics at the same time.
-            drop(state);
+        if fully_synced {
             self.metrics.mark_fully_synced();
         }
     }
@@ -890,7 +908,6 @@ impl<N: Network> BlockSync<N> {
                 self.get_sync_speed(),
             );
         }
-        self.metrics.count_request_completed();
     }
 
     /// Removes all block requests for the given peer IP.
