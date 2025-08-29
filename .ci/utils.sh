@@ -124,6 +124,9 @@ function stop_nodes() {
       kill -9 "$pid" 2>/dev/null || true
     fi
   done
+
+  # block until all nodes have shut down
+  wait
 }
 
 # Succeeds if all nodes are available.
