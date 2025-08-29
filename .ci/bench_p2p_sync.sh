@@ -155,7 +155,7 @@ common_flags=(
 # The client that has the ledger
 # (runs on the first two cores)
 $TASKSET1 snarkos start --dev 0 --client "${common_flags[@]}" \
-  --logfile="$log_dir/client-0.log" 2>&1 | sed 's/^/[client-0]/' &
+  --logfile="$log_dir/client-0.log" &
 PIDS[0]=$!
 
 # Spawn the clients that will sync the ledger
@@ -169,7 +169,7 @@ for client_index in $(seq 1 "$num_clients"); do
 
   $TASKSET2 snarkos start "--dev=$client_index" --client \
     "${common_flags[@]}" "--peers=127.0.0.1:$prev_port" \
-    "--logfile=$log_dir/$name.log" 2>&1 | sed "s/^/[$name] /" &
+    "--logfile=$log_dir/$name.log" &
   PIDS[client_index]=$!
 
   # Add 1-second delay between starting nodes to avoid hitting rate limits
