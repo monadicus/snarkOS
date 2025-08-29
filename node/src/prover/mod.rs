@@ -126,9 +126,6 @@ impl<N: Network, C: ConsensusStorage<N>> Prover<N, C> {
         // Initialize the sync module.
         let sync = BlockSync::new(ledger_service.clone());
 
-        // Start sync metric collection.
-        sync.initialize();
-
         // Set up the ping logic.
         let ping = Arc::new(Ping::new_nosync(router.clone()));
 

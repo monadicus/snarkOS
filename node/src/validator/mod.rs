@@ -127,9 +127,6 @@ impl<N: Network, C: ConsensusStorage<N>> Validator<N, C> {
         let locators = sync.get_block_locators()?;
         let ping = Arc::new(Ping::new(router.clone(), locators));
 
-        // Start sync metric collection.
-        sync.initialize();
-
         // Initialize the consensus layer.
         let consensus = Consensus::new(
             account.clone(),

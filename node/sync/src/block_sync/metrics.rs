@@ -14,55 +14,68 @@
 // limitations under the License.
 
 use std::{
-    sync::atomic::{AtomicU32, Ordering},
+    collections::VecDeque,
     time::{Duration, Instant},
 };
 
 #[cfg(feature = "locktick")]
-use locktick::parking_lot::RwLock;
+use locktick::parking_lot::Mutex;
 
 #[cfg(not(feature = "locktick"))]
-use parking_lot::RwLock;
+use parking_lot::Mutex;
+
+#[derive(Default)]
+struct SyncMetricsData {
+    /// The number of block requests completed since the last update.
+    completed_requests: VecDeque<Instant>,
+
+    /// The current sync speed
+    sync_speed: f64,
+}
 
 #[derive(Default)]
 pub struct BlockSyncMetrics {
-    /// The number of block requests completed since the last update.
-    completed_request_counter: AtomicU32,
-
-    /// The current sync speed
-    sync_speed: RwLock<f64>,
+    data: Mutex<SyncMetricsData>,
 }
 
 impl BlockSyncMetrics {
-    /// The interval in which sync speed is updated.
-    /// This is kept large enough to not cause any performance impact.
-    const METRIC_UPDATE_WINDOW: Duration = Duration::from_secs(10);
+    /// Sync speed is calculated on a sliding window.
+    const METRIC_WINDOW: Duration = Duration::from_secs(60);
 
-    pub async fn update_loop(&self) {
-        let mut last_update = Instant::now();
-
-        // TODO(kaimast): pause the loop while a node is synced.
-        loop {
-            tokio::time::sleep(Self::METRIC_UPDATE_WINDOW).await;
-
-            let now = Instant::now();
-            let elapsed = now - last_update;
-
-            let count = self.completed_request_counter.swap(0, Ordering::Relaxed);
-            let speed = (count as f64) / elapsed.as_secs_f64();
-
-            *self.sync_speed.write() = speed;
-            last_update = now;
-        }
-    }
-
-    #[inline]
+    /// Updates the sync speed and returns the new value.
     pub fn get_sync_speed(&self) -> f64 {
-        *self.sync_speed.read()
+        let mut data = self.data.lock();
+
+        // Remove requests that are past the sliding window.
+        while let Some(time) = data.completed_requests.front()
+            && time.elapsed() > Self::METRIC_WINDOW
+        {
+            data.completed_requests.pop_front();
+        }
+
+        // Update sync speed based on the last minute.
+        data.sync_speed = data.completed_requests.len() as f64 / Self::METRIC_WINDOW.as_secs_f64();
+
+        data.sync_speed
     }
 
-    #[inline]
     pub fn count_request_completed(&self) {
-        self.completed_request_counter.fetch_add(1, Ordering::Relaxed);
+        let mut data = self.data.lock();
+
+        // Remove requests that are past the sliding window.
+        while let Some(time) = data.completed_requests.front()
+            && time.elapsed() > Self::METRIC_WINDOW
+        {
+            data.completed_requests.pop_front();
+        }
+
+        // Add time for the new request.
+        data.completed_requests.push_back(Instant::now());
+    }
+
+    pub fn mark_fully_synced(&self) {
+        // Set speed to zero because it otherwise only gets updated during sync.
+        // Keep request data, in case we resume syncing.
+        self.data.lock().sync_speed = 0.0;
     }
 }

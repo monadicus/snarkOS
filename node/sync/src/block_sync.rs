@@ -162,14 +162,12 @@ pub struct BlockSync<N: Network> {
     notify: Notify,
 
     /// Tracks sync speed
-    metrics: Arc<BlockSyncMetrics>,
+    metrics: BlockSyncMetrics,
 }
 
 impl<N: Network> BlockSync<N> {
     /// Initializes a new block sync module.
     pub fn new(ledger: Arc<dyn LedgerService<N>>) -> Self {
-        let metrics = Arc::new(BlockSyncMetrics::default());
-
         Self {
             ledger,
             sync_state: Default::default(),
@@ -178,17 +176,8 @@ impl<N: Network> BlockSync<N> {
             requests: Default::default(),
             common_ancestors: Default::default(),
             advance_with_sync_blocks_lock: Default::default(),
-            metrics,
+            metrics: Default::default(),
         }
-    }
-
-    /// Spawns background tasks
-    /// (currently only metrics collection)
-    pub fn initialize(&self) {
-        let metrics = self.metrics.clone();
-        tokio::spawn(async move {
-            metrics.update_loop().await;
-        });
     }
 
     pub async fn wait_for_update(&self) {
@@ -790,7 +779,14 @@ impl<N: Network> BlockSync<N> {
     /// Set the sync height to a the given value.
     /// This is a no-op if `new_height` is equal or less to the current sync height.
     pub fn set_sync_height(&self, new_height: u32) {
-        self.sync_state.write().set_sync_height(new_height);
+        let mut state = self.sync_state.write();
+        state.set_sync_height(new_height);
+
+        if !state.can_block_sync() {
+            // avoid locking state and metrics at the same time.
+            drop(state);
+            self.metrics.mark_fully_synced();
+        }
     }
 
     /// Inserts a block request for the given height.
