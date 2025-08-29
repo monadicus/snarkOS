@@ -31,7 +31,8 @@ function child_exit_handler() {
   done
 }
 
-# Function checking that each node reached a sufficient block height.
+# Function checking that each node in the given range [start_index, end_index)
+# reached a minimum block height.
 function check_heights() {
   local start_index=$1
   local end_index=$2

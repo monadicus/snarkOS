@@ -6,7 +6,7 @@
 
 set -eo pipefail # error on any command failure
 
-network_id=0 # CDN sync is tested for mainnet
+network_id=0
 min_height=250
 
 # Adjust this to show more/less log messages
@@ -35,12 +35,19 @@ trap child_exit_handler CHLD
 trap 'echo "⛔️ Error in $BASH_SOURCE at line $LINENO: \"$BASH_COMMAND\" failed (exit $?)"' ERR
 
 # Ensure there are no old ledger files and the node syncs from scratch
-snarkos clean --network $network_id || true
+snarkos clean "--network=$network_id" || true
+
+# Arguments to pass to the node
+args=(
+  "--network=$network_id"
+  --nobanner --noupdater --nodisplay # reduce clutter in the output and hide TUI
+  --rest-rps=1000000 # ensure benchmarks don't fail due to rate limiting
+  --log-filter=$log_filter # only show the logs we care about
+)
 
 # Spawn the client that will sync the ledger.
 # Use the same CPU cores as in the other benchmarks, so the numbers are comparable.
-$TASKSET2 snarkos start --nodisplay --network $network_id \
-  --client  --log-filter=$log_filter &
+$TASKSET2 snarkos start --client "${args[@]}" &
 PIDS[0]=$!
 
 wait_for_nodes 0 1
@@ -48,7 +55,7 @@ wait_for_nodes 0 1
 # Check heights periodically with a timeout
 SECONDS=0
 while (( SECONDS < max_wait )); do
-  if check_heights 1 2 $min_height "$network_name" "$SECONDS"; then
+  if check_heights 0 1 $min_height "$network_name" "$SECONDS"; then
     total_wait=$SECONDS
     throughput=$(compute_throughput "$min_height" "$total_wait")
 

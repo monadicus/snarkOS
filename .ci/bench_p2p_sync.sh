@@ -1,4 +1,4 @@
-#!/bin/bash
+# the given!/bin/bash
 
 ###########################################################
 # Measures a client syncing 1000 blocks from another client
@@ -147,9 +147,12 @@ trap 'echo "⛔️ Error in $BASH_SOURCE at line $LINENO: \"$BASH_COMMAND\" fail
 
 # Shared flags betwen all nodes
 common_flags=(
-  --nodisplay --nobanner --noupdater "--network=$network_id" --nocdn
-  --dev-num-validators=40 --no-dev-txs "--log-filter=$log_filter"
-  --rest-rps=1000000
+  --nodisplay --nobanner --noupdater # reduce clutter in the output
+  "--log-filter=$log_filter" # only show the logs we care about
+  "--network=$network_id"
+  --nocdn # don't sync from CDN, so we only benchmark p2p sync
+  --dev-num-validators=40 --no-dev-txs
+  --rest-rps=1000000 # ensure benchmarks don't fail due to rate limiting
 )
 
 # The client that has the ledger
