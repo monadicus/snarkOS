@@ -1,4 +1,4 @@
-# the given!/bin/bash
+#!/bin/bash
 
 ###########################################################
 # Measures a client syncing 1000 blocks from another client
