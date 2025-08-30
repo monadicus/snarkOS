@@ -78,7 +78,7 @@ function write_rest_results() {
 
   echo "🎉 REST benchmark \"$name\" done! It took $total_wait seconds for $num_ops ops. Throughput was $throughput ops/s."
 
-  printf "{ \"name\": \"rest-$hname\", \"unit\": \"ops/s\", \"value\": %.6f, \"extra\": \"num_ops=%i, total_wait=%i, endpoint=%s, %s\" },\n" \
+  printf "{ \"name\": \"rest-$name\", \"unit\": \"ops/s\", \"value\": %.6f, \"extra\": \"num_ops=%i, total_wait=%i, endpoint=%s, %s\" },\n" \
        "$throughput" "$num_ops" "$total_wait" "$endpoint" "$snapshot_info" | tee -a results.json
 }
 
