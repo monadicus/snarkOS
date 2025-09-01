@@ -1,5 +1,11 @@
 #!/bin/bash
 
+#################################################################
+# Measures a validator syncing 1000 blocks from another validator
+#################################################################
+
+set -eo pipefail # error on any command failure
+
 network_id=1
 min_height=250
 
@@ -7,19 +13,21 @@ min_height=250
 num_nodes=1
 
 # Adjust this to show more/less log messages
-log_filter="warn,snarkos_node_sync=debug"
+log_filter="info,snarkos_node_sync=debug,snarkos_node_bft::primary=warn"
 
 max_wait=1800 # Wait for up to 30 minutes
 poll_interval=1 # Check block heights every second
 
 . ./.ci/utils.sh
 
+branch_name=$(git rev-parse --abbrev-ref HEAD)
+echo "On branch: ${branch_name}"
+
 network_name=$(get_network_name $network_id)
 echo "Using network: $network_name (ID: $network_id)"
 
-info.txt > snapshot_info
-echo "Snapshot_info:"
-echo ${snapshot_info}
+snapshot_info=$(<info.txt)
+echo "Snapshot_info: ${snapshot_info}"
 
 # Create log directory
 log_dir=".logs-$(date +"%Y%m%d%H%M%S")"
@@ -36,11 +44,13 @@ trap child_exit_handler CHLD
 trap 'echo "⛔️ Error in $BASH_SOURCE at line $LINENO: \"$BASH_COMMAND\" failed (exit $?)"' ERR
 
 # Shared flags betwen all nodes
-common_flags=" --nodisplay --network $network_id --nocdn --dev-num-validators=40 \
-  --no-dev-txs --log-filter=$log_filter"
+common_flags=(
+  --nobanner --noupdater --nodisplay "--network=$network_id" --nocdn
+  --dev-num-validators=40 --no-dev-txs "--log-filter=$log_filter"
+)
 
-# The client that has the ledger
-taskset -c 0,1 snarkos start --dev 0 --validator ${common_flags} \
+# The validator that has the ledger to by synced from.
+$TASKSET1 snarkos start --dev 0 --validator "${common_flags[@]}" \
   --logfile="$log_dir/validator-0.log" &
 PIDS[0]=$!
 
@@ -48,13 +58,15 @@ PIDS[0]=$!
 validators="127.0.0.1:5000"
 
 # Spawn the clients that will sync the ledger
-for ((node_index = 1; node_index <= num_nodes; node_index++)); do
+for node_index in $(seq 1 "$num_nodes"); do
+  name="validator-$node_index"
+
   # Ensure there are no old ledger files and the node syncs from scratch
-  snarkos clean --dev $node_index --network $network_id || true
-  
-  taskset -c 2,3 snarkos start --dev $node_index --validator ${common_flags} \
-          --logfile "$log_dir/validator-$node_index.log" \
-          --validators=$validators &
+  snarkos clean "--dev=$node_index" "--network=$network_id" || true
+
+  $TASKSET2 snarkos start "--dev=$node_index" --validator \
+    "${common_flags[@]}" "--validators=$validators" \
+    "--logfile=$log_dir/$name.log" &
   PIDS[node_index]=$!
 
   # Add the validators BFT address to the validators list.
@@ -65,30 +77,41 @@ for ((node_index = 1; node_index <= num_nodes; node_index++)); do
   sleep 1
 done
 
-wait_for_nodes 0 $((num_nodes+1))
+# Block until nodes are running and connected to each other.
+wait_for_nodes $((num_nodes+1)) 0
+
+SECONDS=0
+
+# TODO add API call for number of connected validators.
+#for ((node_index = 0; node_index < num_nodes+1; node_index++)); do
+#  if ! (wait_for_peers "$node_index" $num_nodes); then
+#    exit 1
+#  fi
+#done
+
+connect_time=$SECONDS
+echo "ℹ️ Nodes are fully connected (took $connect_time secs). Starting block sync measurement."
 
 # Check heights periodically with a timeout
-total_wait=0
-while (( total_wait < max_wait )); do
-  if check_heights $((num_nodes+1)) 0 $min_height "$network_name"; then
-    # Use floating point division
-    throughput=$(bc <<< "scale=2; $min_height/$total_wait")
+SECONDS=0
+while (( SECONDS < max_wait )); do
+  if check_heights 1 $((num_nodes+1)) $min_height "$network_name" "$SECONDS"; then
+    total_wait=$SECONDS
+    throughput=$(compute_throughput "$min_height" "$total_wait")
 
-    echo "🎉 Test passed!. Waited $total_wait for $min_height blocks. Throughput was $throughput blocks/s."
+    echo "🎉 BFT sync benchmark done! Waited $total_wait seconds for $min_height blocks. Throughput was $throughput blocks/s."
 
     # Append data to results file.
-    printf "{ \"name\": \"bft-sync\", \"unit\": \"blocks/s\", \"value\": %.3f, \"extra\": \"total_wait=%is, target_height=${min_height}, ${snapshot_info}\" },\n" \
-       "$throughput" "$total_wait" | tee -a results.json
+    printf "{ \"name\": \"bft-sync\", \"unit\": \"blocks/s\", \"value\": %.3f, \"extra\": \"total_wait=%is, target_height=%i, connect_time=%i, branch=%s, %s\" },\n" \
+       "$throughput" "$total_wait" "$min_height" "$connect_time" "$branch_name" "$snapshot_info"| tee -a results.json
     exit 0
   fi
   
   # Continue waiting
   sleep $poll_interval
-  total_wait=$((total_wait+poll_interval))
-  echo "Waited $total_wait seconds so far..."
 done
 
-echo "❌ Test failed! Validators did not sync within 30 minutes."
+echo "❌ Benchmark failed! Validators did not sync within 30 minutes."
 
 # Print logs for debugging
 echo "Last 20 lines of validators logs:"

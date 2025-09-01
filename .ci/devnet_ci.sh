@@ -48,20 +48,22 @@ trap child_exit_handler CHLD
 trap 'echo "⛔️ Error in $BASH_SOURCE at line $LINENO: \"$BASH_COMMAND\" failed (exit $?)"' ERR
 
 # Flags used by all ndoes
-common_flags="--nodisplay --nobanner --noupdater --network=$network_id \
-  --verbosity=1 --allow-external-peers --dev-num-validators=$total_validators"
+common_flags=(
+  --nodisplay --nobanner --noupdater "--network=$network_id" --verbosity=1
+  --allow-external-peers "--dev-num-validators=$total_validators"
+)
 
 # Start all validator nodes in the background
 for ((validator_index = 0; validator_index < total_validators; validator_index++)); do
-  snarkos clean --dev $validator_index --network=$network_id
+  snarkos clean "--dev=$validator_index" "--network=$network_id"
 
   log_file="$log_dir/validator-$validator_index.log"
   if [ $validator_index -eq 0 ]; then
-    snarkos start ${common_flags} --dev "$validator_index" \
-      --validator --logfile "$log_file" --metrics --no-dev-txs &
+    snarkos start "${common_flags[@]}" "--dev=$validator_index" \
+      --validator "--logfile=$log_file" --metrics --no-dev-txs &
   else
-    snarkos start ${common_flags} --dev "$validator_index" \
-      --validator --logfile "$log_file" &
+    snarkos start "${common_flags[@]}" "--dev=$validator_index" \
+      --validator "--logfile=$log_file" &
   fi
   PIDS[validator_index]=$!
   echo "Started validator $validator_index with PID ${PIDS[$validator_index]}"
@@ -77,8 +79,8 @@ for ((client_index = 0; client_index < total_clients; client_index++)); do
   snarkos clean --dev $node_index
 
   log_file="$log_dir/client-$client_index.log"
-  snarkos start ${common_flags} --dev $node_index \
-    --client --logfile "$log_file" &
+  snarkos start "${common_flags[@]}" "--dev=$node_index" \
+    --client "--logfile=$log_file" &
   PIDS[node_index]=$!
   echo "Started client $client_index with PID ${PIDS[$node_index]}"
   # Add 1-second delay between starting nodes to avoid hitting rate limits
@@ -97,9 +99,9 @@ last_seen_height=0
 function consensus_version_stable() {
   consensus_version=$(curl -s "http://localhost:3030/v2/$network_name/consensus_version")
   height=$(curl -s "http://localhost:3030/v2/$network_name/block/height/latest")
-  if [[ "$consensus_version" =~ ^[0-9]+$ ]] && [[ "$height" =~ ^[0-9]+$ ]]; then
+  if (is_integer "$consensus_version") && (is_integer "$height"); then
     # If the consensus version is greater than the last seen, we update it.
-    if (( consensus_version > last_seen_consensus_version)); then
+    if (( consensus_version > last_seen_consensus_version )); then
       echo "✅ Consensus version updated to $consensus_version"
     # If the consensus version is the same whereas the block height is different and at least 10, we can assume that the consensus version is stable
     else
@@ -132,7 +134,7 @@ done
 
 # Creates a test program.
 mkdir -p program
-echo """program test_program.aleo;
+echo "program test_program.aleo;
 
 function main:
     input r0 as u32.public;
@@ -142,8 +144,9 @@ function main:
 
 constructor:
     assert.eq true true;
-""" > program/main.aleo
-echo """{
+" > program/main.aleo
+
+echo "{
   \"program\": \"test_program.aleo\",
   \"version\": \"0.1.0\",
   \"description\": \"\",
@@ -151,7 +154,7 @@ echo """{
   \"dependencies\": null,
   \"editions\": {}
 }
-""" > program/program.json
+" > program/program.json
 
 # Deploy the test program and wait for the deployment to be processed.
 _deploy_result=$(cd program && snarkos developer deploy --dev-key 0 --network "$network_id" --endpoint=localhost:3030 --broadcast --wait --timeout 10 test_program.aleo)
@@ -159,7 +162,7 @@ _deploy_result=$(cd program && snarkos developer deploy --dev-key 0 --network "$
 # Execute a function in the deployed program and wait for the execution to be processed.
 # Use the old flags here `--query` and `--broadcast=URL` to test they still work.
 # Also, use the v1 API to test it still works.
-execute_result=$(cd program && snarkos developer execute --dev-key 0 --network "$network_id" --query=localhost:3030 --broadcast=http://localhost:3030/v1/${network_name}/transaction/broadcast test_program.aleo main 1u32 1u32 --wait --timeout 10)
+execute_result=$(cd program && snarkos developer execute --dev-key 0 --network "$network_id" --query=localhost:3030 "--broadcast=http://localhost:3030/v1/$network_name/transaction/broadcast" test_program.aleo main 1u32 1u32 --wait --timeout 10)
 
 # Fail if the execution transaction does not exist.
 tx=$(echo "$execute_result" | tail -n 1)
@@ -290,7 +293,7 @@ echo "ℹ️Testing network progress"
 # Check heights periodically with a timeout
 total_wait=0
 while (( total_wait < 600 )); do  # 10 minutes max
-  if check_heights "$total_validators" "$total_clients" "$min_height" "$network_name"; then
+  if check_heights 0 $((total_validators+total_clients)) "$min_height" "$network_name" "$total_wait"; then
     echo "🎉 Test passed! All nodes reached minimum height."
 
     if check_logs "$log_dir" "$total_validators" "$total_clients"; then
