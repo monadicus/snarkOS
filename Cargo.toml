@@ -49,7 +49,6 @@ git = "https://github.com/ProvableHQ/snarkVM.git"
 rev = "0da94881fe6794659835d0616c070ac2a742148e"
 #version = "=4.0.1"
 default-features = false
-#features = [ "circuit", "console", "rocks" ]
 
 [workspace.dependencies.anyhow]
 version = "1.0"
