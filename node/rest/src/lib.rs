@@ -19,6 +19,7 @@
 extern crate tracing;
 
 mod helpers;
+// Imports custom `Path` type, to be used instead of `axum`'s.
 pub use helpers::*;
 
 mod routes;
@@ -41,7 +42,7 @@ use snarkvm::{
 use anyhow::{Context, Result};
 use axum::{
     body::Body,
-    extract::{ConnectInfo, DefaultBodyLimit, Path, Query, State},
+    extract::{ConnectInfo, DefaultBodyLimit, Query, State},
     http::{Method, Request, StatusCode, header::CONTENT_TYPE},
     middleware,
     response::Response,

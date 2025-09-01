@@ -66,6 +66,8 @@ pub enum DeveloperCommand {
     TransferPrivate(TransferPrivate),
 }
 
+/// Use the Provable explorer's API by default.
+/// Note, the `v1` here is not the API version, but the explorer's version.
 const DEFAULT_ENDPOINT: &str = "https://api.explorer.provable.com/v1";
 
 #[derive(Debug, Parser)]
@@ -90,7 +92,8 @@ struct RestError {
     /// The top-level error message.
     message: String,
     /// The chain of errors that led to the top-level error.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    /// Default to an empty vector if no error chain was given.
+    #[serde(default)]
     chain: Vec<String>,
 }
 
@@ -174,6 +177,29 @@ impl Developer {
         }
     }
 
+    /// Builds the full endpoint Uri from the base and path. Used internally for all REST API calls (copied from `snarkvm_ledger_query::Query`).
+    /// This will add the API version number and network name to the resulting endpoint URL.
+    ///
+    /// # Arguments
+    ///  - `base_url`: the hostname (and path prefix) of the node to query. this must exclude the network name.
+    ///  - `route`: the route to the endpoint (e.g., `stateRoot/latest`). This cannot start with a slash.
+    fn build_endpoint<N: Network>(base_url: &http::Uri, route: &str) -> Result<String> {
+        const API_VERSION: &str = "v2";
+
+        // This function is only called internally but check for additional sanity.
+        ensure!(!route.starts_with('/'), "path cannot start with a slash");
+
+        // Work around a bug in the `http` crate where empty paths will be set to '/' but other paths are not appended with a slash.
+        // See [this issue](https://github.com/hyperium/http/issues/507).
+        let path = if base_url.path().ends_with('/') {
+            format!("{base_url}{API_VERSION}/{network}/{route}", network = N::SHORT_NAME)
+        } else {
+            format!("{base_url}/{API_VERSION}/{network}/{route}", network = N::SHORT_NAME)
+        };
+
+        Ok(path)
+    }
+
     /// Converts the returned JSON error (if any) into an anyhow Error chain.
     /// If the error was 404, this simply returns `Ok(None)`.
     fn handle_ureq_result(result: Result<http::Response<ureq::Body>>) -> Result<Option<ureq::Body>> {
@@ -206,8 +232,9 @@ impl Developer {
     }
 
     /// Helper function to send a GET request to an endpoint and await a JSON response.
-    fn http_get_json<O: DeserializeOwned>(path: &str) -> Result<Option<O>> {
-        let result = ureq::get(path).config().http_status_as_error(false).build().call().map_err(|err| err.into());
+    fn http_get_json<N: Network, O: DeserializeOwned>(base_url: &http::Uri, route: &str) -> Result<Option<O>> {
+        let endpoint = Self::build_endpoint::<N>(base_url, route)?;
+        let result = ureq::get(&endpoint).config().http_status_as_error(false).build().call().map_err(|err| err.into());
 
         match Self::handle_ureq_result(result).with_context(|| "HTTP GET request failed")? {
             Some(mut body) => {
@@ -219,8 +246,9 @@ impl Developer {
     }
 
     /// Helper function to send a GET request to an endpoint and await the response.
-    fn http_get(path: &str) -> Result<Option<ureq::Body>> {
-        let result = ureq::get(path).config().http_status_as_error(false).build().call().map_err(|err| err.into());
+    fn http_get<N: Network>(base_url: &http::Uri, route: &str) -> Result<Option<ureq::Body>> {
+        let endpoint = Self::build_endpoint::<N>(base_url, route)?;
+        let result = ureq::get(&endpoint).config().http_status_as_error(false).build().call().map_err(|err| err.into());
 
         Self::handle_ureq_result(result).with_context(|| "HTTP GET request failed")
     }
@@ -237,8 +265,8 @@ impl Developer {
 
         while start_time.elapsed() < timeout_duration {
             // Check if transaction exists in a confirmed block
-            let tx_endpoint = format!("{endpoint}v2/{}/transaction/{transaction_id}", N::SHORT_NAME);
-            let result = Self::http_get(&tx_endpoint).with_context(|| "Failed to check transaction status")?;
+            let result = Self::http_get::<N>(endpoint, &format!("transaction/{transaction_id}"))
+                .with_context(|| "Failed to check transaction status")?;
 
             match result {
                 Some(_) => return Ok(()),
@@ -255,7 +283,7 @@ impl Developer {
 
     /// Gets the latest eidtion of an Aleo program.
     fn get_latest_edition<N: Network>(endpoint: &Uri, program_id: &ProgramID<N>) -> Result<u16> {
-        match Self::http_get_json(&format!("{endpoint}v2/{}/program/{program_id}/latest_edition", N::SHORT_NAME,))? {
+        match Self::http_get_json::<N, _>(endpoint, &format!("program/{program_id}/latest_edition"))? {
             Some(edition) => Ok(edition),
             None => bail!("Got unexpected 404 response"),
         }
@@ -268,10 +296,8 @@ impl Developer {
         let credits = ProgramID::<N>::from_str("credits.aleo")?;
 
         // Send a request to the query node.
-        let result: Option<Value<N>> = Self::http_get_json(&format!(
-            "{endpoint}v2/{}/program/{credits}/mapping/{account_mapping}/{address}",
-            N::SHORT_NAME,
-        ))?;
+        let result: Option<Value<N>> =
+            Self::http_get_json::<N, _>(endpoint, &format!("program/{credits}/mapping/{account_mapping}/{address}"))?;
 
         // Return the balance in microcredits.
         match result {

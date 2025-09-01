@@ -18,3 +18,6 @@ pub use auth::*;
 
 mod error;
 pub(crate) use error::*;
+
+mod path;
+pub(crate) use path::Path;
