@@ -632,7 +632,7 @@ impl<N: Network> Primary<N> {
                         // Check if the next proposal cost exceeds the batch proposal spend limit.
                         let batch_spend_limit = BatchHeader::<N>::batch_spend_limit(current_block_height);
                         if next_proposal_cost > batch_spend_limit {
-                            trace!(
+                            debug!(
                                 "Proposing - Skipping transaction '{}' - Batch spend limit surpassed ({next_proposal_cost} > {})",
                                 fmt_id(transaction_id),
                                 batch_spend_limit
