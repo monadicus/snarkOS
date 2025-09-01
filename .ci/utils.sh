@@ -10,6 +10,16 @@ declare -a PIDS
 # Flag is set true once a node process stopped
 node_stopped=false
 
+# Tasksets to pin processes to specfic CPUs.
+# This is a no-op on MacOS.
+if [[ "$(uname)" == "Darwin" ]]; then
+  TASKSET1=""
+  TASKSET2=""
+else
+  TASKSET1="taskset -c 0,1"
+  TASKSET2="taskset -c 2,3"
+fi
+
 # Handler for a child process exiting
 function child_exit_handler() {
   # only set to true if this was indeed a node
@@ -21,29 +31,28 @@ function child_exit_handler() {
   done
 }
 
-# Function checking that each node reached a sufficient block height.
+# Function checking that each node in the given range [start_index, end_index)
+# reached a minimum block height.
 function check_heights() {
-  echo "Checking block heights on all nodes..."
-
-  local total_validators=$1
-  local total_clients=$2
+  local start_index=$1
+  local end_index=$2
   local min_height=$3
   local network_name=$4
+  local elapsed=$5
 
   local all_reached=true
   local highest_height=0
 
-  for ((node_index = 0; node_index < total_validators + total_clients; node_index++)); do
+  for node_index in $(seq "$start_index" $((end_index-1))); do
     port=$((3030 + node_index))
     height=$(curl -s "http://127.0.0.1:$port/v2/$network_name/block/height/latest" || echo "0")
-    echo "Node $node_index block height: $height"
     
     # Track highest height for reporting
-    if [[ "$height" =~ ^[0-9]+$ ]] && (( height > highest_height )); then
+    if (is_integer "$height") && (( height > highest_height )); then
       highest_height=$height
     fi
     
-    if ! [[ "$height" =~ ^[0-9]+$ ]] || (( height < min_height )); then
+    if ! (is_integer "$height") || (( height < min_height )); then
       all_reached=false
     fi
   done
@@ -52,7 +61,11 @@ function check_heights() {
     echo "✅ SUCCESS: All nodes reached minimum height of $min_height"
     return 0
   else
-    echo "⏳ WAITING: Not all nodes reached minimum height of $min_height (highest so far: $highest_height)"
+    if (( elapsed > 0 && ((elapsed % 60) == 0) )); then
+      elapsed_mins=$((elapsed / 60))
+      echo "⏳ WAITING: Not all nodes reached minimum height of $min_height (highest so far: $highest_height, elapsed: $elapsed_mins minutes))"
+    fi
+
     return 1
   fi
 }
@@ -73,6 +86,7 @@ function check_logs() {
       return 1
     fi
   done
+
   for ((client_index = 0; client_index < total_clients; client_index++)); do
     if [ ! -s "$log_dir/client-${client_index}.log" ]; then
       echo "❌ Test failed! Client #${client_index} did not create any logs in \"$log_dir\"."
@@ -112,9 +126,12 @@ function stop_nodes() {
       kill -9 "$pid" 2>/dev/null || true
     fi
   done
+
+  # block until all nodes have shut down
+  wait
 }
 
-# succeeds if all nodes are available.
+# Succeeds if all nodes are available.
 function check_nodes() {
   local total_validators=$1
   local total_clients=$2
@@ -129,6 +146,75 @@ function check_nodes() {
   done
 
   return 0
+}
+
+# Succeeds if the given string is an integer.
+function is_integer() {
+  if [[ $1 =~ ^[0-9]+$ ]]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+# Succeeds if the given string is a float.
+function is_float() {  
+  if [[ "$1" =~ ^[+-]?[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?$ ]]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+# Succeeds if the node with the given index has the specified number of peers (or greater)
+function wait_for_peers() {
+  local node_index=$1
+  local min_peers=$2
+
+  local total_wait=0
+  local max_wait=300
+  local poll_interval=1
+  
+  while (( total_wait < max_wait )); do
+    result=$(curl -s "http://localhost:3030/v2/$network_name/peers/count")
+
+    if (is_integer "$result") && (( result >= min_peers )); then
+      return 0
+    fi
+
+    # Continue waiting
+    sleep $poll_interval
+    total_wait=$((total_wait+poll_interval))
+  done
+
+  echo "❌ Nodes did not connect within 5 minutes."
+  return 1
+}
+
+# Blocks until the node with the given index has at least one peer to sync from (or times out).
+function wait_for_sync_peers() {
+  local node_index=$1
+
+  local max_wait=300 
+  for ((total_wait=0; total_wait < max_wait; ++total_wait)); do
+    port=$((3030+node_index))
+    result=$(curl -s "http://localhost:${port}/v2/$network_name/sync/peers")
+    echo "$result"
+    num_peers=$(echo "$result" | jq -r '. | length')
+
+    # Height is set to zero without block locators. So wait for until it is greater than 0 for at least one peer.
+    for ((idx=0; idx<num_peers; ++idx)); do
+      count=$(echo "$result" | jq -r ".[keys[$idx]]")
+      if ((count > 0)); then
+        return 0
+      fi
+    done
+
+    # Continue waiting
+    sleep 1
+  done
+  
+  return 1
 }
 
 # Blocks until the network is ready.
@@ -149,4 +235,16 @@ function wait_for_nodes() {
       return 0
     fi
   done
+}
+
+# Compute the throughput for a number of operation over some time.
+function compute_throughput {
+  local num_ops=$1
+  local duration=$2
+  local decimal_points=2
+  
+  # Use floating point division
+  result=$(bc <<< "scale=$decimal_points; $num_ops/$duration")
+
+  echo "$result"
 }

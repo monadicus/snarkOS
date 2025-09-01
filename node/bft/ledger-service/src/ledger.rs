@@ -426,18 +426,36 @@ impl<N: Network, C: ConsensusStorage<N>> LedgerService<N> for CoreLedgerService<
             Transaction::Deploy(_, _, _, deployment, _) => {
                 let (_, (storage_cost, synthesis_cost, constructor_cost, _)) =
                     deployment_cost(&self.ledger.vm().process().read(), deployment, consensus_version)?;
-                storage_cost
-                    .checked_add(synthesis_cost)
-                    .and_then(|synthesis_cost| synthesis_cost.checked_add(constructor_cost))
-                    .ok_or(anyhow!(
-                        "The storage, synthesis, and constructor cost computation overflowed for a deployment"
-                    ))
+                let cost_to_check = if consensus_version >= ConsensusVersion::V10 {
+                    // From V10, only include the constructor compute cost for
+                    // deployments.
+                    //
+                    // If any individual function's finalize compute costs are
+                    // above the tranasction spend limit, the deployment will be
+                    // aborted in the block via Stack::initialize_and_check.
+                    constructor_cost
+                } else {
+                    // Include the storage, synthesis, and constructor cost for deployments.
+                    storage_cost
+                        .checked_add(synthesis_cost)
+                        .and_then(|synthesis_cost| synthesis_cost.checked_add(constructor_cost))
+                        .ok_or(anyhow!(
+                            "The storage, synthesis, and constructor cost computation overflowed for a deployment"
+                        ))?
+                };
+                Ok(cost_to_check)
             }
-            // Include the finalize cost and storage cost for executions.
             Transaction::Execute(_, _, execution, _) => {
-                let (total_cost, (_, _)) =
+                let (total_cost, (_, finalize_cost)) =
                     execution_cost(&self.ledger.vm().process().read(), execution, consensus_version)?;
-                Ok(total_cost)
+                let cost_to_check = if consensus_version >= ConsensusVersion::V10 {
+                    // From V10, only include the finalize compute cost for executions.
+                    finalize_cost
+                } else {
+                    // Include the finalize cost and storage cost for executions.
+                    total_cost
+                };
+                Ok(cost_to_check)
             }
             // Fee transactions are internal to the VM, they do not have a compute cost.
             Transaction::Fee(..) => Ok(0),

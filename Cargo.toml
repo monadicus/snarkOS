@@ -1,6 +1,6 @@
 [package]
 name = "snarkos"
-version = "4.1.0"
+version = "4.2.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A decentralized operating system"
 homepage = "https://aleo.org"
@@ -46,7 +46,7 @@ default-features = false
 [workspace.dependencies.snarkvm]
 #path = "../snarkVM"
 git = "https://github.com/ProvableHQ/snarkVM.git"
-rev = "b2e05284e"
+rev = "0da94881fe6794659835d0616c070ac2a742148e"
 #version = "=4.0.1"
 default-features = false
 
@@ -271,6 +271,8 @@ locktick = [
   "snarkos-node-tcp/locktick"
 ]
 serial = [ "snarkos-cli/serial" ]
+test_targets = [ "snarkos-cli/test_targets" ]
+test_consensus_heights = [ "snarkos-cli/test_consensus_heights" ]
 test_network = [ "snarkos-cli/test_network" ]
 
 [dependencies.anyhow]
