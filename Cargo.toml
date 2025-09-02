@@ -44,9 +44,9 @@ version = "1.0.1"
 default-features = false
 
 [workspace.dependencies.snarkvm]
-#path = "../snarkVM"
+# path = "../snarkVM"
 git = "https://github.com/ProvableHQ/snarkVM.git"
-rev = "0da94881fe6794659835d0616c070ac2a742148e"
+rev = "8c0524f46209db1dd87d840376292f95406f1df7"
 #version = "=4.0.1"
 default-features = false
 #features = [ "circuit", "console", "rocks" ]
