@@ -438,11 +438,16 @@ jobs:
 workflows:
   version: 2
 
-  main-workflow:
+  cargo-workflow:
     jobs:
-      - snarkos
-      - account
-      - cli
+      - check-fmt
+      - check-clippy
+      - check-unused-dependencies
+      - check-cargo-audit
+      - check-other-crates
+
+  node-workflow:
+    jobs:
       - node
       - node-bft
       - node-bft-events
@@ -457,12 +462,16 @@ workflows:
       - node-sync-communication-service
       - node-sync-locators
       - node-tcp
-      - check-fmt
-      - check-clippy
-      - check-unused-dependencies
-      - check-cargo-audit
-      - check-other-crates
+
+  devnet-workflow:
+    jobs:
       - devnet-test
+
+  snarkos-workflow:
+    jobs:
+      - snarkos
+      - account
+      - cli
 
   windows-workflow:
     jobs:
